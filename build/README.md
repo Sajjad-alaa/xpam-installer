@@ -110,5 +110,5 @@ the compose network rather than with `nginx -t` during the build.
 
 nginx resolves the service names once at start, so **after recreating koko, chen or kael on their
 own, reload the web container** (`docker exec jms_web nginx -s reload`) or nginx keeps the old
-container IP and returns 502. `jmsctl restart` restarts everything and is not affected.
+container IP and returns 502. `xpamctl restart` restarts everything and is not affected.
 Keep about 5 GB free disk before building: a full koko compile needs ~3 GB of cache.

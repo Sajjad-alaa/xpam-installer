@@ -13,7 +13,7 @@ function stop_services() {
       return 1
     fi
     cd "${PROJECT_DIR?}" || return 1
-    bash ./jmsctl.sh down || return 1
+    bash ./xpamctl.sh down || return 1
     sleep 2s
     echo
     return 0
@@ -42,10 +42,10 @@ function stop_services() {
   echo
 }
 
-function remove_jmsctl() {
-  if check_root && [ -f "/usr/bin/jmsctl" ]; then
-    echo -e "$(gettext 'Cleaning up') /usr/bin/jmsctl"
-    rm -f /usr/bin/jmsctl || return 1
+function remove_xpamctl() {
+  if check_root && [ -f "/usr/bin/xpamctl" ]; then
+    echo -e "$(gettext 'Cleaning up') /usr/bin/xpamctl"
+    rm -f /usr/bin/xpamctl /usr/bin/jmsctl || return 1
   fi
 }
 
@@ -178,7 +178,7 @@ function main() {
   remove_jumpserver || return 1
   remove_compose || return 1
   remove_docker || return 1
-  remove_jmsctl
+  remove_xpamctl
 }
 
 if [[ "$0" == "${BASH_SOURCE[0]}" ]]; then

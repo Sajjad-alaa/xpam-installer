@@ -310,7 +310,7 @@ function start_jdmc() {
   is_jdmc_enabled || return 0
   check_jdmc_runtime || return 1
   if ! check_jdmc_service_installed; then
-    log_error "JDMC service is not installed; run ./jmsctl.sh install first"
+    log_error "JDMC service is not installed; run ./xpamctl.sh install first"
     return 1
   fi
   service_name=$(get_installed_jdmc_service_name)
@@ -341,7 +341,7 @@ function restart_jdmc() {
   fi
   check_jdmc_runtime || return 1
   if ! check_jdmc_service_installed; then
-    log_error "JDMC is enabled but not installed; run ./jmsctl.sh install first"
+    log_error "JDMC is enabled but not installed; run ./xpamctl.sh install first"
     return 1
   fi
   service_name=$(get_installed_jdmc_service_name)
@@ -362,7 +362,7 @@ function tail_jdmc() {
 
   check_jdmc_runtime || return 1
   if ! check_jdmc_service_installed; then
-    log_error "JDMC service is not installed; run ./jmsctl.sh install first"
+    log_error "JDMC service is not installed; run ./xpamctl.sh install first"
     return 1
   fi
   service_name=$(get_installed_jdmc_service_name)

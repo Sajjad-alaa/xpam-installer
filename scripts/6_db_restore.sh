@@ -197,7 +197,7 @@ function cleanup_restore() {
 
 if [[ "$0" == "${BASH_SOURCE[0]}" ]]; then
   if [[ -z "$1" ]]; then
-    log_error "$(gettext 'Format error')！Usage './jmsctl.sh restore_db DB_Backup_file'"
+    log_error "$(gettext 'Format error')！Usage './xpamctl.sh restore_db DB_Backup_file'"
     exit 1
   fi
   if [[ ! -f $1 ]]; then

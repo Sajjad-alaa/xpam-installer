@@ -232,7 +232,7 @@ function migrate_data_folder() {
 function migrate_config() {
   local component
 
-  prepare_jmsctl
+  prepare_xpamctl
   migrate_compat_config "KOKO_SSH_PORT" "SSH_PORT" "2222"
   migrate_compat_config "RAZOR_RDP_PORT" "RDP_PORT" "3389"
   migrate_compat_config "VIDEO_WORKER_ENABLED" "VIDEO_ENABLED" ""
@@ -335,7 +335,7 @@ function db_migrations() {
     if [[ "${confirm}" == "y" ]]; then
       echo
       cd "${PROJECT_DIR}" || exit 1
-      bash ./jmsctl.sh stop || {
+      bash ./xpamctl.sh stop || {
         log_error "Failed to stop JumpServer containers before database migration"
         exit 1
       }
@@ -392,7 +392,7 @@ function upgrade_docker() {
       if [[ "${confirm}" == "y" ]]; then
         echo
         cd "${PROJECT_DIR}" || exit 1
-        bash ./jmsctl.sh down
+        bash ./xpamctl.sh down
         sleep 2s
         echo
         systemctl stop docker
@@ -527,7 +527,7 @@ function main() {
 
   echo_yellow "\n9. $(gettext 'Upgrade successfully. You can now restart the program')"
   echo "cd ${PROJECT_DIR}"
-  echo "./jmsctl.sh start"
+  echo "./xpamctl.sh start"
   echo -e "\n"
 }
 

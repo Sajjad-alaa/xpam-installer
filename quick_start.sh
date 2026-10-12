@@ -64,8 +64,8 @@ function get_installer() {
 
 function config_installer() {
   cd /opt/jumpserver-installer-${VERSION} || exit 1
-  ./jmsctl.sh install || exit 1
-  ./jmsctl.sh start || exit 1
+  ./xpamctl.sh install || exit 1
+  ./xpamctl.sh start || exit 1
 }
 
 function main(){

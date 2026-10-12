@@ -50,11 +50,11 @@ function pre_check() {
 }
 
 function usage() {
-  echo "$(gettext 'JumpServer Deployment Management Script')"
+  echo "$(gettext 'XPAM Deployment Management Script')"
   echo
   echo "Usage: "
-  echo "  ./jmsctl.sh [COMMAND] [ARGS...]"
-  echo "  ./jmsctl.sh --help"
+  echo "  ./xpamctl.sh [COMMAND] [ARGS...]"
+  echo "  ./xpamctl.sh --help"
   echo
   echo "Installation Commands: "
   echo "  install           $(gettext 'Install JumpServer')"
@@ -219,7 +219,7 @@ function video-worker() {
       ;;
     status) ${EXE} ps ;;
     *)
-      log_error "Usage: ./jmsctl.sh video-worker {start|stop|restart|status}"
+      log_error "Usage: ./xpamctl.sh video-worker {start|stop|restart|status}"
       return 2
       ;;
   esac

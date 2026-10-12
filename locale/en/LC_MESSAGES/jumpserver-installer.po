@@ -308,7 +308,7 @@ msgstr ""
 msgid "Cleanup complete"
 msgstr ""
 
-#: scripts/8_uninstall.sh:99 jmsctl.sh:59
+#: scripts/8_uninstall.sh:99 xpamctl.sh:59
 msgid "Uninstall JumpServer"
 msgstr ""
 
@@ -369,7 +369,7 @@ msgid "Other management commands"
 msgstr ""
 
 #: scripts/4_install_jumpserver.sh:59
-msgid "For more commands, you can enter ./jmsctl.sh --help to understand"
+msgid "For more commands, you can enter ./xpamctl.sh --help to understand"
 msgstr ""
 
 #: scripts/4_install_jumpserver.sh:61
@@ -459,7 +459,7 @@ msgstr ""
 msgid "Are you sure you want to update the current version to"
 msgstr ""
 
-#: scripts/7_upgrade.sh:299 jmsctl.sh:63
+#: scripts/7_upgrade.sh:299 xpamctl.sh:63
 msgid "Backup database"
 msgstr ""
 
@@ -615,86 +615,86 @@ msgstr ""
 msgid "Do you want to continue to add environment variables"
 msgstr ""
 
-#: scripts/config.sh:206 jmsctl.sh:17
+#: scripts/config.sh:206 xpamctl.sh:17
 msgid "Configuration file not found"
 msgstr ""
 
-#: jmsctl.sh:18
+#: xpamctl.sh:18
 msgid "If you are upgrading from v1.5.x, please copy the config.txt To"
 msgstr ""
 
-#: jmsctl.sh:23
+#: xpamctl.sh:23
 msgid "There is a problem with the soft connection, Please update it again"
 msgstr ""
 
-#: jmsctl.sh:42
+#: xpamctl.sh:42
 msgid "JumpServer Deployment Management Script"
 msgstr ""
 
-#: jmsctl.sh:49
+#: xpamctl.sh:49
 msgid "Install JumpServer"
 msgstr ""
 
-#: jmsctl.sh:50
+#: xpamctl.sh:50
 msgid "Upgrade JumpServer"
 msgstr ""
 
-#: jmsctl.sh:53
+#: xpamctl.sh:53
 msgid "Configuration  Tools"
 msgstr ""
 
-#: jmsctl.sh:54
+#: xpamctl.sh:54
 msgid "Start     JumpServer"
 msgstr ""
 
-#: jmsctl.sh:55
+#: xpamctl.sh:55
 msgid "Stop      JumpServer"
 msgstr ""
 
-#: jmsctl.sh:56
+#: xpamctl.sh:56
 msgid "Restart   JumpServer"
 msgstr ""
 
-#: jmsctl.sh:57
+#: xpamctl.sh:57
 msgid "Check     JumpServer"
 msgstr ""
 
-#: jmsctl.sh:58
+#: xpamctl.sh:58
 msgid "Offline   JumpServer"
 msgstr ""
 
-#: jmsctl.sh:62
+#: xpamctl.sh:62
 msgid "Loading docker image"
 msgstr ""
 
-#: jmsctl.sh:64
+#: xpamctl.sh:64
 msgid "Data recovery through database backup file"
 msgstr ""
 
-#: jmsctl.sh:65
+#: xpamctl.sh:65
 msgid "Execute the original docker compose command"
 msgstr ""
 
-#: jmsctl.sh:66
+#: xpamctl.sh:66
 msgid "View log"
 msgstr ""
 
-#: jmsctl.sh:121
+#: xpamctl.sh:121
 msgid "The current version is up to date"
 msgstr ""
 
-#: jmsctl.sh:126
+#: xpamctl.sh:126
 msgid "The latest version is"
 msgstr ""
 
-#: jmsctl.sh:155 jmsctl.sh:161
+#: xpamctl.sh:155 xpamctl.sh:161
 msgid "Unsupported Operating System Error"
 msgstr ""
 
-#: jmsctl.sh:156
+#: xpamctl.sh:156
 msgid "macOS installer please see"
 msgstr ""
 
-#: jmsctl.sh:162
+#: xpamctl.sh:162
 msgid "Windows installer please see"
 msgstr ""

@@ -199,19 +199,21 @@ function get_config_enabled() {
 }
 
 
-function prepare_jmsctl() {
+function prepare_xpamctl() {
   if check_root; then
-    echo -e "#!/usr/bin/env bash\n#" > /usr/bin/jmsctl
-    echo -e "cd ${PROJECT_DIR}" >> /usr/bin/jmsctl
-    echo -e './jmsctl.sh $@' >> /usr/bin/jmsctl
-    chmod 755 /usr/bin/jmsctl
+    # The command was called jmsctl before the XPAM rename
+    rm -f /usr/bin/jmsctl
+    echo -e "#!/usr/bin/env bash\n#" > /usr/bin/xpamctl
+    echo -e "cd ${PROJECT_DIR}" >> /usr/bin/xpamctl
+    echo -e './xpamctl.sh $@' >> /usr/bin/xpamctl
+    chmod 755 /usr/bin/xpamctl
   fi
 }
 
 
 function prepare_config() {
   cd "${PROJECT_DIR}" || exit 1
-  prepare_jmsctl
+  prepare_xpamctl
 
   echo_yellow "1. $(gettext 'Check Configuration File')"
   echo "$(gettext 'Path to Configuration file'): ${CONFIG_DIR}"

@@ -53,14 +53,14 @@ function post_install() {
 
   echo_yellow "1. $(gettext 'You can use the following command to start, and then visit')"
   echo "cd ${PROJECT_DIR}"
-  echo "./jmsctl.sh start"
+  echo "./xpamctl.sh start"
 
   echo_yellow "\n2. $(gettext 'Other management commands')"
-  echo "./jmsctl.sh stop"
-  echo "./jmsctl.sh restart"
-  echo "./jmsctl.sh backup"
-  echo "./jmsctl.sh upgrade"
-  echo "$(gettext 'For more commands, you can enter ./jmsctl.sh --help to understand')"
+  echo "./xpamctl.sh stop"
+  echo "./xpamctl.sh restart"
+  echo "./xpamctl.sh backup"
+  echo "./xpamctl.sh upgrade"
+  echo "$(gettext 'For more commands, you can enter ./xpamctl.sh --help to understand')"
 
   echo_yellow "\n3. $(gettext 'Web access')"
   if [ -n "${server_name}" ] && [ -n "${https_port}" ]; then

@@ -309,7 +309,7 @@ msgstr "是否清理 Docker 鏡像"
 msgid "Cleanup complete"
 msgstr "清理完成"
 
-#: scripts/8_uninstall.sh:99 jmsctl.sh:59
+#: scripts/8_uninstall.sh:99 xpamctl.sh:59
 msgid "Uninstall JumpServer"
 msgstr "卸載 JumpServer"
 
@@ -373,8 +373,8 @@ msgid "Other management commands"
 msgstr "其它一些管理命令"
 
 #: scripts/4_install_jumpserver.sh:59
-msgid "For more commands, you can enter ./jmsctl.sh --help to understand"
-msgstr "更多還有一些命令, 你可以 ./jmsctl.sh --help 來了解"
+msgid "For more commands, you can enter ./xpamctl.sh --help to understand"
+msgstr "更多還有一些命令, 你可以 ./xpamctl.sh --help 來了解"
 
 #: scripts/4_install_jumpserver.sh:61
 msgid "Web access"
@@ -463,7 +463,7 @@ msgstr "是否升級 Docker Compose"
 msgid "Are you sure you want to update the current version to"
 msgstr "是否將版本更新至"
 
-#: scripts/7_upgrade.sh:299 jmsctl.sh:63
+#: scripts/7_upgrade.sh:299 xpamctl.sh:63
 msgid "Backup database"
 msgstr "備份資料庫"
 
@@ -621,86 +621,86 @@ msgstr "配置沒有變更"
 msgid "Do you want to continue to add environment variables"
 msgstr "是否需要繼續添加或修改配置"
 
-#: scripts/config.sh:206 jmsctl.sh:17
+#: scripts/config.sh:206 xpamctl.sh:17
 msgid "Configuration file not found"
 msgstr "未找到配置文件"
 
-#: jmsctl.sh:18
+#: xpamctl.sh:18
 msgid "If you are upgrading from v1.5.x, please copy the config.txt To"
 msgstr "如果您從 v1.5.x 版本升級，請將先前目錄中的 config.txt 複製到"
 
-#: jmsctl.sh:23
+#: xpamctl.sh:23
 msgid "There is a problem with the soft connection, Please update it again"
 msgstr "軟鏈接存在問題, 請重新更新"
 
-#: jmsctl.sh:42
+#: xpamctl.sh:42
 msgid "JumpServer Deployment Management Script"
 msgstr "JumpServer 部署管理腳本"
 
-#: jmsctl.sh:49
+#: xpamctl.sh:49
 msgid "Install JumpServer"
 msgstr "安裝 JumpServer"
 
-#: jmsctl.sh:50
+#: xpamctl.sh:50
 msgid "Upgrade JumpServer"
 msgstr "升級 JumpServer"
 
-#: jmsctl.sh:53
+#: xpamctl.sh:53
 msgid "Configuration  Tools"
 msgstr "配置工具"
 
-#: jmsctl.sh:54
+#: xpamctl.sh:54
 msgid "Start     JumpServer"
 msgstr "啟動   JumpServer"
 
-#: jmsctl.sh:55
+#: xpamctl.sh:55
 msgid "Stop      JumpServer"
 msgstr "停止   JumpServer"
 
-#: jmsctl.sh:56
+#: xpamctl.sh:56
 msgid "Restart   JumpServer"
 msgstr "重啟   JumpServer"
 
-#: jmsctl.sh:57
+#: xpamctl.sh:57
 msgid "Check     JumpServer"
 msgstr "檢查   JumpServer"
 
-#: jmsctl.sh:58
+#: xpamctl.sh:58
 msgid "Offline   JumpServer"
 msgstr "下線   JumpServer"
 
-#: jmsctl.sh:62
+#: xpamctl.sh:62
 msgid "Loading docker image"
 msgstr "載入 Docker 鏡像"
 
-#: jmsctl.sh:64
+#: xpamctl.sh:64
 msgid "Data recovery through database backup file"
 msgstr "通過資料庫備份文件恢復數據"
 
-#: jmsctl.sh:65
+#: xpamctl.sh:65
 msgid "Execute the original docker compose command"
 msgstr "執行原始 docker compose 命令"
 
-#: jmsctl.sh:66
+#: xpamctl.sh:66
 msgid "View log"
 msgstr "查看日誌"
 
-#: jmsctl.sh:121
+#: xpamctl.sh:121
 msgid "The current version is up to date"
 msgstr "當前版本已是最新"
 
-#: jmsctl.sh:126
+#: xpamctl.sh:126
 msgid "The latest version is"
 msgstr "最新版本是"
 
-#: jmsctl.sh:155 jmsctl.sh:161
+#: xpamctl.sh:155 xpamctl.sh:161
 msgid "Unsupported Operating System Error"
 msgstr "錯誤: 不支持的操作系統"
 
-#: jmsctl.sh:156
+#: xpamctl.sh:156
 msgid "macOS installer please see"
 msgstr "macOS 安裝請參考"
 
-#: jmsctl.sh:162
+#: xpamctl.sh:162
 msgid "Windows installer please see"
 msgstr "Windows 安裝請參考"

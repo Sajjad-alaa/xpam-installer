@@ -9,7 +9,7 @@ flag=0
 
 function usage() {
     echo "Usage: "
-    echo "  ./jmsctl.sh config [ARGS...]"
+    echo "  ./xpamctl.sh config [ARGS...]"
     echo "  -h, --help"
     echo
     echo "Args: "
@@ -34,7 +34,7 @@ function restart_service() {
     confirm="n"
     read_from_input confirm "$(gettext 'Do you want to restart the service')?" "y/n" "${confirm}"
     if [[ "${confirm}" == "y" ]]; then
-        jmsctl restart
+        xpamctl restart
     fi
 }
 

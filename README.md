@@ -1,6 +1,6 @@
 # XPAM Installer
 
-Installer for XPAM, based on the JumpServer v5.0.0 installer. Same commands (`./jmsctl.sh install|start|stop|restart|status|upgrade|...`).
+Installer for XPAM, based on the JumpServer v5.0.0 installer. Same commands (`./xpamctl.sh install|start|stop|restart|status|upgrade|...`).
 
 ## XPAM images
 
@@ -29,7 +29,7 @@ Settings in `config.txt`: `XPAM_NAMESPACE` (default `xpam`), `XPAM_VERSION`, `XP
 Other services (magnus, razor, xrdp, video-worker, nec, panda) keep the upstream JumpServer images.
 
 After recreating koko, chen or kael on their own, reload nginx in the web container
-(`docker exec jms_web nginx -s reload`); a full `./jmsctl.sh restart` does not need this.
+(`docker exec jms_web nginx -s reload`); a full `./xpamctl.sh restart` does not need this.
 
 ---
 
@@ -45,32 +45,32 @@ JumpServer Installer 用来安装和管理 JumpServer。
 
 ```bash
 # 安装，版本是在 static.env 指定的
-$ ./jmsctl.sh install
+$ ./xpamctl.sh install
 ```
 
 ## 管理命令
 
 ```
 # 启动
-$ ./jmsctl.sh start
+$ ./xpamctl.sh start
 
 # 重启
-$ ./jmsctl.sh restart
+$ ./xpamctl.sh restart
 
 # 关闭, 不包含数据库
-$ ./jmsctl.sh stop
+$ ./xpamctl.sh stop
 
 # 关闭所有
-$ ./jmsctl.sh down
+$ ./xpamctl.sh down
 
 # 备份数据库
-$ ./jmsctl.sh backup_db
+$ ./xpamctl.sh backup_db
 
 # 查看日志
-$ ./jmsctl.sh tail
+$ ./xpamctl.sh tail
 
 # 单独管理企业版 video-worker
-$ ./jmsctl.sh video-worker {start|stop|restart|status}
+$ ./xpamctl.sh video-worker {start|stop|restart|status}
 
 ```
 
@@ -95,8 +95,8 @@ JDMC 是企业版组件，需要在 `/opt/jumpserver/config/config.txt` 中设�
 `${NAMESPACE:-jumpserver}/jdmc:${VERSION}`，从 `/dist` 提取并执行 JDMC 自带的
 `scripts/install.sh` 或 `scripts/upgrade.sh`。
 JDMC 与 Core 等自有组件使用相同的拉取和重标记规则，企业版离线包始终包含该镜像。
-服务跟随 `jmsctl.sh start/stop/restart/status` 管理，日志可通过
-`./jmsctl.sh tail jdmc` 查看。安装器会为 Core 配置
+服务跟随 `xpamctl.sh start/stop/restart/status` 管理，日志可通过
+`./xpamctl.sh tail jdmc` 查看。安装器会为 Core 配置
 `JDMC_SOCK_PATH=/opt/jumpserver/data/unshare/jdmc.sock`；Core 根据企业版自动启用
 JDMC 集成。
 

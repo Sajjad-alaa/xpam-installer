@@ -44,7 +44,7 @@ installation_log() { calls+=(telemetry); }
 remove_jumpserver() { calls+=(jumpserver); }
 remove_compose() { calls+=(compose); }
 remove_docker() { calls+=(docker); }
-remove_jmsctl() { calls+=(jmsctl); }
+remove_xpamctl() { calls+=(xpamctl); }
 
 if main; then
   fail 'Uninstall must fail when services cannot be stopped'
@@ -54,6 +54,6 @@ assert_eq 'retire stop' "${calls[*]}" 'Destructive cleanup must not continue aft
 stop_services() { calls+=(stop); }
 calls=()
 main
-assert_eq 'retire stop jdmc telemetry jumpserver compose docker jmsctl' "${calls[*]}" \
+assert_eq 'retire stop jdmc telemetry jumpserver compose docker xpamctl' "${calls[*]}" \
   'The management command must be removed only after cleanup succeeds'
 printf 'PASS: uninstall failures propagate and cleanup ordering is safe\n'

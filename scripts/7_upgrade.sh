@@ -370,7 +370,10 @@ function clean_images() {
 
   namespace=$(get_config_or_env NAMESPACE jumpserver)
   namespace=${namespace%/}
-  old_images=$(docker images --format "{{.Repository}}:{{.Tag}}" | grep "${namespace}/" | grep "${current_version}" || true)
+  xpam_namespace=$(get_xpam_namespace)
+  # XPAM images are cleaned together with the upstream ones of the replaced version
+  old_images=$(docker images --format "{{.Repository}}:{{.Tag}}" \
+    | grep -E "^(${namespace}|${xpam_namespace})/" | grep "${current_version}" || true)
   if [[ -n "${old_images}" ]]; then
     confirm="y"
     read_from_input confirm "$(gettext 'Do you need to clean up the old version image')?" "y/n" "${confirm}"

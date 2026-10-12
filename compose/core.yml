@@ -1,6 +1,6 @@
 services:
   core:
-    image: ${NAMESPACE:-jumpserver}/core:${VERSION}
+    image: ${XPAM_NAMESPACE:-xpam}/core:${XPAM_VERSION:-${VERSION}}
     container_name: jms_core
     hostname: jms_core
     ulimits:
@@ -14,7 +14,6 @@ services:
     volumes:
       - ${CONFIG_DIR}/certs:/opt/jumpserver/data/certs
       - ${VOLUME_DIR}/core/data:/opt/jumpserver/data
-      - /var/run/docker.sock:/var/run/docker.sock:z
     healthcheck:
       test: "check http://localhost:8080/api/health/"
       interval: 10s

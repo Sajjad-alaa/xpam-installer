@@ -96,7 +96,7 @@ offline_manifest=$(
   . ./scripts/utils.sh
   get_offline_image_manifest
 )
-assert_contains "${offline_manifest}" 'jumpserver/kael:' 'offline manifest must contain the Kael image'
+assert_contains "${offline_manifest}" 'xpam/ai:' 'offline manifest must contain the XPAM ai (kael) image'
 for optional_image in elasticsearch minio grafana/loki grafana/promtail; do
   if [[ "${offline_manifest}" == *"${optional_image}"* ]]; then
     fail "optional image must not be included in the offline manifest: ${optional_image}"

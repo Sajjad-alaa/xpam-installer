@@ -31,6 +31,43 @@ function get_image_namespace() {
   echo "${namespace:-jumpserver}"
 }
 
+# XPAM: these services run XPAM-built images instead of the upstream JumpServer ones.
+function get_xpam_image_name() {
+  case "$1" in
+    core) echo "core" ;;
+    web) echo "web" ;;
+    koko) echo "secureconnection" ;;
+    chen) echo "webconnector" ;;
+    kael) echo "ai" ;;
+    *) return 1 ;;
+  esac
+}
+
+function get_xpam_namespace() {
+  local namespace
+
+  namespace=$(get_config_or_env XPAM_NAMESPACE xpam)
+  namespace=${namespace%/}
+  echo "${namespace:-xpam}"
+}
+
+function get_xpam_version() {
+  local version
+
+  version=$(get_config_or_env XPAM_VERSION)
+  echo "${version:-${VERSION}}"
+}
+
+# Registry (for example ghcr.io/<owner>) holding <registry>/<name>:<tag>. Without it, XPAM images
+# must already exist locally or come from the offline package: they are never pulled from
+# Docker Hub, where the "xpam" namespace belongs to someone else.
+function get_xpam_image_registry() {
+  local registry
+
+  registry=$(get_config_or_env XPAM_IMAGE_REGISTRY)
+  echo "${registry%/}"
+}
+
 function get_image_pull_prefix() {
   local image_pull_prefix registry
 
@@ -56,9 +93,13 @@ function emit_image_mapping() {
 
 function get_image_mappings() {
   local use_xpack enabled_services service image db_image namespace
+  local xpam_name xpam_namespace xpam_version xpam_registry
 
   use_xpack=$(get_config_or_env USE_XPACK)
   namespace=$(get_image_namespace)
+  xpam_namespace=$(get_xpam_namespace)
+  xpam_version=$(get_xpam_version)
+  xpam_registry=$(get_xpam_image_registry)
   emit_image_mapping "redis:7.4.10-bookworm" "redis:7.4.10-bookworm"
   db_image=$(get_db_images)
   if [[ -n "${db_image}" ]]; then
@@ -71,6 +112,18 @@ function get_image_mappings() {
   for service in ${enabled_services}; do
     case "${service}" in
       "" | celery | jdmc | panda)
+        ;;
+      core | web | koko | chen | kael)
+        xpam_name=$(get_xpam_image_name "${service}")
+        if [[ -n "${xpam_registry}" ]]; then
+          emit_image_mapping \
+            "${xpam_registry}/${xpam_name}:${xpam_version}" \
+            "${xpam_namespace}/${xpam_name}:${xpam_version}" 1
+        else
+          emit_image_mapping \
+            "${xpam_namespace}/${xpam_name}:${xpam_version}" \
+            "${xpam_namespace}/${xpam_name}:${xpam_version}" 2
+        fi
         ;;
       *)
         emit_image_mapping \
@@ -128,12 +181,17 @@ function get_offline_image_manifest() {
 
   while IFS=$'\t' read -r source_image target_image exact_source; do
     [[ -n "${source_image}" && -n "${target_image}" ]] || continue
-    if [[ "${exact_source}" == "1" ]]; then
+    if [[ "${exact_source}" == "1" || "${exact_source}" == "2" ]]; then
       resolved_source=${source_image}
     else
       resolved_source=$(get_image_full_path "${source_image}")
     fi
-    printf '%s\t%s\n' "${resolved_source}" "${target_image}"
+    # Third column: 2 = local-only XPAM image (never pulled), otherwise an exact pull source.
+    if [[ "${exact_source}" == "2" ]]; then
+      printf '%s\t%s\t2\n' "${resolved_source}" "${target_image}"
+    else
+      printf '%s\t%s\n' "${resolved_source}" "${target_image}"
+    fi
   done < <(get_image_mappings)
 }
 
@@ -236,6 +294,16 @@ function pull_image() {
   local image=$1 requested_target=${2:-} exact_source=${3:-0}
   local full_image_path pull_args to_image image_pull_policy namespace
 
+  if [[ "${exact_source}" == "2" ]]; then
+    if [[ "$(check_image_exists "${image}")" == "1" ]]; then
+      echo "[${image}] XPAM image present"
+      return 0
+    fi
+    echo "[${image}] XPAM image not found. Build it (xpam-build), load the offline package," \
+      "or set XPAM_IMAGE_REGISTRY in config.txt" >&2
+    return 1
+  fi
+
   if [[ "${exact_source}" == "1" ]]; then
     full_image_path="${image}"
   else
@@ -286,16 +354,16 @@ function pull_image() {
 
 
 function pull_images() {
-  local source_image target_image pid
+  local source_image target_image exact_source pid
   local INCLUDE_PANDA_IMAGE=${INCLUDE_PANDA_IMAGE:-0}
   local pull_failed=0
   local -a pids=()
 
   trap 'kill ${pids[*]}' SIGINT SIGTERM
 
-  while IFS=$'\t' read -r source_image target_image; do
+  while IFS=$'\t' read -r source_image target_image exact_source; do
     [[ -n "${source_image}" && -n "${target_image}" ]] || continue
-    pull_image "${source_image}" "${target_image}" 1 &
+    pull_image "${source_image}" "${target_image}" "${exact_source:-1}" &
     pids+=("$!")
   done < <(get_offline_image_manifest)
   for pid in "${pids[@]}"; do

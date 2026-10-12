@@ -1,3 +1,36 @@
+# XPAM Installer
+
+Installer for XPAM, based on the JumpServer v5.0.0 installer. Same commands (`./jmsctl.sh install|start|stop|restart|status|upgrade|...`).
+
+## XPAM images
+
+These services run XPAM-built images (see the `xpam-build` folder for how to build them):
+
+| Service | Image | Public path |
+|---|---|---|
+| core, celery, init-db | `xpam/core` | `/core/`, `/api/` |
+| web (admin UI + workspace + nginx) | `xpam/web` | `/web/`, `/workspace/` |
+| koko | `xpam/secureconnection` | `/secureconnection/` |
+| chen | `xpam/webconnector` | `/webconnector/` |
+| kael | `xpam/ai` | `/ai/` |
+
+Tags are `${XPAM_VERSION}` (defaults to `VERSION` from `static.env`). XPAM images are **never pulled from
+Docker Hub** (the `xpam` namespace there is not ours). Provide them in one of three ways:
+
+1. Build them on the host (`xpam-build`) and tag them `xpam/<name>:<version>`.
+2. Ship them in the offline package (`scripts/images/<name>:<version>.zst` plus `.sha256`, created by
+   `scripts/0_prepare.sh` on a host that has the images).
+3. Push them to a registry and set `XPAM_IMAGE_REGISTRY` (for example `ghcr.io/<owner>`) in `config.txt`;
+   the installer pulls `<registry>/<name>:<version>` and tags it locally.
+
+Settings in `config.txt`: `XPAM_NAMESPACE` (default `xpam`), `XPAM_VERSION`, `XPAM_IMAGE_REGISTRY`.
+Other services (magnus, razor, xrdp, video-worker, nec, panda) keep the upstream JumpServer images.
+
+After recreating koko, chen or kael on their own, reload nginx in the web container
+(`docker exec jms_web nginx -s reload`); a full `./jmsctl.sh restart` does not need this.
+
+---
+
 # JumpServer Installer
 
 JumpServer Installer 用来安装和管理 JumpServer。

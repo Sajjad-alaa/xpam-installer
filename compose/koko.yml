@@ -1,6 +1,6 @@
 services:
   koko:
-    image: ${NAMESPACE:-jumpserver}/koko:${VERSION}
+    image: ${XPAM_NAMESPACE:-xpam}/secureconnection:${XPAM_VERSION:-${VERSION}}
     container_name: jms_koko
     hostname: jms_koko
     ulimits:
@@ -21,7 +21,7 @@ services:
       - ${CONFIG_DIR}/certs:/opt/koko/data/certs
       - ${VOLUME_DIR}/koko/data:/opt/koko/data
     healthcheck:
-      test: "check http://localhost:5000/koko/health/"
+      test: "check http://localhost:5000/secureconnection/health/"
       interval: 10s
       timeout: 5s
       retries: 3

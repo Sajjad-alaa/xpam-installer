@@ -1,6 +1,6 @@
 services:
   chen:
-    image: ${NAMESPACE:-jumpserver}/chen:${VERSION}
+    image: ${XPAM_NAMESPACE:-xpam}/webconnector:${XPAM_VERSION:-${VERSION}}
     container_name: jms_chen
     hostname: jms_chen
     ulimits:
@@ -12,7 +12,7 @@ services:
       - ${VOLUME_DIR}/chen/data:/opt/chen/data
       - ${CONFIG_DIR}/certs:/opt/chen/data/certs
     healthcheck:
-      test: "check http://localhost:8082/chen/healthy"
+      test: "check http://localhost:8082/webconnector/healthy"
       interval: 10s
       timeout: 5s
       retries: 3

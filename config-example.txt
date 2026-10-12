@@ -23,6 +23,16 @@
 #
 # NAMESPACE=jumpserver
 
+# XPAM images. core, web, secureconnection (koko), webconnector (chen) and ai
+# (kael) run XPAM-built images named ${XPAM_NAMESPACE}/<name>:${XPAM_VERSION}.
+# XPAM_VERSION defaults to VERSION. They are never pulled from Docker Hub: build
+# them (xpam-build), ship them in the offline package, or set XPAM_IMAGE_REGISTRY
+# to a registry holding <registry>/<name>:<tag> (for example ghcr.io/<owner>).
+#
+# XPAM_NAMESPACE=xpam
+# XPAM_VERSION=
+# XPAM_IMAGE_REGISTRY=
+
 # The connection to docker.io in China will timeout or the download speed will be slow, enable this option to use Huawei Cloud image acceleration
 # Legacy mirror configuration. IMAGE_PULL_PREFIX takes precedence when set.
 #
@@ -150,6 +160,12 @@ PERIOD_TASK_ENABLED=true
 # SESSION_EXPIRE_AT_BROWSER_CLOSE=true means that the session expires as soon as the browser is closed
 #
 # SESSION_COOKIE_AGE=86400
+
+# Send the session and CSRF cookies over HTTPS only (HTTPS is enabled by default).
+# Set both to false only for a plain-HTTP test setup without HTTPS_PORT.
+#
+SESSION_COOKIE_SECURE=true
+CSRF_COOKIE_SECURE=true
 SESSION_EXPIRE_AT_BROWSER_CLOSE=false
 
 # Trusted DOMAINS definition,

@@ -1,0 +1,10 @@
+# Only the apps tree is copied; never ship keys, licenses or caches.
+*
+!apps
+apps/**/__pycache__
+**/*.pyc
+**/*.pem
+**/*.key
+**/*.lic
+**/vendor_keys
+**/generate_license.py

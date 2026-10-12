@@ -4,7 +4,8 @@ Installer for XPAM, based on the JumpServer v5.0.0 installer. Same commands (`./
 
 ## XPAM images
 
-These services run XPAM-built images (see the `xpam-build` folder for how to build them):
+These services run XPAM-built images. The Dockerfiles, nginx config, brand kit and the
+`build-all.sh` script that builds them are in [`build/`](build/README.md):
 
 | Service | Image | Public path |
 |---|---|---|
@@ -17,10 +18,11 @@ These services run XPAM-built images (see the `xpam-build` folder for how to bui
 Tags are `${XPAM_VERSION}` (defaults to `VERSION` from `static.env`). XPAM images are **never pulled from
 Docker Hub** (the `xpam` namespace there is not ours). Provide them in one of three ways:
 
-1. Build them on the host (`xpam-build`) and tag them `xpam/<name>:<version>`.
+1. Build them on the host with `build/build-all.sh` (tags them `xpam/<name>:<version>`).
 2. Ship them in the offline package (`scripts/images/<name>:<version>.zst` plus `.sha256`, created by
    `scripts/0_prepare.sh` on a host that has the images).
-3. Push them to a registry and set `XPAM_IMAGE_REGISTRY` (for example `ghcr.io/<owner>`) in `config.txt`;
+3. Push them to a registry (`build/push-ghcr.sh`) and set `XPAM_IMAGE_REGISTRY` (for example
+   `ghcr.io/<owner>/xpam`) in `config.txt`;
    the installer pulls `<registry>/<name>:<version>` and tags it locally.
 
 Settings in `config.txt`: `XPAM_NAMESPACE` (default `xpam`), `XPAM_VERSION`, `XPAM_IMAGE_REGISTRY`.

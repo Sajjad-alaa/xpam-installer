@@ -1,8 +1,8 @@
 services:
   video-worker:
     image: ${NAMESPACE:-jumpserver}/video-worker:${VERSION}
-    container_name: jms_video-worker
-    hostname: jms_video-worker
+    container_name: xpam_video-worker
+    hostname: xpam_video-worker
     cpus: 2
     ulimits:
       core: 0

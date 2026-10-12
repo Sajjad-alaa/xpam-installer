@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Render the XPAM brand kit into every repo. Needs rsvg-convert and a running jms_core (Pillow, for .ico/.icns).
+# Render the XPAM brand kit into every repo. Needs rsvg-convert and a running xpam_core (Pillow, for .ico/.icns).
 set -euo pipefail
 cd "$(dirname "$0")"
 python3 make_brand.py
@@ -34,20 +34,20 @@ cp $O/icon.svg $L/icon.svg; png icon.svg $L/icon.png -w 512 -h 512
 # .ico / .icns through Pillow inside the core container
 png icon.svg $O/_icon1024.png -w 1024 -h 1024
 png icon-mac.svg $O/_mac1024.png -w 1024 -h 1024
-docker exec jms_core mkdir -p /tmp/brand
-docker cp $O/_icon1024.png jms_core:/tmp/brand/icon.png
-docker cp $O/_mac1024.png jms_core:/tmp/brand/mac.png
-docker exec jms_core /opt/py3/bin/python -c "
+docker exec xpam_core mkdir -p /tmp/brand
+docker cp $O/_icon1024.png xpam_core:/tmp/brand/icon.png
+docker cp $O/_mac1024.png xpam_core:/tmp/brand/mac.png
+docker exec xpam_core /opt/py3/bin/python -c "
 from PIL import Image
 i = Image.open('/tmp/brand/icon.png').convert('RGBA')
 i.save('/tmp/brand/favicon.ico', sizes=[(16,16),(32,32),(48,48),(64,64)])
 i.save('/tmp/brand/icon.ico', sizes=[(16,16),(24,24),(32,32),(48,48),(64,64),(128,128),(256,256)])
 Image.open('/tmp/brand/mac.png').convert('RGBA').save('/tmp/brand/icon.icns')
 "
-docker cp jms_core:/tmp/brand/favicon.ico $O/favicon.ico
-docker cp jms_core:/tmp/brand/icon.ico $O/icon.ico
-docker cp jms_core:/tmp/brand/icon.icns $O/icon.icns
-docker exec jms_core rm -rf /tmp/brand; rm -f $O/_icon1024.png $O/_mac1024.png
+docker cp xpam_core:/tmp/brand/favicon.ico $O/favicon.ico
+docker cp xpam_core:/tmp/brand/icon.ico $O/icon.ico
+docker cp xpam_core:/tmp/brand/icon.icns $O/icon.icns
+docker exec xpam_core rm -rf /tmp/brand; rm -f $O/_icon1024.png $O/_mac1024.png
 cp $O/favicon.ico $C/facio.ico; cp $O/favicon.ico $S/ui/assets/facio.ico
 cp $O/icon.ico $E/icon.ico; cp $O/icon.icns $E/icon.icns; cp $O/icon.ico $L/icon.ico
 echo "brand kit applied"

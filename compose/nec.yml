@@ -1,8 +1,8 @@
 services:
   nec:
     image: ${NAMESPACE:-jumpserver}/nec:${VERSION}
-    container_name: jms_nec
-    hostname: jms_nec
+    container_name: xpam_nec
+    hostname: xpam_nec
     ulimits:
       core: 0
     restart: always

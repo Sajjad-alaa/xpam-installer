@@ -331,12 +331,12 @@ function db_migrations() {
   fi
   if docker ps | grep -E "core|koko"&>/dev/null; then
     confirm="y"
-    read_from_input confirm "$(gettext 'Detected that the JumpServer container is running. Do you want to close the container and continue to upgrade')?" "y/n" "${confirm}"
+    read_from_input confirm "$(gettext 'Detected that the XPAM container is running. Do you want to close the container and continue to upgrade')?" "y/n" "${confirm}"
     if [[ "${confirm}" == "y" ]]; then
       echo
       cd "${PROJECT_DIR}" || exit 1
       bash ./xpamctl.sh stop || {
-        log_error "Failed to stop JumpServer containers before database migration"
+        log_error "Failed to stop XPAM containers before database migration"
         exit 1
       }
       sleep 2s

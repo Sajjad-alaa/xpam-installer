@@ -1,4 +1,4 @@
-# JumpServer configuration file example.
+# XPAM configuration file example.
 #
 # If you don't understand the purpose, you can skip modifying this configuration file, the system will automatically fill in
 # Complete parameter documentation https://docs.jumpserver.org/zh/v3/guide/env/
@@ -78,7 +78,7 @@ CHAT_AI_DELEGATION_SECRET=
 #
 LOG_LEVEL=ERROR
 
-# The network segment used by the JumpServer container, please do not conflict with the existing network, modify according to the actual situation
+# The network segment used by the XPAM containers, please do not conflict with the existing network, modify according to the actual situation
 #
 DOCKER_SUBNET=192.168.250.0/24
 
@@ -230,7 +230,7 @@ SERVER_HOSTNAME=${HOSTNAME}
 # When USE_LB is set to 0, use the configuration proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for
 USE_LB=1
 
-# The current running version number of JumpServer, automatically generated after installation and upgrade
+# The current running version number of XPAM, automatically generated after installation and upgrade
 #
 TZ=Asia/Shanghai
 CURRENT_VERSION=

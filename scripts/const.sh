@@ -25,7 +25,7 @@ export CONFIG_FILE=$CONFIG_DIR/config.txt
 export CONFIG_SAFE_FILE=$CONFIG_DIR/config_safe.txt
 
 # Compose 项目设置
-export COMPOSE_PROJECT_NAME=jms
+export COMPOSE_PROJECT_NAME=xpam
 # export COMPOSE_HTTP_TIMEOUT=3600
 # export DOCKER_CLIENT_TIMEOUT=3600
 

@@ -58,14 +58,14 @@ function ensure_backup_dir() {
 function prepare_db_env() {
   db_images=$(get_db_images)
 
-  if ! docker ps | grep -w "jms_core" &>/dev/null; then
+  if ! docker ps | grep -w "xpam_core" &>/dev/null; then
     create_db_ops_env || return 1
     started_db_env=1
   fi
 
   case "${DB_HOST}" in
     mysql|postgresql)
-      wait_container_healthy "jms_${DB_HOST}" || return 1
+      wait_container_healthy "xpam_${DB_HOST}" || return 1
       ;;
   esac
 }
@@ -102,7 +102,7 @@ function backup_main_db_mysql() {
 
   if ! docker run --rm \
     --env MYSQL_PWD="${DB_PASSWORD}" \
-    -i --network=jms_net \
+    -i --network=xpam_net \
     "${db_images}" \
     "${dump_cmd[@]}" > "${DB_FILE}"; then
     log_error "$(gettext 'Backup failed')!"
@@ -123,7 +123,7 @@ function backup_main_db_mysql() {
     )
     if ! docker run --rm \
       --env MYSQL_PWD="${DB_PASSWORD}" \
-      -i --network=jms_net \
+      -i --network=xpam_net \
       "${db_images}" \
       "${schema_cmd[@]}" >> "${DB_FILE}"; then
       log_error "$(gettext 'Backup failed')!"
@@ -158,7 +158,7 @@ function backup_main_db_postgresql() {
 
   if ! docker run --rm \
     --env PGPASSWORD="${DB_PASSWORD}" \
-    -i --network=jms_net \
+    -i --network=xpam_net \
     "${db_images}" \
     "${dump_cmd[@]}" > "${DB_FILE}"; then
     log_error "$(gettext 'Backup failed')!"
@@ -216,7 +216,7 @@ function backup_audits_mysql() {
 
   if ! docker run --rm \
       -e MYSQL_PWD="${DB_PASSWORD}" \
-      -i --network=jms_net \
+      -i --network=xpam_net \
       "${db_images}" \
       "${dump_cmd[@]}" | gzip >"${backup_file}"; then
     return 1
@@ -238,7 +238,7 @@ function backup_audits_postgresql() {
 
   docker run --rm \
     -e PGPASSWORD="${DB_PASSWORD}" \
-    -i --network=jms_net \
+    -i --network=xpam_net \
     "${db_images}" \
     pg_dump \
       -h "${DB_HOST}" \

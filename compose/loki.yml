@@ -1,8 +1,8 @@
 services:
   loki:
     image: grafana/loki:3.0.0
-    container_name: jms_loki
-    hostname: jms_loki
+    container_name: xpam_loki
+    hostname: xpam_loki
     user: "0"
     command: -config.file=/etc/loki/local-config.yaml
     volumes:
@@ -13,8 +13,8 @@ services:
 
   promtail:
     image: grafana/promtail:3.0.0
-    container_name: jms_promtail
-    hostname: jms_promtail
+    container_name: xpam_promtail
+    hostname: xpam_promtail
     env_file:
       - ${CONFIG_FILE}
     volumes:

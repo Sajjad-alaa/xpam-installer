@@ -1,8 +1,8 @@
 services:
   celery:
     image: ${XPAM_NAMESPACE:-xpam}/core:${XPAM_VERSION:-${XPAM_DEFAULT_VERSION:-v5.0.0}}
-    container_name: jms_celery
-    hostname: jms_celery
+    container_name: xpam_celery
+    hostname: xpam_celery
     ulimits:
       core: 0
     restart: always

@@ -32,7 +32,7 @@ function restore_mysql() {
   )
 
   docker run --rm "${docker_env[@]}" \
-    -i --network=jms_net \
+    -i --network=xpam_net \
     -v "${BACKUP_DIR}:${BACKUP_DIR}" \
     "${db_images}" bash -c "${restore_cmd}"
 }
@@ -81,7 +81,7 @@ function restore_postgresql() {
   )
 
   docker run --rm "${docker_env[@]}" \
-    -i --network=jms_net \
+    -i --network=xpam_net \
     -v "${BACKUP_DIR}:${BACKUP_DIR}" \
     "${db_images}" bash -c "${restore_cmd}"
   local restore_status=$?
@@ -123,13 +123,13 @@ function main() {
 
   echo "$(gettext 'Start restoring database'): $DB_FILE"
 
-  if ! docker ps | grep -w "jms_core" &>/dev/null; then
+  if ! docker ps | grep -w "xpam_core" &>/dev/null; then
     create_db_ops_env || return 1
     started_db_env=1
   fi
   case "${DB_HOST}" in
     mysql|postgresql)
-      wait_container_healthy "jms_${DB_HOST}" || return 1
+      wait_container_healthy "xpam_${DB_HOST}" || return 1
       ;;
   esac
 
@@ -153,13 +153,13 @@ function run_post_restore() {
 }
 
 function stop_jms_core() {
-  if [[ "$(docker inspect -f '{{.State.Running}}' jms_core 2>/dev/null)" == "true" ]]; then
+  if [[ "$(docker inspect -f '{{.State.Running}}' xpam_core 2>/dev/null)" == "true" ]]; then
     CORE_WAS_RUNNING=1
-    docker stop jms_core &>/dev/null || return 1
+    docker stop xpam_core &>/dev/null || return 1
   fi
-  if [[ "$(docker inspect -f '{{.State.Running}}' jms_celery 2>/dev/null)" == "true" ]]; then
+  if [[ "$(docker inspect -f '{{.State.Running}}' xpam_celery 2>/dev/null)" == "true" ]]; then
     CELERY_WAS_RUNNING=1
-    docker stop jms_celery &>/dev/null || return 1
+    docker stop xpam_celery &>/dev/null || return 1
   fi
 }
 

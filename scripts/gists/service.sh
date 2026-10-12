@@ -207,8 +207,8 @@ function stop_disabled_video_worker() {
   # Compose does not remove services omitted from a later `up -d`. Remove only
   # this installer's old video-worker container; keep its bind-mounted data.
   container_id=$(docker ps -a -q \
-    --filter 'name=^/jms_video-worker$' \
-    --filter "label=com.docker.compose.project=${COMPOSE_PROJECT_NAME:-jms}" \
+    --filter 'name=^/xpam_video-worker$' \
+    --filter "label=com.docker.compose.project=${COMPOSE_PROJECT_NAME:-xpam}" \
     --filter 'label=com.docker.compose.service=video-worker') || return 1
   if [[ -n "${container_id}" ]]; then
     docker container rm -f "${container_id}" >/dev/null || return 1
@@ -255,9 +255,28 @@ function prepare_video_worker_volume() {
 function remove_stopped_openbao_init_container() {
   # openbao-init is a one-shot dependency. Remove its completed container so it
   # does not remain in `docker ps -a`; a still-running initializer is preserved.
-  docker container rm jms_openbao_init &>/dev/null || true
+  docker container rm xpam_openbao_init &>/dev/null || true
 }
 
+
+# XPAM: containers used to be named jms_* in the Compose project "jms". Remove those old
+# containers and their network once, so the renamed ones can start. Data is kept: it lives in
+# bind-mounted folders, not in the containers.
+function retire_legacy_project() {
+  local container_ids network_ids
+
+  container_ids=$(docker ps -aq --filter "label=com.docker.compose.project=jms") || return 1
+  if [[ -n "${container_ids}" ]]; then
+    echo "Replacing the old jms_* containers with xpam_* ones"
+    # shellcheck disable=SC2086
+    docker rm -f ${container_ids} >/dev/null || return 1
+  fi
+  network_ids=$(docker network ls -q --filter "label=com.docker.compose.project=jms") || return 1
+  if [[ -n "${network_ids}" ]]; then
+    # shellcheck disable=SC2086
+    docker network rm ${network_ids} >/dev/null || return 1
+  fi
+}
 
 function get_latest_version() {
   curl -s 'https://api.github.com/repos/jumpserver/jumpserver/releases/latest' |
@@ -323,6 +342,7 @@ function get_db_migrate_compose_cmd() {
 }
 
 function create_db_ops_env() {
+  retire_legacy_project || return 1
   cmd=$(get_db_migrate_compose_cmd)
   ${cmd} up -d || {
     return 1
@@ -330,12 +350,13 @@ function create_db_ops_env() {
 }
 
 function down_db_ops_env() {
-  docker stop jms_core &>/dev/null
-  docker rm jms_core &>/dev/null
+  docker stop xpam_core &>/dev/null
+  docker rm xpam_core &>/dev/null
 }
 
 function db_redis_start() {
   target=$1
+  retire_legacy_project || return 1
   cmd=$(get_db_compose_cmd "${target}")
   ${cmd} up -d || {
     return 1
@@ -389,15 +410,15 @@ function perform_db_migrations() {
   create_db_ops_env || return 1
   case "${db_host}" in
     mysql|postgresql)
-      wait_container_healthy "jms_${db_host}" || return 1
+      wait_container_healthy "xpam_${db_host}" || return 1
       ;;
   esac
 
   if [[ "${redis_host}" == "redis" ]]; then
-    wait_container_healthy jms_redis || return 1
+    wait_container_healthy xpam_redis || return 1
   fi
 
-  docker exec -i jms_core bash -c './jms upgrade_db' || {
+  docker exec -i xpam_core bash -c './jms upgrade_db' || {
     log_error "$(gettext 'Failed to change the table structure')!"
     return 1
   }

@@ -27,7 +27,7 @@ default_config=$(
   fi
   ${compose_cmd} --env-file "${CONFIG_FILE}" config
 )
-assert_contains "${default_config}" 'jms_kael' 'rendered Compose config must contain Kael'
+assert_contains "${default_config}" 'xpam_ai' 'rendered Compose config must contain Kael'
 assert_contains "${default_config}" "PLATFORM_DELEGATION_KEY: ${CHAT_AI_DELEGATION_SECRET}" 'Kael must receive the Core delegation secret'
 assert_contains "${default_config}" 'published: "5001"' 'Koko Web Proxy must publish the configured external port'
 assert_contains "${default_config}" 'target: 5001' 'Koko Web Proxy must use container port 5001'
@@ -56,7 +56,7 @@ ce_config=$(
   ${compose_cmd} --env-file "${CONFIG_FILE}" config
 )
 assert_contains "${ce_config}" 'ENABLE_VIDEO_WORKER: "false"' 'CE must disable KoKo worker submission even if the source config enables it'
-if [[ "${ce_config}" == *'jms_video-worker'* ]]; then
+if [[ "${ce_config}" == *'xpam_video-worker'* ]]; then
   fail 'CE must not include a local video-worker container'
 fi
 printf 'PASS: CE excludes video-worker and disables KoKo submission\n'
@@ -88,7 +88,7 @@ all_features_config=$(
   assert_contains "${compose_cmd}" 'compose/video-worker.yml'
   ${compose_cmd} --env-file "${CONFIG_FILE}" config
 )
-assert_contains "${all_features_config}" 'jms_video-worker' 'rendered compose config must contain video-worker'
+assert_contains "${all_features_config}" 'xpam_video-worker' 'rendered compose config must contain video-worker'
 
 offline_manifest=$(
   cd "${TEST_ROOT}"
@@ -124,7 +124,7 @@ external_worker_config=$(
 )
 assert_contains "${external_worker_config}" 'ENABLE_VIDEO_WORKER: "true"' 'KoKo must receive the worker submission switch'
 assert_contains "${external_worker_config}" 'VIDEO_WORKER_HOST: http://external-worker.example:9000' 'KoKo must receive the external worker URL'
-if [[ "${external_worker_config}" == *'jms_video-worker'* ]]; then
+if [[ "${external_worker_config}" == *'xpam_video-worker'* ]]; then
   fail 'disabled local worker must not appear in Compose configuration'
 fi
 external_worker_manifest=$(

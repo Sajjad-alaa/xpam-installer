@@ -1,7 +1,7 @@
 services:
   mysql:
     image: mysql:8.0
-    container_name: jms_mysql
+    container_name: xpam_mysql
     restart: always
     command: --character-set-server=utf8
     environment:

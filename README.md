@@ -43,7 +43,7 @@ Settings in `config.txt`: `XPAM_NAMESPACE` (default `xpam`), `XPAM_VERSION`, `XP
 Other services (magnus, razor, xrdp, video-worker, nec, panda) keep the upstream JumpServer images.
 
 After recreating koko, chen or kael on their own, reload nginx in the web container
-(`docker exec jms_web nginx -s reload`); a full `./xpamctl.sh restart` does not need this.
+(`docker exec xpam_web nginx -s reload`); a full `./xpamctl.sh restart` does not need this.
 
 ---
 

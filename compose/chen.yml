@@ -1,8 +1,8 @@
 services:
   chen:
     image: ${XPAM_NAMESPACE:-xpam}/webconnector:${XPAM_VERSION:-${XPAM_DEFAULT_VERSION:-v5.0.0}}
-    container_name: jms_chen
-    hostname: jms_chen
+    container_name: xpam_webconnector
+    hostname: xpam_webconnector
     ulimits:
       core: 0
     restart: always

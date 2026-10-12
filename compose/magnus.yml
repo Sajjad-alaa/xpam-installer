@@ -1,8 +1,8 @@
 services:
   magnus:
     image: ${NAMESPACE:-jumpserver}/magnus:${VERSION}
-    container_name: jms_magnus
-    hostname: jms_magnus
+    container_name: xpam_magnus
+    hostname: xpam_magnus
     ulimits:
       core: 0
     restart: always

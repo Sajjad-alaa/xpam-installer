@@ -9,7 +9,7 @@ function stop_services() {
 
   if [[ -f "${CONFIG_FILE}" ]]; then
     if ! docker compose version &>/dev/null; then
-      log_error "Docker Compose is unavailable; cannot safely stop JumpServer services"
+      log_error "Docker Compose is unavailable; cannot safely stop XPAM services"
       return 1
     fi
     cd "${PROJECT_DIR?}" || return 1
@@ -24,7 +24,7 @@ function stop_services() {
   network_ids=$(docker network ls -q --filter "label=com.docker.compose.project=${COMPOSE_PROJECT_NAME}") || return 1
   volume_ids=$(docker volume ls -q --filter "label=com.docker.compose.project=${COMPOSE_PROJECT_NAME}") || return 1
   if [[ -n "${container_ids}" ]]; then
-    echo_warn "JumpServer configuration is missing; removing containers by the exact Compose project label"
+    echo_warn "XPAM configuration is missing; removing containers by the exact Compose project label"
   fi
   for resource_id in ${container_ids}; do
     docker rm -f "${resource_id}" >/dev/null || failed=1
@@ -36,7 +36,7 @@ function stop_services() {
     docker volume rm "${resource_id}" >/dev/null || failed=1
   done
   if [[ "${failed}" != "0" ]]; then
-    log_error "Failed to remove one or more JumpServer Compose resources"
+    log_error "Failed to remove one or more XPAM Compose resources"
     return 1
   fi
   echo
@@ -124,7 +124,7 @@ function remove_jumpserver() {
   local failed=0
 
   if [[ ! -f "${CONFIG_FILE}" ]]; then
-    echo_warn "JumpServer configuration is missing; using the configured environment or default data paths"
+    echo_warn "XPAM configuration is missing; using the configured environment or default data paths"
   fi
   echo
   echo_warn "$(gettext 'Make sure you have a backup of data, this operation is not reversible')! \n"
@@ -133,7 +133,7 @@ function remove_jumpserver() {
   jdmc_data_dir=$(get_current_jdmc_data_dir)
   kotl_data_dir=$(get_legacy_kotl_data_dir)
   confirm="n"
-  read_from_input confirm "$(gettext 'Are you clean up JumpServer files')?" "y/n" "${confirm}"
+  read_from_input confirm "$(gettext 'Are you clean up XPAM files')?" "y/n" "${confirm}"
   if [[ "${confirm}" == "y" ]]; then
     remove_managed_dir "${volume_dir}" || return 1
     remove_managed_dir "${jdmc_data_dir}" || return 1
@@ -148,7 +148,7 @@ function remove_jumpserver() {
   read_from_input confirm "$(gettext 'Do you need to clean up the Docker image')?" "y/n" "${confirm}"
   if [[ "${confirm}" == "y" ]]; then
     if ! command -v docker &>/dev/null; then
-      log_error "Docker is unavailable; cannot remove JumpServer images"
+      log_error "Docker is unavailable; cannot remove XPAM images"
       return 1
     fi
     for image in ${images}; do
@@ -157,14 +157,14 @@ function remove_jumpserver() {
     done
   fi
   if [[ "${failed}" != "0" ]]; then
-    log_error "Failed to remove one or more JumpServer images"
+    log_error "Failed to remove one or more XPAM images"
     return 1
   fi
   echo_green "$(gettext 'Cleanup complete')!"
 }
 
 function main() {
-  echo_yellow "\n>>> $(gettext 'Uninstall JumpServer')"
+  echo_yellow "\n>>> $(gettext 'Uninstall XPAM')"
   prepare_jdmc_uninstall || {
     log_error "Failed to safely retire JDMC HA"
     return 1

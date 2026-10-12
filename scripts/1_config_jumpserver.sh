@@ -228,20 +228,20 @@ function set_service() {
   koko_enabled=$(get_config_or_env KOKO_ENABLED)
   use_xpack=$(get_config_or_env USE_XPACK)
   confirm="n"
-  read_from_input confirm "$(gettext 'Do you need to customize the JumpServer external port')?" "y/n" "${confirm}"
+  read_from_input confirm "$(gettext 'Do you need to customize the XPAM external port')?" "y/n" "${confirm}"
   if [[ "${confirm}" == "y" ]]; then
-    read_from_input http_port "$(gettext 'JumpServer web port')" "" "${http_port}"
+    read_from_input http_port "$(gettext 'XPAM web port')" "" "${http_port}"
     set_config HTTP_PORT "${http_port}"
 
     if [[ "${koko_enabled}" != "0" ]]; then
-      read_from_input web_proxy_port "$(gettext 'JumpServer web proxy port')" "" "${web_proxy_port}"
+      read_from_input web_proxy_port "$(gettext 'XPAM web proxy port')" "" "${web_proxy_port}"
       set_config KOKO_WEB_PROXY_PORT "${web_proxy_port}"
     fi
 
     if [[ "${use_xpack}" == "1" ]]; then
-      read_from_input ssh_port "$(gettext 'JumpServer ssh port')" "" "${ssh_port}"
+      read_from_input ssh_port "$(gettext 'XPAM ssh port')" "" "${ssh_port}"
       set_config KOKO_SSH_PORT "${ssh_port}"
-      read_from_input rdp_port "$(gettext 'JumpServer rdp port')" "" "${rdp_port}"
+      read_from_input rdp_port "$(gettext 'XPAM rdp port')" "" "${rdp_port}"
       set_config RAZOR_RDP_PORT "${rdp_port}"
     fi
   fi

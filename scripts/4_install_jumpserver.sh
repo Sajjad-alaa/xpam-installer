@@ -94,7 +94,7 @@ function main() {
     exit 1
   fi
 
-  echo_green "\n>>> $(gettext 'Install and Configure JumpServer')"
+  echo_green "\n>>> $(gettext 'Install and Configure XPAM')"
   if ! bash "${BASE_DIR}/1_config_jumpserver.sh"; then
     exit 1
   fi

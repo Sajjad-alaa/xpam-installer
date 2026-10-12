@@ -57,17 +57,17 @@ function usage() {
   echo "  ./xpamctl.sh --help"
   echo
   echo "Installation Commands: "
-  echo "  install           $(gettext 'Install JumpServer')"
-  echo "  upgrade           $(gettext 'Upgrade JumpServer')"
+  echo "  install           $(gettext 'Install XPAM')"
+  echo "  upgrade           $(gettext 'Upgrade XPAM')"
   echo
   echo "Management Commands: "
   echo "  config            $(gettext 'Configuration  Tools')"
-  echo "  start [--skip-jdmc]   $(gettext 'Start     JumpServer')"
-  echo "  stop [--skip-jdmc]    $(gettext 'Stop      JumpServer')"
-  echo "  restart [--skip-jdmc] $(gettext 'Restart   JumpServer')"
-  echo "  status [--skip-jdmc]  $(gettext 'Check     JumpServer')"
-  echo "  down              $(gettext 'Offline   JumpServer')"
-  echo "  uninstall         $(gettext 'Uninstall JumpServer')"
+  echo "  start [--skip-jdmc]   $(gettext 'Start     XPAM')"
+  echo "  stop [--skip-jdmc]    $(gettext 'Stop      XPAM')"
+  echo "  restart [--skip-jdmc] $(gettext 'Restart   XPAM')"
+  echo "  status [--skip-jdmc]  $(gettext 'Check     XPAM')"
+  echo "  down              $(gettext 'Offline   XPAM')"
+  echo "  uninstall         $(gettext 'Uninstall XPAM')"
   echo
   echo "More Commands: "
   echo "  load_image        $(gettext 'Loading docker image')"
@@ -82,8 +82,13 @@ function usage() {
 
 function service_to_docker_name() {
   service=$1
-  if [[ "${service:0:3}" != "jms" ]]; then
-    service=jms_${service}
+  case "${service}" in
+    koko) service=secureconnection ;;
+    chen) service=webconnector ;;
+    kael) service=ai ;;
+  esac
+  if [[ "${service:0:5}" != "xpam_" ]]; then
+    service=xpam_${service}
   fi
   echo "${service}"
 }
@@ -104,6 +109,7 @@ function start() {
   gen_safe_config >/dev/null
   stop_disabled_video_worker || return 1
   prepare_video_worker_volume || return 1
+  retire_legacy_project || return 1
   EXE=$(get_docker_compose_cmd_line)
   ${EXE} up -d || return 1
   remove_stopped_openbao_init_container
@@ -129,6 +135,7 @@ function stop() {
     if should_manage_jdmc; then
       stop_jdmc || return 1
     fi
+    retire_legacy_project || return 1
     ${EXE} down -v
   fi
 }
@@ -298,6 +305,7 @@ function main() {
       if should_manage_jdmc; then
         stop_jdmc || exit 1
       fi
+      retire_legacy_project || exit 1
       ${EXE} down -v
     elif is_jdmc_target; then
       stop_jdmc

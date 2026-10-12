@@ -1,8 +1,8 @@
 services:
   es:
     image: docker.elastic.co/elasticsearch/elasticsearch:7.17.25
-    container_name: jms_es
-    hostname: jms_es
+    container_name: xpam_es
+    hostname: xpam_es
     restart: always
     ports:
       - 9200:9200

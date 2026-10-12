@@ -11,7 +11,7 @@ services:
 
   openbao:
     image: openbao/openbao:2.6.0
-    container_name: jms_openbao
+    container_name: xpam_openbao
     hostname: openbao
     # Start the image entrypoint as root so it can fix bind-mount ownership;
     # the official entrypoint then launches bao via su-exec as openbao.
@@ -41,7 +41,7 @@ services:
 
   openbao-init:
     image: openbao/openbao:2.6.0
-    container_name: jms_openbao_init
+    container_name: xpam_openbao_init
     hostname: openbao-init
     # The initializer writes root-owned 0600 unseal material and remains alive
     # so Docker can restart it to unseal OpenBao after a host reboot.

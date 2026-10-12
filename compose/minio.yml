@@ -1,8 +1,8 @@
 services:
   minio:
     image: ${MINIO_IMAGE:-minio/minio:RELEASE.2025-09-07T16-13-09Z}
-    container_name: jms_minio
-    hostname: jms_minio
+    container_name: xpam_minio
+    hostname: xpam_minio
     restart: always
     command: "server /data --console-address :9001"
     environment:

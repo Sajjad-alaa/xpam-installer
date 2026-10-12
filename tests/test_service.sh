@@ -24,7 +24,7 @@ if perform_db_migrations; then
 fi
 printf 'PASS: migration failures return to the caller\n'
 
-if wait_container_healthy jms_missing 0 0; then
+if wait_container_healthy xpam_missing 0 0; then
   fail 'health waits must time out when a container never becomes healthy'
 fi
 printf 'PASS: health waits have a bounded failure path\n'
@@ -101,5 +101,5 @@ docker_calls=()
 printf 'PASS: disabling video-worker removes only the stale container\n'
 
 remove_stopped_openbao_init_container
-assert_eq 'container rm jms_openbao_init' "${docker_calls[0]}" 'completed OpenBao init container must be removed'
+assert_eq 'container rm xpam_openbao_init' "${docker_calls[0]}" 'completed OpenBao init container must be removed'
 printf 'PASS: completed OpenBao initializer is removed after startup\n'

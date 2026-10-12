@@ -70,7 +70,7 @@ function set_port() {
     fi
     if [[ "${koko_enabled}" != "0" ]]; then
         web_proxy_port=$(get_config KOKO_WEB_PROXY_PORT "5001")
-        read_from_input web_proxy_port "$(gettext 'JumpServer web proxy port')" "" "${web_proxy_port}"
+        read_from_input web_proxy_port "$(gettext 'XPAM web proxy port')" "" "${web_proxy_port}"
         set_config KOKO_WEB_PROXY_PORT "${web_proxy_port}"
     fi
     if [[ "${use_xpack}" == "1" ]]; then

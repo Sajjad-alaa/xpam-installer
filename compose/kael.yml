@@ -1,8 +1,8 @@
 services:
   kael:
     image: ${XPAM_NAMESPACE:-xpam}/ai:${XPAM_VERSION:-${XPAM_DEFAULT_VERSION:-v5.0.0}}
-    container_name: jms_kael
-    hostname: jms_kael
+    container_name: xpam_ai
+    hostname: xpam_ai
     ulimits:
       core: 0
     restart: always

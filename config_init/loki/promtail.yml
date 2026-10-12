@@ -7,7 +7,7 @@ positions:
   filename: /data/jumpserver/loki/promtail/positions.yaml
 
 clients:
-  - url: http://jms_loki:3100/loki/api/v1/push
+  - url: http://xpam_loki:3100/loki/api/v1/push
     tenant_id: tenant1
 
 scrape_configs:
@@ -88,9 +88,9 @@ scrape_configs:
         refresh_interval: 5s
         filters:
           - name: name
-            values: [jms_web, jms_core, jms_koko,
-                     jms_chen, jms_magnus, jms_xrdp, jms_razor,
-                     jms_nec,
+            values: [xpam_web, xpam_core, xpam_secureconnection,
+                     xpam_webconnector, xpam_magnus, xpam_xrdp, xpam_razor,
+                     xpam_nec,
                      ]
     relabel_configs:
       - source_labels: ["__meta_docker_container_name"]

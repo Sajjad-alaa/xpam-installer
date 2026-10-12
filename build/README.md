@@ -8,7 +8,7 @@ every build host starts from the same bytes.
 
 ## Build everything
 ```bash
-./build-all.sh                      # all five images, tagged xpam/<name>:v5.0.0-ce
+./build-all.sh                      # all five images, tagged xpam/<name>:v5.0.0
 ./build-all.sh core web             # only some
 TAG=v5.0.1 NS=xpam SRC=/opt ./build-all.sh
 ```
@@ -35,7 +35,7 @@ the license code.
 | webconnector (chen) | `xpam/webconnector` | `/webconnector/` | `/chen/` (hidden proxy alias) |
 | ai (kael) | `xpam/ai` | `/ai/` | `/kael/` (hidden proxy alias) |
 
-Tag every image with the installer's `VERSION` (`v5.0.0-ce` in `static.env`) so compose picks it up.
+Tag every image with the installer's XPAM version (`XPAM_DEFAULT_VERSION=v5.0.0` in `static.env`) so compose picks it up.
 
 The Dockerfile-specific `*.dockerignore` files need BuildKit (default in current Docker).
 

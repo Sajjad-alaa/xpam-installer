@@ -15,7 +15,7 @@ These services run XPAM-built images. The Dockerfiles, nginx config, brand kit a
 | chen | `xpam/webconnector` | `/webconnector/` |
 | kael | `xpam/ai` | `/ai/` |
 
-Tags are `${XPAM_VERSION}` (defaults to `VERSION` from `static.env`). XPAM images are **never pulled from
+Tags are `${XPAM_VERSION}` (defaults to `XPAM_DEFAULT_VERSION` from `static.env`, `v5.0.0`). XPAM images are **never pulled from
 Docker Hub** (the `xpam` namespace there is not ours). Provide them in one of three ways:
 
 1. Build them on the host with `build/build-all.sh` (tags them `xpam/<name>:<version>`).

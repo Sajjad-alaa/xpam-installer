@@ -2,11 +2,11 @@
 # Build all XPAM images from the source repos.
 #   ./build-all.sh                 build everything
 #   ./build-all.sh core web        build only the named images
-# Environment: SRC (repos folder, default /opt), NS (default xpam), TAG (default v5.0.0-ce).
+# Environment: SRC (repos folder, default /opt), NS (default xpam), TAG (default v5.0.0).
 # Needs: docker with BuildKit, and for the web image node 24 with the repos' node_modules installed.
 set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-SRC=${SRC:-/opt}; NS=${NS:-xpam}; TAG=${TAG:-v5.0.0-ce}
+SRC=${SRC:-/opt}; NS=${NS:-xpam}; TAG=${TAG:-v5.0.0}
 CACHE="$HERE/.cache"; mkdir -p "$CACHE"
 GO_IMAGE=golang:1.26-trixie
 GHOSTTY=ghcr.io/jumpserver-dev/libghostty-vt@sha256:dffb0a53f73862da96df4fadd134dd60ac440a82eb8b9a852d9159b989c86c0c

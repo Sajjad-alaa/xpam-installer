@@ -55,7 +55,7 @@ function get_xpam_version() {
   local version
 
   version=$(get_config_or_env XPAM_VERSION)
-  echo "${version:-${VERSION}}"
+  echo "${version:-${XPAM_DEFAULT_VERSION:-v5.0.0}}"
 }
 
 # Registry (for example ghcr.io/<owner>) holding <registry>/<name>:<tag>. Without it, XPAM images

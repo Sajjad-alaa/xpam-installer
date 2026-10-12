@@ -1,6 +1,6 @@
 services:
   core:
-    image: ${XPAM_NAMESPACE:-xpam}/core:${XPAM_VERSION:-${VERSION}}
+    image: ${XPAM_NAMESPACE:-xpam}/core:${XPAM_VERSION:-${XPAM_DEFAULT_VERSION:-v5.0.0}}
     container_name: jms_core
     hostname: jms_core
     command: sleep

@@ -1,6 +1,6 @@
 services:
   web:
-    image: ${XPAM_NAMESPACE:-xpam}/web:${XPAM_VERSION:-${VERSION}}
+    image: ${XPAM_NAMESPACE:-xpam}/web:${XPAM_VERSION:-${XPAM_DEFAULT_VERSION:-v5.0.0}}
     container_name: jms_web
     hostname: jms_web
     ulimits:

@@ -1,6 +1,6 @@
 services:
   chen:
-    image: ${XPAM_NAMESPACE:-xpam}/webconnector:${XPAM_VERSION:-${VERSION}}
+    image: ${XPAM_NAMESPACE:-xpam}/webconnector:${XPAM_VERSION:-${XPAM_DEFAULT_VERSION:-v5.0.0}}
     container_name: jms_chen
     hostname: jms_chen
     ulimits:

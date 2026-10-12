@@ -12,7 +12,7 @@ cp "${TEST_ROOT}/config-example.txt" "${test_dir}/config.txt"
 
 manifest=$(get_offline_image_manifest)
 for image in core web secureconnection webconnector ai; do
-  assert_contains "${manifest}" "xpam/${image}:${VERSION}	xpam/${image}:${VERSION}	2" \
+  assert_contains "${manifest}" "xpam/${image}:${XPAM_DEFAULT_VERSION}	xpam/${image}:${XPAM_DEFAULT_VERSION}	2" \
     "XPAM image ${image} must be local-only by default"
 done
 for image in core web koko chen kael; do
@@ -20,7 +20,8 @@ for image in core web koko chen kael; do
     fail "upstream ${image} image must be replaced by its XPAM image"
   fi
 done
-assert_eq "xpam/ai:${VERSION}" "$(get_images | tr ' ' '\n' | grep '/ai:')" 'get_images must list the XPAM runtime tag'
+assert_eq "xpam/ai:${XPAM_DEFAULT_VERSION}" "$(get_images | tr ' ' '\n' | grep '/ai:')" 'get_images must list the XPAM runtime tag'
+assert_eq 'v5.0.0' "${XPAM_DEFAULT_VERSION}" 'XPAM images must not carry the upstream -ce suffix'
 printf 'PASS: XPAM services map to local-only XPAM images\n'
 
 printf '%s\n' 'XPAM_VERSION=v5.0.0-xpam1' 'XPAM_NAMESPACE=acme/' 'XPAM_IMAGE_REGISTRY=ghcr.io/owner/' >>"${test_dir}/config.txt"
@@ -64,7 +65,7 @@ rendered=$(
 ) || true
 if [[ -n "${rendered}" ]]; then
   for image in core web secureconnection webconnector ai; do
-    assert_contains "${rendered}" "xpam/${image}:v5.0.0-ce" "compose must default to the XPAM ${image} image"
+    assert_contains "${rendered}" "xpam/${image}:v5.0.0" "compose must default to the XPAM ${image} image"
   done
   printf 'PASS: compose files default to the XPAM images\n'
 fi

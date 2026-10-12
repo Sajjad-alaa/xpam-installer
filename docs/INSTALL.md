@@ -1,0 +1,158 @@
+# XPAM installation guide
+
+This guide installs XPAM on one Linux server, using the images published in the GitHub Container
+Registry. Plan about 20 minutes.
+
+## 1. What you need
+
+**Server**
+
+| | Minimum | Recommended |
+|---|---|---|
+| OS | 64-bit Linux with systemd (Rocky/Alma/RHEL 8+, Ubuntu 20.04+, Debian 11+) | same |
+| CPU / RAM | 4 cores, 8 GB | 8 cores, 16 GB |
+| Disk | 60 GB | 200 GB+ (session recordings grow) |
+| Access | root, or a user with sudo | |
+
+Use a clean server. The installer sets up Docker itself; you do not need to install it first.
+
+**Network**
+
+| Port | Direction | Purpose |
+|---|---|---|
+| 443 (and 80, which redirects to 443) | users → server | web UI, workspace, API |
+| 2222 | users → server | SSH/SFTP client access |
+| 5001 | users → server | website-asset proxy for the desktop client |
+| 22, 3389, database ports | server → your assets | the sessions XPAM opens |
+| 443 outbound | server → github.com, ghcr.io, download.docker.com | install only |
+
+**From GitHub**
+
+- A personal access token with the **`read:packages`** scope (Settings → Developer settings →
+  Tokens (classic)). It is used once on the server to download the private XPAM images.
+
+## 2. Install
+
+Run everything as root.
+
+```bash
+# 1. Get the installer
+cd /opt
+git clone -b xpam https://github.com/Sajjad-alaa/xpam-installer.git
+cd xpam-installer
+
+# 2. Create the configuration and point it at the XPAM images
+mkdir -p /opt/xpam/config
+cp config-example.txt /opt/xpam/config/config.txt
+echo "XPAM_IMAGE_REGISTRY=ghcr.io/sajjad-alaa/xpam" >> /opt/xpam/config/config.txt
+
+# 3. Install
+./xpamctl.sh install
+```
+
+The installer asks a few questions. Pressing Enter accepts the default, which is right for a
+standard single-server install:
+
+| Question | Default | Change it when |
+|---|---|---|
+| Data directory | `/data/xpam` | you have a larger disk mounted elsewhere. **It cannot be moved later.** |
+| Database | built-in PostgreSQL | you have your own PostgreSQL/MySQL server |
+| Redis | built-in | you have your own Redis |
+| External ports | 80 / 443 / 2222 | those ports are taken |
+
+**The first run stops at "Loading Docker Image"** with `pull failed`. That is expected: the images
+are private and the server is not logged in yet. Log in (paste the token when asked for the
+password), then run the install again; it continues where it stopped.
+
+```bash
+docker login ghcr.io -u Sajjad-alaa
+./xpamctl.sh install
+```
+
+Then start XPAM:
+
+```bash
+./xpamctl.sh start
+./xpamctl.sh status      # every service should show (healthy) within about two minutes
+```
+
+## 3. First login
+
+1. Open `https://<server-ip>/`. The browser warns about the certificate, because the server
+   starts with a self-signed one (see step 4).
+2. Sign in with **admin / ChangeMe**. You are forced to set a new password.
+3. A new server runs on the built-in trial license: 2 users, 1 asset, 1 month. Import your license
+   under System settings → License. Licenses are bound to the server, so one issued for another
+   server does not work here.
+
+## 4. Before real use
+
+- **Certificate.** Put your certificate and key in `/opt/xpam/config/nginx/cert/` as `server.crt`
+  and `server.key`, then `xpamctl restart`.
+- **Server name.** If people reach XPAM through a domain name or a different address than the
+  server's own IP, set `SERVER_NAME=pam.example.com` and `DOMAINS="pam.example.com:443"` in
+  `/opt/xpam/config/config.txt` (several entries are comma-separated), then `xpamctl restart`.
+  Without the right entry, logging in from that address fails with a CSRF error.
+- **Backups.** Schedule `xpamctl backup_db` (it writes to `/data/xpam/db_backup/`) and copy
+  `/opt/xpam/config/` somewhere safe. The config holds the secret keys; without them a database
+  backup cannot be read.
+- **Firewall.** Open only 443, 80, 2222 and 5001 to users.
+- **Desktop client.** Users download it from the "Download" link in the web UI.
+
+## 5. Everyday commands
+
+`xpamctl` works from any folder after installation.
+
+| Command | What it does |
+|---|---|
+| `xpamctl status` | show the services and their health |
+| `xpamctl start` / `stop` / `restart` | start, stop or restart everything |
+| `xpamctl tail core` | follow the log of one service (`core`, `web`, `koko`, `chen`, `kael`) |
+| `xpamctl backup_db` | back up the database |
+| `xpamctl restore_db <file>` | restore a backup |
+| `xpamctl upgrade` | upgrade to the version in this installer |
+| `xpamctl uninstall` | remove XPAM (asks before deleting data) |
+
+Where things are:
+
+| | Location |
+|---|---|
+| Configuration | `/opt/xpam/config/config.txt` |
+| Data, recordings, logs, backups | `/data/xpam/` |
+| Installer | `/opt/xpam-installer/` |
+| Containers | `xpam_core`, `xpam_celery`, `xpam_web`, `xpam_secureconnection`, `xpam_webconnector`, `xpam_ai`, `xpam_postgresql`, `xpam_redis` |
+
+## 6. Upgrading
+
+```bash
+cd /opt/xpam-installer
+git pull
+xpamctl upgrade
+```
+
+`upgrade` backs up the database, downloads the new images and migrates the database. When it asks
+whether to clean up old images, answer **n** if you build images on this server.
+
+## 7. Server without internet access
+
+On a machine that has the images (after `docker login` and a pull, or after a local build):
+
+```bash
+cd /opt/xpam-installer && bash scripts/0_prepare.sh     # saves images and Docker into scripts/
+```
+
+Copy the whole `xpam-installer` folder to the offline server and run `./xpamctl.sh install`
+there. Leave `XPAM_IMAGE_REGISTRY` unset; the installer loads the saved images instead of pulling.
+For the desktop client, copy the installers to `/data/xpam/web/download/` and set
+`CLIENT_DOWNLOAD_BASE_URL=/download/public` in `config.txt`.
+
+## 8. If something goes wrong
+
+| Symptom | Cause and fix |
+|---|---|
+| `pull failed` for `ghcr.io/...` | not logged in, or the token lacks `read:packages`: `docker login ghcr.io -u Sajjad-alaa`, then install again |
+| `XPAM image not found` | `XPAM_IMAGE_REGISTRY` is missing from `config.txt` and no local images exist |
+| A service stays `unhealthy` | `xpamctl tail <service>` shows why; `core` takes the longest on first start |
+| Login page loads, login is rejected with a CSRF error | the address you use is missing from `DOMAINS` in `config.txt`, or you are on plain `http://` |
+| 502 on `/secureconnection/`, `/webconnector/` or `/ai/` after restarting one service | `docker exec xpam_web nginx -s reload`, or `xpamctl restart` |
+| Port already in use | change `HTTP_PORT` / `HTTPS_PORT` / `KOKO_SSH_PORT` in `config.txt`, then `xpamctl restart` |

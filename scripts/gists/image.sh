@@ -338,6 +338,10 @@ function pull_image() {
   if [[ "$(check_image_exists "${full_image_path}")" != "1" || "${image_pull_policy}" == "Always" ]]; then
     if ! docker pull -q ${pull_args} "${full_image_path}"; then
       echo "[${image}] pull failed" >&2
+      if [[ "${full_image_path}" == ghcr.io/* ]]; then
+        echo "  Private XPAM images need a login first: docker login ghcr.io -u <github-user>" >&2
+        echo "  (token with read:packages), then run ./xpamctl.sh install again." >&2
+      fi
       return 1
     fi
   fi

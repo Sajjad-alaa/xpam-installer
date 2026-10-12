@@ -49,10 +49,10 @@
 
 ############################## Installation Configuration #############################
 #
-# JumpServer database persistence directory, by default, recordings, task logs are in this directory
+# XPAM database persistence directory, by default, recordings, task logs are in this directory
 # Please modify according to the actual situation, the database file (.sql) and configuration file backed up during the upgrade will also be saved to this directory
 #
-VOLUME_DIR=/data/jumpserver
+VOLUME_DIR=/data/xpam
 
 # Encryption key, please ensure that SECRET_KEY is consistent with the old environment when migrating, do not use special strings
 # (*) Warning: Keep this value secret.

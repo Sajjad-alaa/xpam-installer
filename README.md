@@ -2,6 +2,20 @@
 
 Installer for XPAM, based on the JumpServer v5.0.0 installer. Same commands (`./xpamctl.sh install|start|stop|restart|status|upgrade|...`).
 
+## Install
+
+```bash
+git clone -b xpam https://github.com/Sajjad-alaa/xpam-installer.git && cd xpam-installer
+mkdir -p /opt/xpam/config && cp config-example.txt /opt/xpam/config/config.txt
+echo "XPAM_IMAGE_REGISTRY=ghcr.io/sajjad-alaa/xpam" >> /opt/xpam/config/config.txt   # when pulling from a registry
+docker login ghcr.io -u <github-user>                                                # private images only
+./xpamctl.sh install && ./xpamctl.sh start
+```
+
+Configuration lives in `/opt/xpam/config`, data in `/data/xpam` (`VOLUME_DIR`). A server installed
+before the rename keeps using `/opt/jumpserver/config` and its existing `VOLUME_DIR`.
+`XPAM_CONFIG_DIR` overrides the configuration folder.
+
 ## XPAM images
 
 These services run XPAM-built images. The Dockerfiles, nginx config, brand kit and the

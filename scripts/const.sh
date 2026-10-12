@@ -13,7 +13,14 @@ fi
 export TEXTDOMAINDIR=$PROJECT_DIR/locale
 export TEXTDOMAIN=jumpserver-installer
 
-export CONFIG_DIR="${JS_CONFIG_DIR:-/opt/jumpserver/config}"
+# XPAM keeps its configuration in /opt/xpam/config. An installation made before the rename keeps
+# using /opt/jumpserver/config, so upgrades do not lose their settings.
+default_config_dir=/opt/xpam/config
+if [[ ! -f "${default_config_dir}/config.txt" && -f /opt/jumpserver/config/config.txt ]]; then
+  default_config_dir=/opt/jumpserver/config
+fi
+export CONFIG_DIR="${XPAM_CONFIG_DIR:-${JS_CONFIG_DIR:-${default_config_dir}}}"
+unset default_config_dir
 export CONFIG_FILE=$CONFIG_DIR/config.txt
 export CONFIG_SAFE_FILE=$CONFIG_DIR/config_safe.txt
 

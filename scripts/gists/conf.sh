@@ -287,10 +287,13 @@ function prepare_config() {
 }
 
 function ensure_core_data_symlink() {
-  local target_dir link_path="/opt/jumpserver/data" backup_base="/opt/jumpserver/data_bak" backup_path
+  local base_dir target_dir link_path backup_base backup_path
+  base_dir=$(dirname "${CONFIG_DIR}")
+  link_path="${base_dir}/data"
+  backup_base="${base_dir}/data_bak"
   target_dir="$(get_config VOLUME_DIR)/core/data"
 
-  mkdir -p "${target_dir}" "/opt/jumpserver" || return 1
+  mkdir -p "${target_dir}" "${base_dir}" || return 1
 
   if [[ -L "${link_path}" ]] && [[ "$(readlink -f "${link_path}")" == "$(readlink -f "${target_dir}")" ]]; then
     echo_check "${link_path} -> ${target_dir}"

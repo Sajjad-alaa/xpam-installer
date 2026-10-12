@@ -92,9 +92,9 @@ function jdmc_path_exists() {
 function get_jdmc_storage_root() {
   local volume_dir
 
-  volume_dir=$(get_config_or_env VOLUME_DIR /data/jumpserver)
+  volume_dir=$(get_config_or_env VOLUME_DIR /data/xpam)
   volume_dir="${volume_dir%/}"
-  [[ -n "${volume_dir}" ]] || volume_dir=/data/jumpserver
+  [[ -n "${volume_dir}" ]] || volume_dir=/data/xpam
   dirname "${volume_dir}"
 }
 
@@ -127,7 +127,7 @@ function retire_jdmc_ha_lifecycle() {
     log_error "Repair JDMC before uninstalling; refusing to remove an active or ambiguous HA node"
     return 1
   fi
-  volume_dir=$(get_config_or_env VOLUME_DIR /data/jumpserver)
+  volume_dir=$(get_config_or_env VOLUME_DIR /data/xpam)
   echo_yellow "\n>>> Safely retiring JDMC HA"
   JUMPSERVER_VOLUME_DIR="${volume_dir}" "${ha_cli}" uninstall
 }
@@ -187,7 +187,7 @@ function run_jdmc_package_action() {
   local image volume_dir
 
   image=$(get_jdmc_image)
-  volume_dir=$(get_config_or_env VOLUME_DIR /data/jumpserver)
+  volume_dir=$(get_config_or_env VOLUME_DIR /data/xpam)
   if ! docker image inspect "${image}" &>/dev/null; then
     log_error "JDMC artifact image not found: ${image}"
     return 1

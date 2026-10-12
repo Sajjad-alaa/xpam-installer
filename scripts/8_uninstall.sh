@@ -129,7 +129,7 @@ function remove_jumpserver() {
   echo
   echo_warn "$(gettext 'Make sure you have a backup of data, this operation is not reversible')! \n"
   images=$(get_images)
-  volume_dir=$(get_config_or_env VOLUME_DIR /data/jumpserver)
+  volume_dir=$(get_config_or_env VOLUME_DIR /data/xpam)
   jdmc_data_dir=$(get_current_jdmc_data_dir)
   kotl_data_dir=$(get_legacy_kotl_data_dir)
   confirm="n"

@@ -80,8 +80,15 @@ Then start XPAM:
 
 1. Open `https://<server-ip>/`. The browser warns about the certificate, because the server
    starts with a self-signed one (see step 4).
-2. Sign in with **admin / ChangeMe**. You are forced to set a new password.
-3. A new server runs on the built-in trial license: 2 users, 1 asset, 1 month. Import your license
+2. Sign in with **admin / ChangeMe**. You are forced to set a new password (administrators:
+   at least 14 characters with upper case, lower case and a number).
+3. Administrators must use multi-factor authentication. At the next sign-in XPAM shows a QR code:
+   scan it with an authenticator app (Google Authenticator, Microsoft Authenticator, Aegis, ...)
+   and enter the 6-digit code. Keep the phone: without it the administrator cannot sign in.
+   If it is lost, another administrator can reset it under Users, or run on the server
+   `docker exec xpam_core python /opt/jumpserver/apps/manage.py shell -c "from users.models import User; User.objects.filter(username='admin').update(otp_secret_key='')"`
+   (the administrator is then asked to scan a new QR code).
+4. A new server runs on the built-in trial license: 2 users, 1 asset, 1 month. Import your license
    under System settings → License. Licenses are bound to the server, so one issued for another
    server does not work here.
 
@@ -98,9 +105,12 @@ Then start XPAM:
   backup cannot be read.
 - **Firewall.** Open only 443, 80, 2222 and 5001 to users.
 - **Desktop client.** Users download it from the "Download" link in the web UI.
-- **Sign-in policy.** The defaults are permissive. Under System settings → Security, turn on
-  multi-factor authentication (at least for administrators) and raise the minimum password length
-  (12 or more; the default is 6).
+- **Sign-in policy.** XPAM starts stricter than upstream: multi-factor authentication is required
+  for administrators, passwords need 12 characters (14 for administrators) with upper case, lower
+  case and a number, an address is blocked for 30 minutes after 50 failed sign-ins, and a session
+  ends after 12 idle hours or when the browser is closed. Change any of this under
+  System settings → Security; consider requiring multi-factor authentication for everyone.
+  A value saved there wins over these defaults.
 - **Kubernetes assets.** The session service runs without host privileges. Kubernetes sessions
   in the web terminal need them: set `KOKO_PRIVILEGED=true` in `config.txt` and `xpamctl restart`
   only if you use that feature.
@@ -152,6 +162,11 @@ Where things are:
   worker. Upstream's separate "Docker execution environment" for Ansible is off, because it
   requires giving the worker control of the host's Docker.
 - Session and CSRF cookies are sent over HTTPS only.
+- The SSH service (port 2222) offers only SHA-2 based host key signatures and message
+  authentication codes. Very old SSH clients (OpenSSH before 7.2, PuTTY before 0.68) cannot connect.
+- `BOOTSTRAP_TOKEN` in `config.txt` is only used when a component registers for the first time.
+  To replace it, put a new random value in `config.txt` and run `xpamctl start`; components that
+  are already registered keep working.
 
 ## 6. Upgrading
 

@@ -8,3 +8,5 @@ apps/**/__pycache__
 **/*.lic
 **/vendor_keys
 **/generate_license.py
+**/.git
+**/.gitignore

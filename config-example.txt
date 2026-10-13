@@ -159,14 +159,14 @@ PERIOD_TASK_ENABLED=true
 # SESSION_COOKIE_AGE indicates how many seconds the session expires after idling,
 # SESSION_EXPIRE_AT_BROWSER_CLOSE=true means that the session expires as soon as the browser is closed
 #
-# SESSION_COOKIE_AGE=86400
+# SESSION_COOKIE_AGE=43200
 
 # Send the session and CSRF cookies over HTTPS only (HTTPS is enabled by default).
 # Set both to false only for a plain-HTTP test setup without HTTPS_PORT.
 #
 SESSION_COOKIE_SECURE=true
 CSRF_COOKIE_SECURE=true
-SESSION_EXPIRE_AT_BROWSER_CLOSE=false
+SESSION_EXPIRE_AT_BROWSER_CLOSE=true
 
 # Trusted DOMAINS definition,
 # Define the trusted access IP, please modify according to the actual situation, if it is a public IP, please change to the corresponding public IP,

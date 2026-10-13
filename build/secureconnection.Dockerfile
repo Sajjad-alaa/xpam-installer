@@ -12,4 +12,8 @@ RUN find /etc/apt -type f \( -name '*.sources' -o -name '*.list' \) -exec \
     && DEBIAN_FRONTEND=noninteractive apt-get -y --no-install-recommends upgrade \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 COPY koko /opt/koko/koko
+# Database command-line client rebuilt from the same source release with a current Go toolchain
+# and current golang.org/x libraries (see build-all.sh)
+COPY --chmod=755 usql /usr/local/bin/usql
+RUN usql --version
 HEALTHCHECK --interval=10s --timeout=5s --retries=3 CMD check http://localhost:5000/secureconnection/health/

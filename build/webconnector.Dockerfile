@@ -14,6 +14,8 @@ RUN find /etc/apt -type f \( -name '*.sources' -o -name '*.list' \) -exec \
 COPY --from=jar chen.jar /opt/chen/chen.jar
 RUN rm -f /opt/chen/drivers/postgresql/postgresql-*.jar
 COPY drivers/postgresql/ /opt/chen/drivers/postgresql/
+# Entrypoint that masks the registration token in the container log
+COPY --chmod=755 entrypoint.sh /opt/chen/entrypoint.sh
 COPY config/application.yml /tmp/xpam-application.yml
 RUN grep -q '^    context-path: /webconnector$' /tmp/xpam-application.yml \
     && sed -i 's#^    context-path: /chen$#    context-path: /webconnector#' /opt/chen/config/application.yml \

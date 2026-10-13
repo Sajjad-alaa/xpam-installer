@@ -12,6 +12,11 @@ CACHE="$HERE/.cache"; mkdir -p "$CACHE"
 GO_IMAGE=golang:1.26-trixie
 MAVEN_IMAGE=maven:3.9-eclipse-temurin-21
 GHOSTTY=ghcr.io/jumpserver-dev/libghostty-vt@sha256:dffb0a53f73862da96df4fadd134dd60ac440a82eb8b9a852d9159b989c86c0c
+# Database command-line client shipped in the secureconnection image: same source release as upstream
+# (jumpserver-dev/usql v0.1.13), rebuilt with the current Go toolchain and current golang.org/x libraries.
+USQL_REPO=https://github.com/jumpserver-dev/usql
+USQL_COMMIT=543902712680a21bc5ce939e94454f8736b399e6
+USQL_VERSION=0.1.13
 say() { printf '\n==> %s\n' "$*"; }
 
 build_core() {
@@ -50,9 +55,18 @@ build_secureconnection() {
     -v "$CACHE/sc-out:/out" -v "$CACHE/gocache:/root/.cache/go-build" -v "$CACHE/gomod:/go/pkg/mod" \
     -e CGO_ENABLED=1 -e GOFLAGS=-buildvcs=false -e PKG_CONFIG_PATH=/opt/libghostty-vt/share/pkgconfig "$GO_IMAGE" sh -ec '
       cp -r /ro /src && cd /src
-      go test ./pkg/httpd/ ./pkg/lion/... ./pkg/common/ ./pkg/config/ >/dev/null
+      go test ./pkg/httpd/ ./pkg/lion/... ./pkg/common/ ./pkg/config/ ./pkg/sshd/ >/dev/null
       KEY=$(head -c 100 /dev/urandom | base64 | tr -dc A-Za-z0-9 | head -c 32)
       go build -trimpath -ldflags "-X main.Version=v5.0.0-xpam -X github.com/jumpserver/koko/pkg/config.CipherKey=$KEY -w -s" -o /out/koko ./cmd/koko/'
+  say "secureconnection: database client"
+  [[ -d "$CACHE/usql-src/.git" ]] || git clone -q "$USQL_REPO" "$CACHE/usql-src"
+  git -C "$CACHE/usql-src" checkout -q "$USQL_COMMIT"
+  docker run --rm -v "$CACHE/usql-src:/ro:ro" -v "$CACHE/sc-out:/out" -v "$CACHE/gocache:/root/.cache/go-build" \
+    -v "$CACHE/gomod:/go/pkg/mod" -e CGO_ENABLED=0 -e GOFLAGS=-buildvcs=false -e USQL_VERSION="$USQL_VERSION" "$GO_IMAGE" sh -ec '
+      cp -r /ro /src && cd /src
+      go get golang.org/x/crypto@v0.58.0 golang.org/x/net@v0.61.0 golang.org/x/text@v0.43.0 golang.org/x/sys@v0.49.0 2>/dev/null
+      go mod tidy 2>/dev/null
+      go build -trimpath -ldflags "-X github.com/xo/usql/text.CommandVersion=$USQL_VERSION -w -s" -o /out/usql main.go run.go'
   say "secureconnection: image"
   docker build -q -f "$HERE/secureconnection.Dockerfile" -t "$NS/secureconnection:$TAG" "$CACHE/sc-out"
 }

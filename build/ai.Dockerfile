@@ -10,5 +10,10 @@ RUN find /etc/apt -type f \( -name '*.sources' -o -name '*.list' \) -exec \
     && apt-get update \
     && DEBIAN_FRONTEND=noninteractive apt-get -y --no-install-recommends upgrade \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
+# The assistant only needs the node runtime; the package managers are not used at run time
+# and carry their own vulnerable dependencies
+RUN rm -rf /usr/local/lib/node_modules/npm /usr/local/lib/node_modules/corepack /opt/yarn-v* \
+        /usr/local/bin/npm /usr/local/bin/npx /usr/local/bin/corepack /usr/local/bin/yarn /usr/local/bin/yarnpkg \
+    && node --version && codex --version
 COPY kael /opt/kael/kael
 HEALTHCHECK --interval=10s --timeout=5s --retries=3 CMD check http://localhost:8083/ai/health/ready

@@ -1,6 +1,7 @@
 *
 !default.conf
 !common.conf
+!core.conf
 !interface_security.conf
 !secureconnection.conf
 !webconnector.conf

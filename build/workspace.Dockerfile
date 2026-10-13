@@ -9,7 +9,7 @@ RUN rm -rf /opt/lina /opt/luna /opt/download /docker-entrypoint.d/* /etc/nginx/c
 COPY . /opt/workspace
 COPY --from=nginxconf workspace-static.conf /etc/nginx/conf.d/default.conf
 RUN nginx -t
-EXPOSE 8080
-HEALTHCHECK --interval=10s --timeout=5s --retries=3 CMD check http://localhost:8080/health
+EXPOSE 8090
+HEALTHCHECK --interval=10s --timeout=5s --retries=3 CMD check http://localhost:8090/health
 ENTRYPOINT ["nginx", "-g", "daemon off;"]
 CMD []

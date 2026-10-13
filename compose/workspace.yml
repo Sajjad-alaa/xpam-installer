@@ -10,7 +10,7 @@ services:
     environment:
       TZ: ${TZ:-Asia/Shanghai}
     healthcheck:
-      test: "check http://localhost:8080/health"
+      test: "check http://localhost:8090/health"
       interval: 10s
       timeout: 5s
       retries: 3

@@ -11,4 +11,4 @@ RUN rm -f /etc/nginx/includes/koko.conf* /etc/nginx/includes/chen.conf* /etc/ngi
     && sed -i 's#includes/koko\.conf#includes/secureconnection.conf#g; s#includes/chen\.conf#includes/webconnector.conf#g; s#includes/kael\.conf#includes/ai.conf#g' \
         /docker-entrypoint.d/40-init-config.sh \
     && ! grep -qE 'includes/(koko|chen|kael)\.conf' /docker-entrypoint.d/40-init-config.sh
-COPY common.conf interface_security.conf secureconnection.conf webconnector.conf ai.conf /etc/nginx/includes/
+COPY common.conf core.conf interface_security.conf secureconnection.conf webconnector.conf ai.conf /etc/nginx/includes/

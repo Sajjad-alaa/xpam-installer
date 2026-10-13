@@ -56,13 +56,17 @@ are in `nginx/`: `default.conf`, `common.conf`, `interface_security.conf`, `secu
 ```bash
 docker build -f /opt/xpam-build/gateway.Dockerfile -t xpam/gateway:<tag> /opt/xpam-build/nginx
 ```
-Routes to `web`, `workspace`, `koko`, `chen` and `kael` use a variable in `proxy_pass`, so nginx
+Routes to `core`, `web`, `workspace`, `koko`, `chen` and `kael` use a variable in `proxy_pass`, so nginx
 looks the address up per request (resolver in the base `nginx.conf`, cached 10 s). That is what
 lets the gateway start while a component is missing and find a recreated one without a reload.
 In a location with `rewrite ... break`, the `set` must come first.
+Every route must use this form. A fixed `proxy_pass http://name:port` is resolved once at start;
+when that service is recreated, its old address can be handed to another container, and the
+gateway would then send requests there. That happened once with core and the admin console.
+The static containers also refuse every path outside their own prefix for the same reason.
 
 ## web (admin console) — `xpam/web` and workspace (web terminal) — `xpam/workspace`
-Each is a plain nginx on port 8080 that serves one folder (`/opt/web` under `/web/`,
+Each is a plain nginx on port 8090 (used by no other XPAM service) that serves one folder (`/opt/web` under `/web/`,
 `/opt/workspace` under `/workspace/`) with the single-page-app fallback, plus `/health`.
 No ports are published. Config: `nginx/web-static.conf`, `nginx/workspace-static.conf`.
 ```bash

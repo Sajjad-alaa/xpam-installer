@@ -294,7 +294,7 @@ function get_image_full_path() {
 
 function pull_image() {
   local image=$1 requested_target=${2:-} exact_source=${3:-0}
-  local full_image_path pull_args to_image image_pull_policy namespace
+  local full_image_path pull_args to_image image_pull_policy namespace xpam_registry
 
   if [[ "${exact_source}" == "2" ]]; then
     if [[ "$(check_image_exists "${image}")" == "1" ]]; then
@@ -336,6 +336,12 @@ function pull_image() {
   if [[ -z "${requested_target}" && "${to_image}" == jumpserver/* ]]; then
     namespace=$(get_image_namespace)
     to_image="${namespace}/${to_image#jumpserver/}"
+  fi
+  # XPAM images keep the same tag across rebuilds, so a copy that is already on the server may be
+  # an older build: always ask the registry (a pull of an up-to-date image downloads nothing).
+  xpam_registry=$(get_xpam_image_registry)
+  if [[ -n "${xpam_registry}" && "${full_image_path}" == "${xpam_registry}/"* ]]; then
+    image_pull_policy=Always
   fi
   if [[ "$(check_image_exists "${full_image_path}")" != "1" || "${image_pull_policy}" == "Always" ]]; then
     if ! docker pull -q ${pull_args} "${full_image_path}"; then

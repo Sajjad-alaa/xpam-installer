@@ -69,3 +69,28 @@ if [[ -n "${rendered}" ]]; then
   done
   printf 'PASS: compose files default to the XPAM images\n'
 fi
+
+# XPAM images keep one tag across rebuilds: a copy already on the server must still be refreshed
+docker() {
+  printf '%s\n' "$*" >>"${docker_calls}"
+  case "$1 ${2:-}" in
+    'image inspect') return 0 ;;
+    pull\ *|tag\ *) return 0 ;;
+    *) fail "Unexpected Docker command: $*" ;;
+  esac
+}
+export BUILD_ARCH=${BUILD_ARCH:-x86_64}
+: >"${docker_calls}"
+pull_image 'ghcr.io/owner/core:test' 'acme/core:test' 1 >"${test_dir}/pull.log" 2>&1 || { cat "${test_dir}/pull.log"; fail "refresh pull failed"; }
+if ! grep -q '^pull .*ghcr.io/owner/core:test' "${docker_calls}"; then
+  fail 'an XPAM registry image that is already present must be pulled again'
+fi
+if ! grep -q '^tag ghcr.io/owner/core:test acme/core:test' "${docker_calls}"; then
+  fail 'the refreshed XPAM image must be tagged with its runtime name'
+fi
+: >"${docker_calls}"
+pull_image 'docker.io/library/redis:test' 'redis:test' 1 >"${test_dir}/pull.log" 2>&1
+if grep -q '^pull' "${docker_calls}"; then
+  fail 'third-party images that are already present must not be pulled again'
+fi
+printf 'PASS: XPAM registry images are refreshed even when a copy is already present\n'

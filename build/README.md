@@ -8,7 +8,7 @@ every build host starts from the same bytes.
 
 ## Build everything
 ```bash
-./build-all.sh                      # all five images, tagged xpam/<name>:v5.0.0
+./build-all.sh                      # all seven images, tagged xpam/<name>:v5.0.0
 ./build-all.sh core web             # only some
 TAG=v5.0.1 NS=xpam SRC=/opt ./build-all.sh
 ```
@@ -28,9 +28,10 @@ the license code.
 
 | Component | Image | Public path | Legacy path |
 |---|---|---|---|
+| gateway | `xpam/gateway` | front door for every path below | — |
 | core | `xpam/core` | `/core/`, `/api/` | — |
 | web | `xpam/web` | `/web/` | `/ui/` (301) |
-| workspace | inside `xpam/web` | `/workspace/` (`terminal/`, `desktop/` pages) | `/luna/` (301), `/workspace/koko/`, `/workspace/lion/` (301) |
+| workspace | `xpam/workspace` | `/workspace/` (`terminal/`, `desktop/` pages) | `/luna/` (301), `/workspace/koko/`, `/workspace/lion/` (301) |
 | secureconnection (koko) | `xpam/secureconnection` | `/secureconnection/`, `/secureconnection/desktop/` | `/koko/`, `/koko/lion/` (hidden proxy alias) |
 | webconnector (chen) | `xpam/webconnector` | `/webconnector/` | `/chen/` (hidden proxy alias) |
 | ai (kael) | `xpam/ai` | `/ai/` | `/kael/` (hidden proxy alias) |
@@ -45,24 +46,36 @@ docker build -f /opt/xpam-build/core.Dockerfile -t xpam/core:<tag> /opt/xpam-cor
 ```
 Copies `apps/` (including `apps/xpack`) and upgrades the Python packages listed in the Dockerfile.
 
-## web (admin UI + workspace + nginx) — `xpam/web`
-Public paths: `/web/` (admin UI, served from `/opt/web`) and `/workspace/` (web terminal, served
-from `/opt/workspace`). The old `/ui/` and `/luna/` paths return 301 redirects to the new ones.
-All nginx files baked into the image live in `nginx/` (`default.conf`, `common.conf`,
-`interface_security.conf`, `secureconnection.conf`, `webconnector.conf`, `ai.conf`). The image's
-init script toggles the last three with `KOKO_ENABLED`, `CHEN_ENABLED` and `KAEL_ENABLED`.
-Build the frontends first:
+## gateway (front door) — `xpam/gateway`
+The official JumpServer web image (nginx, TLS and its startup script) without application files.
+It publishes ports 80/443 and routes: `/web/` and `/workspace/` to their containers, the service
+paths to the services, and it serves `/static/`, `/media/` and `/download/` itself. Its nginx files
+are in `nginx/`: `default.conf`, `common.conf`, `interface_security.conf`, `secureconnection.conf`,
+`webconnector.conf`, `ai.conf`. The startup script toggles the last three with `KOKO_ENABLED`,
+`CHEN_ENABLED` and `KAEL_ENABLED`.
+```bash
+docker build -f /opt/xpam-build/gateway.Dockerfile -t xpam/gateway:<tag> /opt/xpam-build/nginx
+```
+Routes to `web`, `workspace`, `koko`, `chen` and `kael` use a variable in `proxy_pass`, so nginx
+looks the address up per request (resolver in the base `nginx.conf`, cached 10 s). That is what
+lets the gateway start while a component is missing and find a recreated one without a reload.
+In a location with `rewrite ... break`, the `set` must come first.
+
+## web (admin console) — `xpam/web` and workspace (web terminal) — `xpam/workspace`
+Each is a plain nginx on port 8080 that serves one folder (`/opt/web` under `/web/`,
+`/opt/workspace` under `/workspace/`) with the single-page-app fallback, plus `/health`.
+No ports are published. Config: `nginx/web-static.conf`, `nginx/workspace-static.conf`.
 ```bash
 cd /opt/xpam-web && node_modules/.bin/vite build --mode production
-cd /opt/xpam-workspace && HUSKY=0 ./node_modules/.bin/nuxt generate
-```
-Then:
-```bash
-docker build -f /opt/xpam-build/web.Dockerfile \
-  --build-context workspace=/opt/xpam-workspace/.output/public \
-  --build-context nginxconf=/opt/xpam-build/nginx \
+docker build -f /opt/xpam-build/web.Dockerfile --build-context nginxconf=/opt/xpam-build/nginx \
   -t xpam/web:<tag> /opt/xpam-web
+
+cd /opt/xpam-workspace && HUSKY=0 ./node_modules/.bin/nuxt generate
+docker build -f /opt/xpam-build/workspace.Dockerfile --build-context nginxconf=/opt/xpam-build/nginx \
+  -t xpam/workspace:<tag> /opt/xpam-workspace/.output/public
 ```
+The desktop client does not use `xpam/workspace`: it carries its own copy of the workspace UI and
+talks to the gateway for the API and sessions.
 
 ## secureconnection (koko: SSH/RDP gateway with native RemoteApp) — `xpam/secureconnection`
 koko links the native library libghostty-vt (pinned image
@@ -103,12 +116,9 @@ docker build -f /opt/xpam-build/ai.Dockerfile -t xpam/ai:<tag> ./ai-out
 ```
 
 ## Deploy
-The installer compose files use `${NAMESPACE:-xpam}` for core, celery, koko, web and init-db
-(`web.yml` no longer bind-mounts the host's `/opt/luna`). Tag the images with your `VERSION`, then
-recreate the services. nginx resolves upstreams such as `chen` at start, so test the web image on
-the compose network rather than with `nginx -t` during the build.
-
-nginx resolves the service names once at start, so **after recreating koko, chen or kael on their
-own, reload the web container** (`docker exec xpam_web nginx -s reload`) or nginx keeps the old
-container IP and returns 502. `xpamctl restart` restarts everything and is not affected.
-Keep about 5 GB free disk before building: a full koko compile needs ~3 GB of cache.
+The installer compose files (`compose/gateway.yml`, `web.yml`, `workspace.yml`, `core.yml`, ...) use
+`${XPAM_NAMESPACE:-xpam}/<name>:<XPAM version>`. Build or pull the images, then `xpamctl start`.
+To roll out a new admin console or workspace build, rebuild that image and
+`xpamctl raw up -d web` (or `workspace`); the gateway and running sessions are not touched.
+Test gateway changes on the compose network: `nginx -t` during the build cannot resolve `core`.
+Keep about 5 GB free disk before building: a full secureconnection compile needs ~3 GB of cache.

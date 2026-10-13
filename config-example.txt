@@ -23,7 +23,7 @@
 #
 # NAMESPACE=jumpserver
 
-# XPAM images. core, web, secureconnection (koko), webconnector (chen) and ai
+# XPAM images. gateway, core, web, workspace, secureconnection (koko), webconnector (chen) and ai
 # (kael) run XPAM-built images named ${XPAM_NAMESPACE}/<name>:${XPAM_VERSION}.
 # XPAM_VERSION defaults to XPAM_DEFAULT_VERSION from static.env (v5.0.0). They are never pulled from Docker Hub: build
 # them (xpam-build), ship them in the offline package, or set XPAM_IMAGE_REGISTRY

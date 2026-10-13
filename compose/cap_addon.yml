@@ -1,5 +1,5 @@
 services:
-  web:
+  gateway:
     security_opt:
       - apparmor=unconfined
     cap_add:

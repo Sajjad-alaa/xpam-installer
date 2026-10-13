@@ -107,7 +107,7 @@ Then start XPAM:
 |---|---|
 | `xpamctl status` | show the services and their health |
 | `xpamctl start` / `stop` / `restart` | start, stop or restart everything |
-| `xpamctl tail core` | follow the log of one service (`core`, `web`, `koko`, `chen`, `kael`) |
+| `xpamctl tail core` | follow the log of one service (`core`, `gateway`, `web`, `workspace`, `koko`, `chen`, `kael`) |
 | `xpamctl backup_db` | back up the database |
 | `xpamctl restore_db <file>` | restore a backup |
 | `xpamctl upgrade` | upgrade to the version in this installer |
@@ -120,7 +120,20 @@ Where things are:
 | Configuration | `/opt/xpam/config/config.txt` |
 | Data, recordings, logs, backups | `/data/xpam/` |
 | Installer | `/opt/xpam-installer/` |
-| Containers | `xpam_core`, `xpam_celery`, `xpam_web`, `xpam_secureconnection`, `xpam_webconnector`, `xpam_ai`, `xpam_postgresql`, `xpam_redis` |
+| Containers | `xpam_gateway`, `xpam_core`, `xpam_celery`, `xpam_web`, `xpam_workspace`, `xpam_secureconnection`, `xpam_webconnector`, `xpam_ai`, `xpam_postgresql`, `xpam_redis` |
+
+### What each container does
+
+| Container | Role | If it stops |
+|---|---|---|
+| `xpam_gateway` | the front door: ports 80/443, certificate, routing | nothing is reachable |
+| `xpam_core`, `xpam_celery` | application, API, background jobs | logins and new sessions fail |
+| `xpam_postgresql`, `xpam_redis` | database and cache | everything stops |
+| `xpam_secureconnection` | SSH, RDP, SFTP and Kubernetes sessions | those sessions drop; the UI keeps working |
+| `xpam_web` | admin console pages | only the admin console is unavailable |
+| `xpam_workspace` | workspace pages in the browser | only the browser workspace is unavailable; the desktop client keeps working |
+| `xpam_webconnector` | database sessions in the browser | only those sessions are unavailable |
+| `xpam_ai` | AI assistant | only the assistant is unavailable |
 
 ## 6. Upgrading
 
@@ -154,5 +167,5 @@ For the desktop client, copy the installers to `/data/xpam/web/download/` and se
 | `XPAM image not found` | `XPAM_IMAGE_REGISTRY` is missing from `config.txt` and no local images exist |
 | A service stays `unhealthy` | `xpamctl tail <service>` shows why; `core` takes the longest on first start |
 | Login page loads, login is rejected with a CSRF error | the address you use is missing from `DOMAINS` in `config.txt`, or you are on plain `http://` |
-| 502 on `/secureconnection/`, `/webconnector/` or `/ai/` after restarting one service | `docker exec xpam_web nginx -s reload`, or `xpamctl restart` |
+| "This part of XPAM is temporarily unavailable" | the container behind that path is stopped or restarting: `xpamctl status`, then `xpamctl start`. It answers again about ten seconds after the container is healthy |
 | Port already in use | change `HTTP_PORT` / `HTTPS_PORT` / `KOKO_SSH_PORT` in `config.txt`, then `xpamctl restart` |

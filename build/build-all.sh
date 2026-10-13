@@ -2,8 +2,9 @@
 # Build all XPAM images from the source repos.
 #   ./build-all.sh                 build everything
 #   ./build-all.sh core web        build only the named images
+# Images: core gateway web workspace secureconnection webconnector ai
 # Environment: SRC (repos folder, default /opt), NS (default xpam), TAG (default v5.0.0).
-# Needs: docker with BuildKit, and for the web image node 24 with the repos' node_modules installed.
+# Needs: docker with BuildKit, and for the web and workspace images node 24 with the repos' node_modules installed.
 set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SRC=${SRC:-/opt}; NS=${NS:-xpam}; TAG=${TAG:-v5.0.0}
@@ -17,15 +18,25 @@ build_core() {
   docker build -q -f "$HERE/core.Dockerfile" -t "$NS/core:$TAG" "$SRC/xpam-core"
 }
 
+build_gateway() {
+  say "gateway"
+  docker build -q -f "$HERE/gateway.Dockerfile" -t "$NS/gateway:$TAG" "$HERE/nginx"
+}
+
 build_web() {
-  say "web: admin UI"
+  say "web: admin console"
   (cd "$SRC/xpam-web" && node_modules/.bin/vite build --mode production >/dev/null)
-  say "web: workspace"
-  (cd "$SRC/xpam-workspace" && HUSKY=0 ./node_modules/.bin/nuxt generate >/dev/null 2>&1)
   say "web: image"
-  docker build -q -f "$HERE/web.Dockerfile" \
-    --build-context workspace="$SRC/xpam-workspace/.output/public" \
-    --build-context nginxconf="$HERE/nginx" -t "$NS/web:$TAG" "$SRC/xpam-web"
+  docker build -q -f "$HERE/web.Dockerfile" --build-context nginxconf="$HERE/nginx" \
+    -t "$NS/web:$TAG" "$SRC/xpam-web"
+}
+
+build_workspace() {
+  say "workspace: web terminal"
+  (cd "$SRC/xpam-workspace" && HUSKY=0 ./node_modules/.bin/nuxt generate >/dev/null 2>&1)
+  say "workspace: image"
+  docker build -q -f "$HERE/workspace.Dockerfile" --build-context nginxconf="$HERE/nginx" \
+    -t "$NS/workspace:$TAG" "$SRC/xpam-workspace/.output/public"
 }
 
 build_secureconnection() {
@@ -62,7 +73,7 @@ build_ai() {
   docker build -q -f "$HERE/ai.Dockerfile" -t "$NS/ai:$TAG" "$CACHE/ai-out"
 }
 
-targets=("$@"); [[ ${#targets[@]} -gt 0 ]] || targets=(core web secureconnection webconnector ai)
+targets=("$@"); [[ ${#targets[@]} -gt 0 ]] || targets=(core gateway web workspace secureconnection webconnector ai)
 for t in "${targets[@]}"; do "build_$t"; done
 say "done"
-docker images --format '{{.Repository}}:{{.Tag}}  {{.ID}}  {{.CreatedSince}}' | grep -E "^$NS/(core|web|secureconnection|webconnector|ai):$TAG " | sort
+docker images --format '{{.Repository}}:{{.Tag}}  {{.ID}}  {{.CreatedSince}}' | grep -E "^$NS/(core|gateway|web|workspace|secureconnection|webconnector|ai):$TAG " | sort

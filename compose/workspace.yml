@@ -1,0 +1,19 @@
+services:
+  # Workspace (web terminal): static files only. The gateway forwards /workspace/ here; nothing else depends on it.
+  workspace:
+    image: ${XPAM_NAMESPACE:-xpam}/workspace:${XPAM_VERSION:-${XPAM_DEFAULT_VERSION:-v5.0.0}}
+    container_name: xpam_workspace
+    hostname: xpam_workspace
+    ulimits:
+      core: 0
+    restart: always
+    environment:
+      TZ: ${TZ:-Asia/Shanghai}
+    healthcheck:
+      test: "check http://localhost:8080/health"
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    networks:
+      - net

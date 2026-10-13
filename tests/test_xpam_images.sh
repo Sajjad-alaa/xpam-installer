@@ -11,7 +11,7 @@ cp "${TEST_ROOT}/config-example.txt" "${test_dir}/config.txt"
 . "${TEST_ROOT}/scripts/utils.sh"
 
 manifest=$(get_offline_image_manifest)
-for image in core web secureconnection webconnector ai; do
+for image in core gateway web workspace secureconnection webconnector ai; do
   assert_contains "${manifest}" "xpam/${image}:${XPAM_DEFAULT_VERSION}	xpam/${image}:${XPAM_DEFAULT_VERSION}	2" \
     "XPAM image ${image} must be local-only by default"
 done
@@ -61,10 +61,10 @@ printf 'PASS: missing XPAM images fail without contacting Docker Hub\n'
 rendered=$(
   cd "${TEST_ROOT}"
   VERSION=v5.0.0-ce command docker compose -f compose/core.yml -f compose/koko.yml -f compose/chen.yml \
-    -f compose/kael.yml -f compose/web.yml -f compose/network.yml config --images 2>/dev/null | sort -u
+    -f compose/kael.yml -f compose/gateway.yml -f compose/web.yml -f compose/workspace.yml -f compose/network.yml config --images 2>/dev/null | sort -u
 ) || true
 if [[ -n "${rendered}" ]]; then
-  for image in core web secureconnection webconnector ai; do
+  for image in core gateway web workspace secureconnection webconnector ai; do
     assert_contains "${rendered}" "xpam/${image}:v5.0.0" "compose must default to the XPAM ${image} image"
   done
   printf 'PASS: compose files default to the XPAM images\n'

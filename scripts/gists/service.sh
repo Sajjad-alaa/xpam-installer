@@ -1,5 +1,5 @@
 
-common_services=(core kael celery koko chen web)
+common_services=(core kael celery koko chen gateway web workspace)
 xpack_services=(magnus razor xrdp video-worker nec)
 
 
@@ -165,11 +165,11 @@ function get_docker_compose_cmd_line() {
   fi
 
   if [[ -n "${https_port}" && "${https_port}" != "0" ]]; then
-    cmd+=" -f compose/web.https.yml"
+    cmd+=" -f compose/gateway.https.yml"
   fi
 
   if [[ -n "${http_port}" && "${http_port}" != "0" ]]; then
-    cmd+=" -f compose/web.http.yml"
+    cmd+=" -f compose/gateway.http.yml"
   fi
 
   if [[ "${cap_addon}" == "1" ]]; then
@@ -275,6 +275,18 @@ function retire_legacy_project() {
   if [[ -n "${network_ids}" ]]; then
     # shellcheck disable=SC2086
     docker network rm ${network_ids} >/dev/null || return 1
+  fi
+}
+
+# XPAM: before the gateway split, xpam_web was also the front door and published the HTTP/HTTPS
+# ports. Remove that container once, so xpam_gateway can take the ports over.
+function retire_combined_web() {
+  local published
+
+  published=$(docker inspect -f '{{len .HostConfig.PortBindings}}' xpam_web 2>/dev/null) || return 0
+  if [[ -n "${published}" && "${published}" != "0" ]]; then
+    echo "Replacing the combined xpam_web container with xpam_gateway, xpam_web and xpam_workspace"
+    docker rm -f xpam_web >/dev/null || return 1
   fi
 }
 

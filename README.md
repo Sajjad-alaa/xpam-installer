@@ -23,13 +23,15 @@ before the rename keeps using `/opt/jumpserver/config` and its existing `VOLUME_
 These services run XPAM-built images. The Dockerfiles, nginx config, brand kit and the
 `build-all.sh` script that builds them are in [`build/`](build/README.md):
 
-| Service | Image | Public path |
-|---|---|---|
-| core, celery, init-db | `xpam/core` | `/core/`, `/api/` |
-| web (admin UI + workspace + nginx) | `xpam/web` | `/web/`, `/workspace/` |
-| koko | `xpam/secureconnection` | `/secureconnection/` |
-| chen | `xpam/webconnector` | `/webconnector/` |
-| kael | `xpam/ai` | `/ai/` |
+| Service | Container | Image | Public path |
+|---|---|---|---|
+| gateway (front door: ports, TLS, routing) | `xpam_gateway` | `xpam/gateway` | everything enters here |
+| core, celery, init-db | `xpam_core`, `xpam_celery` | `xpam/core` | `/core/`, `/api/` |
+| web (admin console) | `xpam_web` | `xpam/web` | `/web/` |
+| workspace (web terminal) | `xpam_workspace` | `xpam/workspace` | `/workspace/` |
+| koko | `xpam_secureconnection` | `xpam/secureconnection` | `/secureconnection/` |
+| chen | `xpam_webconnector` | `xpam/webconnector` | `/webconnector/` |
+| kael | `xpam_ai` | `xpam/ai` | `/ai/` |
 
 Tags are `${XPAM_VERSION}` (defaults to `XPAM_DEFAULT_VERSION` from `static.env`, `v5.0.0`). XPAM images are **never pulled from
 Docker Hub** (the `xpam` namespace there is not ours). Provide them in one of three ways:
@@ -44,8 +46,10 @@ Docker Hub** (the `xpam` namespace there is not ours). Provide them in one of th
 Settings in `config.txt`: `XPAM_NAMESPACE` (default `xpam`), `XPAM_VERSION`, `XPAM_IMAGE_REGISTRY`.
 Other services (magnus, razor, xrdp, video-worker, nec, panda) keep the upstream JumpServer images.
 
-After recreating koko, chen or kael on their own, reload nginx in the web container
-(`docker exec xpam_web nginx -s reload`); a full `./xpamctl.sh restart` does not need this.
+The admin console, the workspace and each service run in their own container. Stopping or
+replacing one of them does not affect the others: the gateway answers that path with a short
+"temporarily unavailable" page and picks the container up again within about ten seconds of its
+return, without a reload. Only the gateway itself, core and the database are needed by everything.
 
 ---
 

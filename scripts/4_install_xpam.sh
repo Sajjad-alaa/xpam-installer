@@ -90,7 +90,7 @@ function post_install() {
   echo_yellow "\n2. First sign-in"
   echo "  User: admin    Password: ChangeMe"
   echo "  You are asked to choose a new password (at least 14 characters with upper case,"
-  echo "  lower case and a number) and to register an authenticator app for the second factor."
+  echo "  lower case and a number)."
 
   echo_yellow "\n3. Everyday commands (from any folder)"
   echo "  xpamctl status      xpamctl start       xpamctl stop      xpamctl restart"

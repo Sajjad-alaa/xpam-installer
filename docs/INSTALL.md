@@ -81,13 +81,7 @@ the environment as `XPAM_REGISTRY_USER` and `XPAM_REGISTRY_TOKEN`. XPAM does not
    starts with a self-signed one (see step 4).
 2. Sign in with **admin / ChangeMe**. You are forced to set a new password (administrators:
    at least 14 characters with upper case, lower case and a number).
-3. Administrators must use multi-factor authentication. At the next sign-in XPAM shows a QR code:
-   scan it with an authenticator app (Google Authenticator, Microsoft Authenticator, Aegis, ...)
-   and enter the 6-digit code. Keep the phone: without it the administrator cannot sign in.
-   If it is lost, another administrator can reset it under Users, or run on the server
-   `docker exec xpam_core python /opt/jumpserver/apps/manage.py shell -c "from users.models import User; User.objects.filter(username='admin').update(otp_secret_key='')"`
-   (the administrator is then asked to scan a new QR code).
-4. A new server runs on the built-in trial license: 2 users, 1 asset, 1 month. Import your license
+3. A new server runs on the built-in trial license: 2 users, 1 asset, 1 month. Import your license
    under System settings → License. Licenses are bound to the server, so one issued for another
    server does not work here.
 
@@ -108,12 +102,12 @@ the environment as `XPAM_REGISTRY_USER` and `XPAM_REGISTRY_TOKEN`. XPAM does not
   backup cannot be read.
 - **Firewall.** Open only 443, 80, 2222 and 5001 to users.
 - **Desktop client.** Users download it from the "Download" link in the web UI.
-- **Sign-in policy.** XPAM starts stricter than upstream: multi-factor authentication is required
-  for administrators, passwords need 12 characters (14 for administrators) with upper case, lower
+- **Sign-in policy.** Passwords need 12 characters (14 for administrators) with upper case, lower
   case and a number, an address is blocked for 30 minutes after 50 failed sign-ins, and a session
-  ends after 12 idle hours or when the browser is closed. Change any of this under
-  System settings → Security; consider requiring multi-factor authentication for everyone.
-  A value saved there wins over these defaults.
+  ends after 12 idle hours or when the browser is closed. Multi-factor authentication is **off**
+  on a new server: switch it on under System settings → Security (for administrators or for
+  everyone); each user is then asked to scan a QR code with an authenticator app at the next
+  sign-in. A value saved there wins over the defaults.
 - **Name, logo and help links.** A new server is called XPAM and uses the XPAM logo and colours.
   Change the name, logo and theme under System settings → Interface, and the "Documentation" and
   "Support" links of the help menu under System settings → Basic.

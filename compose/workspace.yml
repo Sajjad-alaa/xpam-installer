@@ -7,6 +7,21 @@ services:
     ulimits:
       core: 0
     restart: always
+    # Static files only: no writable root file system, no extra privileges
+    read_only: true
+    tmpfs:
+      - /var/cache/nginx
+      - /var/log/nginx
+      - /var/run
+      - /tmp
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - SETGID
+      - SETUID
+    security_opt:
+      - no-new-privileges:true
     environment:
       TZ: ${TZ:-Asia/Shanghai}
     healthcheck:

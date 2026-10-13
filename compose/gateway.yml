@@ -10,6 +10,8 @@ services:
         soft: -1
         hard: -1
     restart: always
+    security_opt:
+      - no-new-privileges:true
     environment:
       TZ: ${TZ:-Asia/Shanghai}
       HTTP_PORT: 80

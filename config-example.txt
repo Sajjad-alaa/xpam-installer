@@ -183,7 +183,9 @@ DOMAINS=
 # CHEN_ENABLED=0
 # WEB_ENABLED=0
 # VIDEO_WORKER_ENABLED=0
-# CELERY_PRIVILEGED=false
+# Containers no longer run with full host privileges by default. Turn it back on only if needed:
+# KOKO_PRIVILEGED=true      # required for Kubernetes sessions in the web terminal
+# WORKER_PRIVILEGED=true
 
 # VIDEO_WORKER_ENABLED only controls the local container. To send recordings
 # from KoKo to a worker, set ENABLE_VIDEO_WORKER=true. For the local container,

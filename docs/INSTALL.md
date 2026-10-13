@@ -98,6 +98,12 @@ Then start XPAM:
   backup cannot be read.
 - **Firewall.** Open only 443, 80, 2222 and 5001 to users.
 - **Desktop client.** Users download it from the "Download" link in the web UI.
+- **Sign-in policy.** The defaults are permissive. Under System settings → Security, turn on
+  multi-factor authentication (at least for administrators) and raise the minimum password length
+  (12 or more; the default is 6).
+- **Kubernetes assets.** The session service runs without host privileges. Kubernetes sessions
+  in the web terminal need them: set `KOKO_PRIVILEGED=true` in `config.txt` and `xpamctl restart`
+  only if you use that feature.
 
 ## 5. Everyday commands
 
@@ -135,6 +141,17 @@ Where things are:
 | `xpam_workspace` | workspace pages in the browser | only the browser workspace is unavailable; the desktop client keeps working |
 | `xpam_webconnector` | database sessions in the browser | only those sessions are unavailable |
 | `xpam_ai` | AI assistant | only the assistant is unavailable |
+
+### Security defaults
+
+- HTTPS only: port 80 redirects to 443, and browsers are told to keep using HTTPS (HSTS, one year).
+  Use a host name with a real certificate; the built-in certificate is self-signed.
+- No container runs with full host privileges, and none has access to the Docker socket.
+- The admin console and workspace containers have a read-only file system and no extra capabilities.
+- Automation jobs (connectivity tests, account verification, password changes) run inside the
+  worker. Upstream's separate "Docker execution environment" for Ansible is off, because it
+  requires giving the worker control of the host's Docker.
+- Session and CSRF cookies are sent over HTTPS only.
 
 ## 6. Upgrading
 

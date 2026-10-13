@@ -40,6 +40,12 @@ Tag every image with the installer's XPAM version (`XPAM_DEFAULT_VERSION=v5.0.0`
 
 The Dockerfile-specific `*.dockerignore` files need BuildKit (default in current Docker).
 
+Every image installs the current Debian security updates on top of the pinned upstream image
+(`apt-get upgrade`). The upstream images point apt at a mirror that only answers inside Alibaba
+Cloud, so the Dockerfiles switch it to `deb.debian.org` first. Rebuild and republish the images
+regularly to pick up new OS fixes; `build-all.sh` uses the current `golang:1.26-trixie` toolchain
+for the Go services, so `docker pull golang:1.26-trixie` before a release build.
+
 ## core (Django) — `xpam/core`
 ```bash
 docker build -f /opt/xpam-build/core.Dockerfile -t xpam/core:<tag> /opt/xpam-core

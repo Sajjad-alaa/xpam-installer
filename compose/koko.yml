@@ -6,7 +6,9 @@ services:
     ulimits:
       core: 0
     restart: always
-    privileged: ${KOKO_PRIVILEGED:-true}
+    # Full host privileges are only needed for Kubernetes sessions (kubectl is isolated with
+    # "unshare"). Off by default; set KOKO_PRIVILEGED=true in config.txt if you use them.
+    privileged: ${KOKO_PRIVILEGED:-false}
     env_file:
       - ${CONFIG_SAFE_FILE}
     environment:

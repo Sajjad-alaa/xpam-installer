@@ -159,7 +159,15 @@ there. Leave `XPAM_IMAGE_REGISTRY` unset; the installer loads the saved images i
 For the desktop client, copy the installers to `/data/xpam/web/download/` and set
 `CLIENT_DOWNLOAD_BASE_URL=/download/public` in `config.txt`.
 
-## 8. If something goes wrong
+## 8. Website assets through a publishing host (optional)
+
+Website assets opened through a Windows publishing host (RemoteApp machine) use the
+**XPAM WebLite** browser. The host downloads its installer from this server, so copy
+`XPAM-WebLite-<version>-x64.msi` from the client release on GitHub to `/data/xpam/web/applets/`
+before you publish the WebLite applet to the host. Without that file the installation on the host
+fails with "not found".
+
+## 9. If something goes wrong
 
 | Symptom | Cause and fix |
 |---|---|

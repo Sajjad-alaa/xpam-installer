@@ -32,6 +32,8 @@ services:
       - ${VOLUME_DIR}/nginx/data/logs:/var/log/nginx
       - ${CONFIG_DIR}/nginx/interface_security.conf:/etc/nginx/includes/interface_security.conf:ro
       - ${VOLUME_DIR}/web/download:/opt/download/public:ro
+      # Installers that publishing hosts fetch from /download/applets/ (for example XPAM WebLite)
+      - ${VOLUME_DIR}/web/applets:/opt/download/applets:ro
     healthcheck:
       test: "check http://localhost:51980/web/health/"
       interval: 10s

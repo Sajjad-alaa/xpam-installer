@@ -14,6 +14,7 @@ png logo-text-white.svg $C/logo_text_white.png -h 60
 cp $O/logo-text-white.svg $C/logo_text_white.svg
 cp $O/logo-text-white.svg $C/JumpServer_white_logo.svg
 png icon-mac.svg $C/login_image.png -w 800 -h 800
+png icon.svg /opt/xpam-core/apps/terminal/applets/weblite/icon.png -w 256 -h 256
 # web
 cp $O/icon.svg $W/logo.svg
 png logo-text-teal.svg $W/logo_text_green.png -h 40

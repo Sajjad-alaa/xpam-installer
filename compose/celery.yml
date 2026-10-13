@@ -1,8 +1,9 @@
 services:
+  # The background worker: scheduled jobs, account automation, notifications. Same image as core.
   celery:
     image: ${XPAM_NAMESPACE:-xpam}/core:${XPAM_VERSION:-${XPAM_DEFAULT_VERSION:-v5.0.0}}
-    container_name: xpam_celery
-    hostname: xpam_celery
+    container_name: xpam_worker
+    hostname: xpam_worker
     ulimits:
       core: 0
     restart: always

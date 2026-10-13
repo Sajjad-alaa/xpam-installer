@@ -86,6 +86,7 @@ function service_to_docker_name() {
     koko) service=secureconnection ;;
     chen) service=webconnector ;;
     kael) service=ai ;;
+    celery) service=worker ;;
   esac
   if [[ "${service:0:5}" != "xpam_" ]]; then
     service=xpam_${service}

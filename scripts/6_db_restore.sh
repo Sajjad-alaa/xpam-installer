@@ -157,9 +157,9 @@ function stop_jms_core() {
     CORE_WAS_RUNNING=1
     docker stop xpam_core &>/dev/null || return 1
   fi
-  if [[ "$(docker inspect -f '{{.State.Running}}' xpam_celery 2>/dev/null)" == "true" ]]; then
+  if [[ "$(docker inspect -f '{{.State.Running}}' xpam_worker 2>/dev/null)" == "true" ]]; then
     CELERY_WAS_RUNNING=1
-    docker stop xpam_celery &>/dev/null || return 1
+    docker stop xpam_worker &>/dev/null || return 1
   fi
 }
 

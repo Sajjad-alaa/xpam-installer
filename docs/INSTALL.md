@@ -107,7 +107,7 @@ Then start XPAM:
 |---|---|
 | `xpamctl status` | show the services and their health |
 | `xpamctl start` / `stop` / `restart` | start, stop or restart everything |
-| `xpamctl tail core` | follow the log of one service (`core`, `gateway`, `web`, `workspace`, `koko`, `chen`, `kael`) |
+| `xpamctl tail core` | follow the log of one service (`core`, `worker`, `gateway`, `web`, `workspace`, `koko`, `chen`, `kael`) |
 | `xpamctl backup_db` | back up the database |
 | `xpamctl restore_db <file>` | restore a backup |
 | `xpamctl upgrade` | upgrade to the version in this installer |
@@ -120,14 +120,15 @@ Where things are:
 | Configuration | `/opt/xpam/config/config.txt` |
 | Data, recordings, logs, backups | `/data/xpam/` |
 | Installer | `/opt/xpam-installer/` |
-| Containers | `xpam_gateway`, `xpam_core`, `xpam_celery`, `xpam_web`, `xpam_workspace`, `xpam_secureconnection`, `xpam_webconnector`, `xpam_ai`, `xpam_postgresql`, `xpam_redis` |
+| Containers | `xpam_gateway`, `xpam_core`, `xpam_worker`, `xpam_web`, `xpam_workspace`, `xpam_secureconnection`, `xpam_webconnector`, `xpam_ai`, `xpam_postgresql`, `xpam_redis` |
 
 ### What each container does
 
 | Container | Role | If it stops |
 |---|---|---|
 | `xpam_gateway` | the front door: ports 80/443, certificate, routing | nothing is reachable |
-| `xpam_core`, `xpam_celery` | application, API, background jobs | logins and new sessions fail |
+| `xpam_core` | application and API | logins and new sessions fail |
+| `xpam_worker` | background jobs: schedules, account automation, notifications | those jobs wait; logins and sessions keep working |
 | `xpam_postgresql`, `xpam_redis` | database and cache | everything stops |
 | `xpam_secureconnection` | SSH, RDP, SFTP and Kubernetes sessions | those sessions drop; the UI keeps working |
 | `xpam_web` | admin console pages | only the admin console is unavailable |

@@ -9,3 +9,5 @@ RUN /usr/local/bin/uv pip install --python /opt/py3/bin/python \
     "tornado==6.5.9" "pypdf==6.19.0" "werkzeug==3.1.3"
 
 COPY apps /opt/jumpserver/apps
+# The health check script under the name the worker container uses
+RUN ln -sf check_celery.sh /opt/jumpserver/utils/check_worker.sh

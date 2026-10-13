@@ -26,7 +26,7 @@ These services run XPAM-built images. The Dockerfiles, nginx config, brand kit a
 | Service | Container | Image | Public path |
 |---|---|---|---|
 | gateway (front door: ports, TLS, routing) | `xpam_gateway` | `xpam/gateway` | everything enters here |
-| core, worker (compose service `celery`), init-db | `xpam_core`, `xpam_worker` | `xpam/core` | `/core/`, `/api/` |
+| core, worker, init-db | `xpam_core`, `xpam_worker` | `xpam/core` | `/core/`, `/api/` |
 | web (admin console) | `xpam_web` | `xpam/web` | `/web/` |
 | workspace (web terminal) | `xpam_workspace` | `xpam/workspace` | `/workspace/` |
 | koko | `xpam_secureconnection` | `xpam/secureconnection` | `/secureconnection/` |

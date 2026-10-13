@@ -112,6 +112,7 @@ function start() {
   prepare_video_worker_volume || return 1
   retire_legacy_project || return 1
   retire_combined_web || return 1
+  retire_renamed_services || return 1
   EXE=$(get_docker_compose_cmd_line)
   ${EXE} up -d || return 1
   remove_stopped_openbao_init_container

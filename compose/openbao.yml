@@ -4,7 +4,7 @@ services:
       openbao-init:
         condition: service_healthy
 
-  celery:
+  worker:
     depends_on:
       openbao-init:
         condition: service_healthy

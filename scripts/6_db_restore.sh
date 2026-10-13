@@ -15,7 +15,7 @@ DB_PASSWORD=$(get_config DB_PASSWORD)
 DB_NAME=$(get_config DB_NAME)
 RESTORE_TMP_FILE=""
 CORE_WAS_RUNNING=0
-CELERY_WAS_RUNNING=0
+WORKER_WAS_RUNNING=0
 started_db_env=0
 
 function restore_mysql() {
@@ -158,7 +158,7 @@ function stop_jms_core() {
     docker stop xpam_core &>/dev/null || return 1
   fi
   if [[ "$(docker inspect -f '{{.State.Running}}' xpam_worker 2>/dev/null)" == "true" ]]; then
-    CELERY_WAS_RUNNING=1
+    WORKER_WAS_RUNNING=1
     docker stop xpam_worker &>/dev/null || return 1
   fi
 }
@@ -168,7 +168,7 @@ function start_jms_core() {
   local -a services=()
 
   [[ "${CORE_WAS_RUNNING}" == "1" ]] && services+=(core)
-  [[ "${CELERY_WAS_RUNNING}" == "1" ]] && services+=(celery)
+  [[ "${WORKER_WAS_RUNNING}" == "1" ]] && services+=(worker)
   [[ ${#services[@]} -gt 0 ]] || return 0
 
   cmd=$(get_docker_compose_cmd_line)

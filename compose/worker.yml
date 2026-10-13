@@ -1,6 +1,6 @@
 services:
   # The background worker: scheduled jobs, account automation, notifications. Same image as core.
-  celery:
+  worker:
     image: ${XPAM_NAMESPACE:-xpam}/core:${XPAM_VERSION:-${XPAM_DEFAULT_VERSION:-v5.0.0}}
     container_name: xpam_worker
     hostname: xpam_worker
@@ -17,7 +17,7 @@ services:
       - ${CONFIG_DIR}/certs:/opt/jumpserver/data/certs
       - ${VOLUME_DIR}/core/data:/opt/jumpserver/data
     healthcheck:
-      test: "bash /opt/jumpserver/utils/check_celery.sh"
+      test: "bash /opt/jumpserver/utils/check_worker.sh"
       interval: 10s
       timeout: 5s
       retries: 3

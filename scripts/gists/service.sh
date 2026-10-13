@@ -1,5 +1,5 @@
 
-common_services=(core kael celery koko chen gateway web workspace)
+common_services=(core kael worker koko chen gateway web workspace)
 xpack_services=(magnus razor xrdp video-worker nec)
 
 
@@ -16,6 +16,10 @@ function get_enabled_services() {
     key=$(echo "$service" | tr '[:lower:]' '[:upper:]')
     key="${key}_ENABLED"
     key=$(echo "$key" | sed 's/-/_/g')
+    # The worker was the "celery" service before the rename: honour CELERY_ENABLED=0 too
+    if [[ "${service}" == "worker" && "$(get_config_or_env CELERY_ENABLED)" == "0" ]]; then
+      continue
+    fi
     if [[ "$(get_config_or_env "${key}")" != "0" ]]; then
       enabled_services+=("${service}")
     fi
@@ -280,6 +284,20 @@ function retire_legacy_project() {
 
 # XPAM: before the gateway split, xpam_web was also the front door and published the HTTP/HTTPS
 # ports. Remove that container once, so xpam_gateway can take the ports over.
+# XPAM: the worker's Compose service was called "celery". Its container must go before the
+# renamed service can create xpam_worker again.
+function retire_renamed_services() {
+  local container_ids
+
+  container_ids=$(docker ps -aq \
+    --filter "label=com.docker.compose.project=${COMPOSE_PROJECT_NAME:-xpam}" \
+    --filter "label=com.docker.compose.service=celery") || return 1
+  if [[ -n "${container_ids}" ]]; then
+    # shellcheck disable=SC2086
+    docker rm -f ${container_ids} >/dev/null || return 1
+  fi
+}
+
 function retire_combined_web() {
   local published
 

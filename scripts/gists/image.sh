@@ -113,7 +113,7 @@ function get_image_mappings() {
 
   for service in ${enabled_services}; do
     case "${service}" in
-      "" | celery | jdmc | panda)
+      "" | worker | celery | jdmc | panda)
         ;;
       core | web | gateway | workspace | koko | chen | kael)
         xpam_name=$(get_xpam_image_name "${service}")

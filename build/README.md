@@ -112,10 +112,18 @@ docker build -f /opt/xpam-build/secureconnection.Dockerfile -t xpam/secureconnec
 The repo's own `Dockerfile`/`Dockerfile-base` also work (they copy `third_party/sdk-go`).
 
 ## webconnector (chen) — `xpam/webconnector`
-Overlay that switches the Spring context path to `/webconnector`:
+The application jar is rebuilt from `/opt/xpam-webconnector` (Maven, JDK 21) so its Spring Boot,
+Tomcat, Netty and Jackson versions can be patched in `pom.xml`; the overlay also replaces the
+PostgreSQL driver and switches the context path to `/webconnector`.
 ```bash
-docker build -f /opt/xpam-build/webconnector.Dockerfile -t xpam/webconnector:<tag> /opt/xpam-webconnector/config
+docker run --rm -v /opt/xpam-webconnector:/ro:ro -v $PWD/wc-out:/out -v $PWD/m2:/root/.m2 -w /work \
+  maven:3.9-eclipse-temurin-21 sh -ec 'cp -r /ro/. /work/ && \
+  mvn -q -B -s settings.xml clean package -Dmaven.test.skip=true && cp backend/web/target/web-*.jar /out/chen.jar'
+docker build -f /opt/xpam-build/webconnector.Dockerfile --build-context jar=$PWD/wc-out \
+  -t xpam/webconnector:<tag> /opt/xpam-webconnector
 ```
+The SQL Server driver is loaded by its exact file name, so updating it means changing
+`SQLServerConnectionManager.java` as well.
 
 ## ai (kael) — `xpam/ai`
 ```bash

@@ -10,6 +10,7 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SRC=${SRC:-/opt}; NS=${NS:-xpam}; TAG=${TAG:-v5.0.0}
 CACHE="$HERE/.cache"; mkdir -p "$CACHE"
 GO_IMAGE=golang:1.26-trixie
+MAVEN_IMAGE=maven:3.9-eclipse-temurin-21
 GHOSTTY=ghcr.io/jumpserver-dev/libghostty-vt@sha256:dffb0a53f73862da96df4fadd134dd60ac440a82eb8b9a852d9159b989c86c0c
 say() { printf '\n==> %s\n' "$*"; }
 
@@ -57,8 +58,16 @@ build_secureconnection() {
 }
 
 build_webconnector() {
-  say "webconnector"
-  docker build -q -f "$HERE/webconnector.Dockerfile" -t "$NS/webconnector:$TAG" "$SRC/xpam-webconnector/config"
+  say "webconnector: application jar"
+  mkdir -p "$CACHE/wc-out" "$CACHE/m2"
+  docker run --rm -v "$SRC/xpam-webconnector:/ro:ro" -v "$CACHE/wc-out:/out" -v "$CACHE/m2:/root/.m2" -w /work \
+    "$MAVEN_IMAGE" sh -ec '
+      cp -r /ro/. /work/
+      mvn -q -B -s settings.xml clean package -Dmaven.test.skip=true
+      cp backend/web/target/web-*.jar /out/chen.jar'
+  say "webconnector: image"
+  docker build -q -f "$HERE/webconnector.Dockerfile" --build-context jar="$CACHE/wc-out" \
+    -t "$NS/webconnector:$TAG" "$SRC/xpam-webconnector"
 }
 
 build_ai() {

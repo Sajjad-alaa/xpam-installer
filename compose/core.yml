@@ -10,7 +10,7 @@ services:
     env_file:
       - ${CONFIG_FILE}
     environment:
-      TIME_ZONE: ${TZ:-Asia/Shanghai}
+      TIME_ZONE: ${TZ:-UTC}
     volumes:
       - ${CONFIG_DIR}/certs:/opt/jumpserver/data/certs
       - ${VOLUME_DIR}/core/data:/opt/jumpserver/data

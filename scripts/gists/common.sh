@@ -1,3 +1,9 @@
+# Messages are written in English; without the gettext tool they are shown as they are.
+if ! command -v gettext &>/dev/null; then
+  function gettext() {
+    printf '%s' "$1"
+  }
+fi
 
 function check_root() {
   [[ "$(id -u)" == 0 ]]
@@ -187,6 +193,73 @@ function install_package() {
   esac
 }
 
+# True when both files exist and have the same content (no dependency on the diffutils package).
+function same_content() {
+  [[ -f "$1" && -f "$2" ]] || return 1
+  [[ "$(sha256sum <"$1")" == "$(sha256sum <"$2")" ]]
+}
+
+# The server's own time zone (for example Asia/Baghdad); UTC when it cannot be determined.
+function get_system_timezone() {
+  local tz=''
+
+  if command -v timedatectl &>/dev/null; then
+    tz=$(timedatectl show -p Timezone --value 2>/dev/null)
+  fi
+  if [[ -z "${tz}" && -L /etc/localtime ]]; then
+    tz=$(readlink -f /etc/localtime)
+    [[ "${tz}" == */zoneinfo/* ]] && tz=${tz#*/zoneinfo/} || tz=''
+  fi
+  if [[ -z "${tz}" && -f /etc/timezone ]]; then
+    tz=$(head -n 1 /etc/timezone)
+  fi
+  echo "${tz:-UTC}"
+}
+
+# Installs the few system tools the installer needs when a minimal server lacks them.
+function ensure_required_tools() {
+  local package_manager tool package
+  local -a missing=()
+
+  if [[ -n "${UNCHECK_DEPENDENCIES:-}" ]]; then
+    return 0
+  fi
+  for tool in curl wget tar openssl iptables; do
+    command -v "${tool}" &>/dev/null || missing+=("${tool}")
+  done
+  command -v python3 &>/dev/null || command -v python &>/dev/null || command -v python2 &>/dev/null || missing+=("python3")
+  # "type -P" looks for the real program, not the fallback function defined above
+  type -P gettext &>/dev/null || missing+=("gettext")
+  if [[ ${#missing[@]} -eq 0 ]]; then
+    return 0
+  fi
+
+  if ! check_root; then
+    log_error "Missing system tools: ${missing[*]}. Install them (or run the installer as root)"
+    return 1
+  fi
+  if ! package_manager=$(get_package_manager); then
+    log_error "Missing system tools: ${missing[*]}. No yum/dnf or apt found: install them by hand"
+    return 1
+  fi
+  echo "Installing missing system tools: ${missing[*]}"
+  update_package_index "${package_manager}" || log_warn "Could not refresh the package index"
+  for tool in "${missing[@]}"; do
+    package=${tool}
+    if [[ "${tool}" == "gettext" && "${package_manager}" == "apt" ]]; then
+      package=gettext-base
+    fi
+    if ! install_package "${package_manager}" "${package}"; then
+      if [[ "${tool}" == "gettext" ]]; then
+        log_warn "gettext could not be installed; continuing in English"
+        continue
+      fi
+      log_error "Could not install ${package}"
+      return 1
+    fi
+  done
+}
+
 function ensure_iptables() {
   local package_manager
 
@@ -221,7 +294,7 @@ function ensure_iptables() {
 function echo_logo() {
   cat "${BASE_DIR}/logo.txt"
 
-  echo -e "\t\t\t\t\t\t\t\t   Version: \033[33m $VERSION \033[0m \n"
+  echo -e "\t\t\t\t\t\t\t\t   Version: \033[33m $(get_xpam_version 2>/dev/null || echo "${XPAM_DEFAULT_VERSION}") \033[0m \n"
 }
 
 
@@ -259,6 +332,10 @@ function get_host_ip() {
   host=$(command -v hostname &>/dev/null && hostname -I | cut -d ' ' -f1)
   if [ ! "${host}" ]; then
       host=$(command -v ip &>/dev/null && ip addr | grep 'inet ' | grep -Ev '(127.0.0.1|inet6|docker)' | awk '{print $2}' | head -n 1 | cut -d / -f1)
+  fi
+  if [ ! "${host}" ]; then
+      # No hostname/ip tools (minimal systems): ask the kernel which address reaches the outside
+      host=$( (python3 -c "import socket; s=socket.socket(socket.AF_INET, socket.SOCK_DGRAM); s.connect(('192.0.2.1', 9)); print(s.getsockname()[0])" || true) 2>/dev/null)
   fi
   if [[ ${host} =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
       echo "${host}"

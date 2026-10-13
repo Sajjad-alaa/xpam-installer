@@ -22,6 +22,13 @@ if [[ "${target}" == "--skip-jdmc" ]]; then
   esac
 fi
 
+# XPAM names are accepted wherever one service is named (the Compose services keep short names)
+case "${target}" in
+  secureconnection) target=koko ;;
+  webconnector) target=chen ;;
+  ai) target=kael ;;
+esac
+
 function check_config_file() {
   if [[ ! -f "${CONFIG_FILE}" ]]; then
     echo "$(gettext 'Configuration file not found'): ${CONFIG_FILE}"
@@ -59,6 +66,7 @@ function usage() {
   echo "Installation Commands: "
   echo "  install           $(gettext 'Install XPAM')"
   echo "  upgrade           $(gettext 'Upgrade XPAM')"
+  echo "  check_update      Check whether a newer installer is published"
   echo
   echo "Management Commands: "
   echo "  config            $(gettext 'Configuration  Tools')"
@@ -71,12 +79,16 @@ function usage() {
   echo
   echo "More Commands: "
   echo "  load_image        $(gettext 'Loading docker image')"
+  echo "  pull_images       Download the current XPAM images"
   echo "  backup_db         $(gettext 'Backup database')"
   echo "  backup_no_audit   $(gettext 'Backup database without audit data')"
   echo "  backup_audit      $(gettext 'Backup audits tables')"
   echo "  restore_db [file]        $(gettext 'Data recovery through database backup file')"
   echo "  raw               $(gettext 'Execute the original docker compose command')"
   echo "  tail [service]    $(gettext 'View log')"
+  echo "  version           Show the XPAM release and the build of each image"
+  echo
+  echo "Services: core worker gateway web workspace secureconnection webconnector ai"
   echo
 }
 
@@ -191,18 +203,38 @@ function clean() {
 }
 
 function check_update() {
-  current_version=$(get_current_version)
-  latest_version=$(get_latest_version)
-  if [[ "${current_version}" == "${latest_version}" ]]; then
-    echo_green "$(gettext 'The current version is up to date'): ${latest_version}"
-    echo
-    return
-  fi
-  if [[ -n "${latest_version}" ]] && [[ ${latest_version} =~ v.* ]]; then
-    echo -e "\033[32m$(gettext 'The latest version is'): ${latest_version}\033[0m"
+  local pending
+
+  pending=$(get_pending_installer_updates)
+  if [[ -z "${pending}" ]]; then
+    echo "Cannot check for installer updates from here (no git checkout or no connection)."
+    echo "xpamctl upgrade always downloads the current XPAM images."
+  elif [[ "${pending}" == "0" ]]; then
+    echo_green "The installer is up to date. xpamctl upgrade also refreshes the XPAM images."
   else
-    exit 1
+    echo_yellow "${pending} installer update(s) available. Run: xpamctl upgrade"
   fi
+}
+
+# Before an upgrade, bring the installer itself up to date when it is a git checkout, then run
+# the upgrade with the new copy. Set XPAM_SKIP_SELF_UPDATE=1 to keep the installed copy.
+function update_installer() {
+  local before after
+
+  [[ "${XPAM_SKIP_SELF_UPDATE:-}" == "1" ]] && return 0
+  [[ -d "${PROJECT_DIR}/.git" ]] && command -v git &>/dev/null || return 0
+  before=$(git -C "${PROJECT_DIR}" rev-parse HEAD 2>/dev/null) || return 0
+  echo "Updating the installer ..."
+  if ! GIT_TERMINAL_PROMPT=0 timeout 120 git -C "${PROJECT_DIR}" pull --ff-only --quiet 2>/dev/null; then
+    log_warn "The installer could not be updated from its repository; continuing with the installed copy"
+    return 0
+  fi
+  after=$(git -C "${PROJECT_DIR}" rev-parse HEAD 2>/dev/null)
+  if [[ "${before}" != "${after}" ]]; then
+    echo "Installer updated, continuing with the new copy"
+    XPAM_SKIP_SELF_UPDATE=1 exec bash "${PROJECT_DIR}/xpamctl.sh" "${args[@]}"
+  fi
+  return 0
 }
 
 function video-worker() {
@@ -242,13 +274,13 @@ function check_os() {
   if [[ "${OS}" == 'Darwin' ]]; then
     echo
     echo "$(gettext 'Unsupported Operating System Error')"
-    echo "$(gettext 'macOS installer please see'): https://github.com/jumpserver/Dockerfile"
+    echo "XPAM is installed on a Linux server."
     return 1
   fi
   if [[ "${OS}" =~ MINGW.* ]]; then
     echo
     echo "$(gettext 'Unsupported Operating System Error')"
-    echo "$(gettext 'Windows installer please see'): https://github.com/jumpserver/Dockerfile"
+    echo "XPAM is installed on a Linux server."
     return 1
   fi
   return 0
@@ -267,9 +299,10 @@ function main() {
   fi
   case "${action}" in
   install)
-    bash "${SCRIPT_DIR}/4_install_jumpserver.sh"
+    bash "${SCRIPT_DIR}/4_install_xpam.sh"
     ;;
   upgrade)
+    update_installer
     bash "${SCRIPT_DIR}/7_upgrade.sh" "$target"
     ;;
   check_update)
@@ -280,7 +313,7 @@ function main() {
     ;;
   reconfig)
     ${EXE} down -v
-    bash "${SCRIPT_DIR}/1_config_jumpserver.sh"
+    bash "${SCRIPT_DIR}/1_config_xpam.sh"
     ;;
   start)
     start
@@ -298,7 +331,7 @@ function main() {
     close
     ;;
   status)
-    ${EXE} ps
+    ${EXE} ps --format 'table {{.Name}}\t{{.Status}}\t{{.Ports}}'
     if should_manage_jdmc; then
       status_jdmc
     fi
@@ -343,10 +376,6 @@ function main() {
   pull_images)
     pull_images
     ;;
-  pull_mysql)
-    docker pull registry.cn-beijing.aliyuncs.com/jumpservice/mysql:8.0
-    docker tag registry.cn-beijing.aliyuncs.com/jumpservice/mysql:8.0 mysql:8.0
-    ;;
   cmd)
     echo "${EXE}"
     ;;
@@ -385,7 +414,7 @@ function main() {
     ${EXE} "${args[@]:1}"
     ;;
   version)
-    get_current_version
+    show_xpam_version
     ;;
   help)
     usage

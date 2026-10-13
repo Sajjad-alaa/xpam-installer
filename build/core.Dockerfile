@@ -18,5 +18,8 @@ RUN /usr/local/bin/uv pip install --python /opt/py3/bin/python \
     "cryptography==50.0.2" "pyOpenSSL==26.4.0" "mistune==3.3.4"
 
 COPY apps /opt/jumpserver/apps
+# Compile the Python sources once at build time: faster first start, and the interpreter's
+# warnings about old-style escape sequences do not show up in installation and upgrade logs
+RUN /opt/py3/bin/python -W ignore -m compileall -q -j 0 /opt/jumpserver/apps >/dev/null 2>&1 || true
 # The health check script under the name the worker container uses
 RUN ln -sf check_celery.sh /opt/jumpserver/utils/check_worker.sh

@@ -1,40 +1,40 @@
 # XPAM configuration file example.
 #
-# If you don't understand the purpose, you can skip modifying this configuration file, the system will automatically fill in
-# Complete parameter documentation https://docs.jumpserver.org/zh/v3/guide/env/
+# You do not have to edit this file to install: the installer fills in what it needs
+# (secret keys, passwords, data folder). The guide is docs/INSTALL.md in the installer folder.
 
 ################################# Image Configuration #################################
 #
-# Pull JumpServer application images from this prefix. For example,
-# IMAGE_PULL_PREFIX=registry.example.com/jumpserver pulls core from
-# registry.example.com/jumpserver/core:${VERSION}. Infrastructure images such
+# Settings for the optional upstream add-on images only (the XPAM images are configured below).
+# IMAGE_PULL_PREFIX=registry.example.com/path pulls them from that prefix. Infrastructure images such
 # as Redis, PostgreSQL and OpenBao keep their own image names.
 #
 # IMAGE_PULL_PREFIX=
 
-# Scope of IMAGE_PULL_PREFIX: jumpserver only rewrites JumpServer application
+# Scope of IMAGE_PULL_PREFIX: "jumpserver" only rewrites the add-on application
 # images; all also pulls infrastructure images from the prefix and restores
 # their canonical local tags before Compose starts.
 #
 # IMAGE_PULL_SCOPE=jumpserver
 
-# Local runtime namespace for JumpServer application images. This does not
+# Local runtime namespace for the add-on application images. This does not
 # select a remote registry; images are tagged locally before Compose starts.
 #
 # NAMESPACE=jumpserver
 
-# XPAM images. gateway, core, web, workspace, secureconnection (koko), webconnector (chen) and ai
-# (kael) run XPAM-built images named ${XPAM_NAMESPACE}/<name>:${XPAM_VERSION}.
-# XPAM_VERSION defaults to XPAM_DEFAULT_VERSION from static.env (v5.0.0). They are never pulled from Docker Hub: build
-# them (xpam-build), ship them in the offline package, or set XPAM_IMAGE_REGISTRY
-# to a registry holding <registry>/<name>:<tag> (for example ghcr.io/<owner>).
+# XPAM images. gateway, core, web, workspace, secureconnection, webconnector and ai run as
+# ${XPAM_NAMESPACE}/<name>:${XPAM_VERSION}. The installer downloads them from the registry set in
+# static.env (XPAM_DEFAULT_IMAGE_REGISTRY, ghcr.io/sajjad-alaa/xpam) and refreshes them on every
+# install and upgrade. You normally leave all three lines commented out.
+#   XPAM_IMAGE_REGISTRY=<registry>/<path>   download from another registry (your own mirror)
+#   XPAM_IMAGE_REGISTRY=local               never download: use images built or loaded on this server
 #
 # XPAM_NAMESPACE=xpam
 # XPAM_VERSION=
 # XPAM_IMAGE_REGISTRY=
 
-# The connection to docker.io in China will timeout or the download speed will be slow, enable this option to use Huawei Cloud image acceleration
-# Legacy mirror configuration. IMAGE_PULL_PREFIX takes precedence when set.
+# Legacy mirror switch for the third-party images (needs DOCKER_IMAGE_PREFIX).
+# IMAGE_PULL_PREFIX takes precedence when set.
 #
 # DOCKER_IMAGE_MIRROR=1
 
@@ -97,7 +97,7 @@ DB_HOST=postgresql
 DB_PORT=5432
 DB_USER=postgres
 DB_PASSWORD=
-DB_NAME=jumpserver
+DB_NAME=xpam
 
 # Host port bindings for the built-in database. The defaults only listen on
 # localhost. In a two-node HA deployment, set the corresponding EXPOSE_HOST
@@ -108,7 +108,7 @@ POSTGRESQL_EXPOSE_PORT=5432
 MYSQL_EXPOSE_HOST=127.0.0.1
 MYSQL_EXPOSE_PORT=3306
 
-# If external MySQL needs to enable TLS/SSL connection, refer to https://docs.jumpserver.org/zh/v3/installation/security_setup/mysql_ssl/
+# TLS/SSL to an external MySQL server
 #
 # DB_USE_SSL=true
 
@@ -127,7 +127,7 @@ REDIS_PASSWORD=
 # REDIS_PASSWORD=your_redis_password
 # REDIS_SENTINEL_SOCKET_TIMEOUT=5
 
-# If external Redis needs to enable TLS/SSL connection, refer to https://docs.jumpserver.org/zh/v3/installation/security_setup/redis_ssl/
+# TLS/SSL to an external Redis server
 #
 # REDIS_USE_SSL=true
 
@@ -137,7 +137,7 @@ REDIS_PASSWORD=
 HTTP_PORT=80
 
 ################################# HTTPS Configuration #################################
-# Refer to https://docs.jumpserver.org/zh/v3/installation/proxy/ for configuration
+# Put your certificate and key in <config folder>/nginx/cert/ as server.crt and server.key
 #
 HTTPS_PORT=443
 # SERVER_NAME=your_domain_name
@@ -232,9 +232,16 @@ SERVER_HOSTNAME=${HOSTNAME}
 # When USE_LB is set to 0, use the configuration proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for
 USE_LB=1
 
+# Time zone of the services. Left commented out, the installer uses the server's own time zone.
+#
+# TZ=Asia/Baghdad
+
+# Language of the web interface for new users: en, zh, ja, es, ko, ru or vi
+#
+LANGUAGE_CODE=en
+
 # The current running version number of XPAM, automatically generated after installation and upgrade
 #
-TZ=Asia/Shanghai
 CURRENT_VERSION=
 
 # Maximum seconds to wait for an internal database or Redis container to become

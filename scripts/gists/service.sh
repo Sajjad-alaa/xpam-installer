@@ -308,10 +308,11 @@ function retire_combined_web() {
   fi
 }
 
-function get_latest_version() {
-  curl -s 'https://api.github.com/repos/jumpserver/jumpserver/releases/latest' |
-    grep "tag_name" | head -n 1 | awk -F ":" '{print $2}' |
-    sed 's/\"//g;s/,//g;s/ //g'
+# Number of installer updates published but not yet on this server ("" when it cannot be checked)
+function get_pending_installer_updates() {
+  [[ -d "${PROJECT_DIR}/.git" ]] && command -v git &>/dev/null || return 0
+  GIT_TERMINAL_PROMPT=0 timeout 60 git -C "${PROJECT_DIR}" fetch --quiet 2>/dev/null || return 0
+  git -C "${PROJECT_DIR}" rev-list --count 'HEAD..@{upstream}' 2>/dev/null
 }
 
 function get_db_compose_yml() {
@@ -466,18 +467,53 @@ function get_current_version() {
   echo "${current_version}"
 }
 
+# What "xpamctl version" shows: the XPAM release and, for support, the exact build of each image
+function show_xpam_version() {
+  local name image id
+
+  echo "XPAM $(get_xpam_version)"
+  for name in core gateway web workspace secureconnection webconnector ai; do
+    image="$(get_xpam_namespace)/${name}:$(get_xpam_version)"
+    id=$(docker image inspect -f '{{.Id}}' "${image}" 2>/dev/null | cut -c8-19)
+    printf '  %-18s %s\n' "${name}" "${id:-not downloaded}"
+  done
+}
+
+# XPAM does not report installations or upgrades to anyone (upstream sent a usage ping here).
 function installation_log() {
-  local telemetry_enabled
-  telemetry_enabled=$(get_config INSTALLATION_TELEMETRY_ENABLED true)
-  case "${telemetry_enabled}" in
-    0|false|False|FALSE|no|No|NO) return 0 ;;
-  esac
-  if [ -d "${BASE_DIR}/images" ]; then
-    return
+  return 0
+}
+
+# Starts (or refreshes) all services and waits until they are ready.
+function start_xpam_and_wait() {
+  if ! bash "${PROJECT_DIR}/xpamctl.sh" start; then
+    log_error "XPAM did not start. Look at: xpamctl status   and   xpamctl tail"
+    return 1
   fi
-  product=js
-  install_type=$1
-  version=$(get_current_version)
-  url="https://community.fit2cloud.com/installation-analytics?product=${product}&type=${install_type}&version=${version}"
-  curl -fsS --connect-timeout 5 -m 10 "${url}" &>/dev/null
+  echo
+  echo "Waiting for the services to become ready (usually one to three minutes) ..."
+  if wait_xpam_healthy 420; then
+    echo_done
+  else
+    log_warn "Some services are not ready yet. Check again in a minute with: xpamctl status"
+  fi
+  return 0
+}
+
+# Waits until every running XPAM container reports healthy, or the time (seconds) runs out.
+function wait_xpam_healthy() {
+  local timeout=${1:-300} waited=0 pending='' total=0
+
+  while ((waited < timeout)); do
+    total=$(docker ps --filter "label=com.docker.compose.project=${COMPOSE_PROJECT_NAME}" -q | wc -l)
+    pending=$(docker ps --filter "label=com.docker.compose.project=${COMPOSE_PROJECT_NAME}" \
+      --format '{{.Names}} {{.Status}}' | grep -v '(healthy)' | awk '{print $1}' | tr '\n' ' ')
+    if [[ "${total}" -gt 0 && -z "${pending// /}" ]]; then
+      return 0
+    fi
+    sleep 5
+    waited=$((waited + 5))
+  done
+  [[ -n "${pending// /}" ]] && echo "Not ready: ${pending}"
+  return 1
 }

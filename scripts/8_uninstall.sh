@@ -120,7 +120,7 @@ function remove_compose() {
 }
 
 function remove_jumpserver() {
-  local images volume_dir jdmc_data_dir kotl_data_dir image
+  local images volume_dir jdmc_data_dir kotl_data_dir image config_parent
   local failed=0
 
   if [[ ! -f "${CONFIG_FILE}" ]]; then
@@ -142,6 +142,16 @@ function remove_jumpserver() {
     remove_managed_dir "${JDMC_LEGACY_INSTALL_DIR}" || return 1
     remove_managed_dir "${CONFIG_DIR}" || return 1
     rm -f "${PROJECT_DIR}/.env" "${PROJECT_DIR}/compose/.env" || return 1
+    # The shortcut to the data folder and the "current installer" link belong to this installation
+    config_parent=$(dirname "${CONFIG_DIR}")
+    if [[ -L "${config_parent}/data" ]]; then
+      rm -f "${config_parent}/data"
+    fi
+    rmdir "${config_parent}" 2>/dev/null || true
+    if [[ -L /opt/current/installer && "$(readlink -f /opt/current/installer)" == "${PROJECT_DIR}" ]]; then
+      rm -f /opt/current/installer
+      rmdir /opt/current 2>/dev/null || true
+    fi
   fi
   echo
   confirm="n"
@@ -179,6 +189,9 @@ function main() {
   remove_compose || return 1
   remove_docker || return 1
   remove_xpamctl
+  echo
+  echo "The installer folder itself was kept: ${PROJECT_DIR}"
+  echo "Delete it by hand if you no longer need it, or run ./xpamctl.sh install to install again."
 }
 
 if [[ "$0" == "${BASH_SOURCE[0]}" ]]; then

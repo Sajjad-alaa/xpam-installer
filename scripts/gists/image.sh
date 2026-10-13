@@ -60,14 +60,103 @@ function get_xpam_version() {
   echo "${version:-${XPAM_DEFAULT_VERSION:-v5.0.0}}"
 }
 
-# Registry (for example ghcr.io/<owner>) holding <registry>/<name>:<tag>. Without it, XPAM images
-# must already exist locally or come from the offline package: they are never pulled from
-# Docker Hub, where the "xpam" namespace belongs to someone else.
+# Registry holding the XPAM images as <registry>/<name>:<tag>. The default comes from static.env
+# (XPAM_DEFAULT_IMAGE_REGISTRY); XPAM_IMAGE_REGISTRY in config.txt overrides it.
+# XPAM_IMAGE_REGISTRY=local means "never pull": the images must already exist on this server
+# (built here, or loaded from the offline package). They are never pulled from Docker Hub, where
+# the "xpam" namespace belongs to someone else.
 function get_xpam_image_registry() {
   local registry
 
   registry=$(get_config_or_env XPAM_IMAGE_REGISTRY)
+  case "${registry}" in
+    local | none | off | -)
+      echo ""
+      return 0
+      ;;
+    "") registry=${XPAM_DEFAULT_IMAGE_REGISTRY:-} ;;
+  esac
   echo "${registry%/}"
+}
+
+# ghcr.io/owner/xpam -> ghcr.io
+function get_xpam_registry_host() {
+  local registry
+
+  registry=$(get_xpam_image_registry)
+  echo "${registry%%/*}"
+}
+
+# ghcr.io/owner/xpam -> owner (the account that usually signs in)
+function get_xpam_registry_owner() {
+  local registry rest
+
+  registry=$(get_xpam_image_registry)
+  rest=${registry#*/}
+  [[ "${rest}" != "${registry}" ]] || return 0
+  echo "${rest%%/*}"
+}
+
+function print_xpam_registry_login_help() {
+  local host=$1 owner=$2
+
+  echo "  The XPAM images are private. Sign in to ${host} once on this server:" >&2
+  echo "      docker login ${host} -u ${owner:-<github-user>}" >&2
+  echo "  As the password use a GitHub personal access token (classic) with the read:packages scope" >&2
+  echo "  (GitHub -> Settings -> Developer settings -> Personal access tokens)." >&2
+  echo "  Then run the same xpamctl command again; it continues where it stopped." >&2
+}
+
+# Checks, before anything is downloaded, that this server may read the XPAM images. When it may
+# not, a person at the terminal is asked to sign in; an unattended run can pass
+# XPAM_REGISTRY_USER and XPAM_REGISTRY_TOKEN in the environment (they are not stored by XPAM).
+function ensure_xpam_registry_access() {
+  local registry host owner probe output user attempt
+
+  registry=$(get_xpam_image_registry)
+  [[ -n "${registry}" ]] || return 0
+  host=$(get_xpam_registry_host)
+  owner=$(get_xpam_registry_owner)
+  probe="${registry}/$(get_xpam_image_name gateway):$(get_xpam_version)"
+
+  for attempt in 1 2 3 4; do
+    if output=$(docker manifest inspect "${probe}" 2>&1); then
+      return 0
+    fi
+    if ! echo "${output}" | grep -qiE 'denied|unauthorized|authentication required|no basic auth|401|403'; then
+      # Not a sign-in problem (no connection, plain-HTTP mirror, ...): the downloads that follow
+      # report the precise reason, so do not stop here.
+      return 0
+    fi
+    if [[ "${attempt}" == "4" ]]; then
+      break
+    fi
+
+    if [[ "${attempt}" == "1" && -n "${XPAM_REGISTRY_TOKEN:-}" ]]; then
+      echo "Signing in to ${host} as ${XPAM_REGISTRY_USER:-${owner}}"
+      if ! printf '%s' "${XPAM_REGISTRY_TOKEN}" |
+        docker login "${host}" -u "${XPAM_REGISTRY_USER:-${owner}}" --password-stdin >/dev/null 2>&1; then
+        log_error "Sign-in to ${host} with XPAM_REGISTRY_TOKEN failed"
+      fi
+      continue
+    fi
+
+    if [[ "${AUTO_INSTALL:-}" == "1" || ! -t 0 ]]; then
+      break
+    fi
+    echo
+    echo "The XPAM images are private: this server has to sign in to ${host} once."
+    echo "Password = a GitHub personal access token (classic) with the read:packages scope."
+    user="${owner}"
+    read_from_input user "GitHub user name" "" "${owner}"
+    if ! docker login "${host}" -u "${user}"; then
+      echo_red "Sign-in failed, try again"
+    fi
+  done
+
+  log_error "This server is not allowed to download the XPAM images from ${registry}" >&2
+  print_xpam_registry_login_help "${host}" "${owner}"
+  return 1
 }
 
 function get_image_pull_prefix() {
@@ -271,7 +360,7 @@ function get_image_full_path() {
   docker_image_prefix=$(get_config_or_env DOCKER_IMAGE_PREFIX)
   if [[ "${docker_image_mirror}" == "1" ]]; then
     if [[ -z "${docker_image_prefix}" ]]; then
-      docker_image_prefix="registry.cn-beijing.aliyuncs.com/jumpservice"
+      echo "DOCKER_IMAGE_MIRROR=1 needs DOCKER_IMAGE_PREFIX (there is no built-in mirror)" >&2
     fi
   fi
 
@@ -294,15 +383,15 @@ function get_image_full_path() {
 
 function pull_image() {
   local image=$1 requested_target=${2:-} exact_source=${3:-0}
-  local full_image_path pull_args to_image image_pull_policy namespace xpam_registry
+  local full_image_path pull_args to_image image_pull_policy namespace xpam_registry pull_output
 
   if [[ "${exact_source}" == "2" ]]; then
     if [[ "$(check_image_exists "${image}")" == "1" ]]; then
       echo "[${image}] XPAM image present"
       return 0
     fi
-    echo "[${image}] XPAM image not found. Build it (xpam-build), load the offline package," \
-      "or set XPAM_IMAGE_REGISTRY in config.txt" >&2
+    echo "[${image}] XPAM image not found on this server. XPAM_IMAGE_REGISTRY=local is set in" \
+      "config.txt: build the image here, load the offline package, or remove that line to download it" >&2
     return 1
   fi
 
@@ -314,20 +403,13 @@ function pull_image() {
   image_pull_policy=$(get_config_or_env 'IMAGE_PULL_POLICY')
 
   pull_args=""
-  case "${BUILD_ARCH}" in
+  case "${BUILD_ARCH:-}" in
     "x86_64") pull_args="--platform linux/amd64" ;;
     "aarch64") pull_args="--platform linux/arm64" ;;
     "loongarch64") pull_args="--platform linux/loong64" ;;
     "s390x") pull_args="--platform linux/s390x" ;;
   esac
 
-  echo "[${image}] pulling"
-
-  if [[ "${full_image_path}" != "${image}" ]]; then
-    echo "  -> [${full_image_path}]"
-  fi
-
-  echo "$(check_image_exists "${image}")"
   if [[ -n "${requested_target}" ]]; then
     to_image="${requested_target}"
   else
@@ -344,23 +426,20 @@ function pull_image() {
     image_pull_policy=Always
   fi
   if [[ "$(check_image_exists "${full_image_path}")" != "1" || "${image_pull_policy}" == "Always" ]]; then
-    if ! docker pull -q ${pull_args} "${full_image_path}"; then
-      echo "[${image}] pull failed" >&2
-      if [[ "${full_image_path}" == ghcr.io/* ]]; then
-        echo "  Private XPAM images need a login first: docker login ghcr.io -u <github-user>" >&2
-        echo "  (token with read:packages), then run ./xpamctl.sh install again." >&2
-      fi
+    if ! pull_output=$(docker pull -q ${pull_args} "${full_image_path}" 2>&1); then
+      echo "[${to_image}] download failed from ${full_image_path}" >&2
+      echo "${pull_output}" | tail -n 2 | sed 's/^/    /' >&2
       return 1
     fi
   fi
-  
+
   if [[ "${full_image_path}" != "${to_image}" ]]; then
     if ! docker tag "${full_image_path}" "${to_image}"; then
-      echo "[${image}] tag failed: ${full_image_path} -> ${to_image}" >&2
+      echo "[${to_image}] tag failed: ${full_image_path} -> ${to_image}" >&2
       return 1
     fi
   fi
-  echo ""
+  echo "[${to_image}] ready"
   return 0
 }
 
@@ -370,6 +449,13 @@ function pull_images() {
   local INCLUDE_PANDA_IMAGE=${INCLUDE_PANDA_IMAGE:-0}
   local pull_failed=0
   local -a pids=()
+
+  ensure_xpam_registry_access || return 1
+  if [[ -n "$(get_xpam_image_registry)" ]]; then
+    echo "Downloading the images (several GB on a first install; this can take a while) ..."
+  else
+    echo "Checking the images on this server ..."
+  fi
 
   trap 'kill ${pids[*]}' SIGINT SIGTERM
 
@@ -385,6 +471,9 @@ function pull_images() {
   done
 
   trap - SIGINT SIGTERM
+  if [[ "${pull_failed}" != "0" ]]; then
+    log_error "Some images could not be downloaded. Fix the problem above and run the same command again."
+  fi
   return "${pull_failed}"
 }
 

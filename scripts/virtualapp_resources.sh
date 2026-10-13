@@ -295,14 +295,14 @@ function main() (
       log_error "Expected a regular Docker service file: ${service_target}" >&2
       return 1
     fi
-    if ! cmp -s "${service_file}" "${service_target}"; then
+    if ! same_content "${service_file}" "${service_target}"; then
       service_tmp=$(mktemp "${destination}/.docker-service-XXXXXX") || return 1
       cp "${service_file}" "${service_tmp}" || return 1
       chmod 0644 "${service_tmp}" || return 1
       mv -f "${service_tmp}" "${service_target}" || return 1
     fi
   fi
-  if ! cmp -s "${manifest_tmp}" "${destination}/manifest.json"; then
+  if ! same_content "${manifest_tmp}" "${destination}/manifest.json"; then
     mv -f "${manifest_tmp}" "${destination}/manifest.json" || return 1
   fi
   clean_archives

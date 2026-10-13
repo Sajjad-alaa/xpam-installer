@@ -91,7 +91,7 @@ function gen_safe_config() {
     : >"${tmp_file}"
   fi
 
-  if [[ -f "${output_file}" ]] && cmp -s "${tmp_file}" "${output_file}"; then
+  if same_content "${tmp_file}" "${output_file}"; then
     rm -f "${tmp_file}"
     echo "${output_file}"
     return

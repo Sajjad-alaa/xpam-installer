@@ -22,3 +22,12 @@ COPY common.conf core.conf interface_security.conf secureconnection.conf webconn
 # HTTPS only from now on for this host name: browsers stop trying plain HTTP for a year
 RUN sed -i 's#^  server_tokens off;#  server_tokens off;\n  add_header Strict-Transport-Security "max-age=31536000" always;#' /etc/nginx/sites-enabled/https_server.conf \
     && grep -q 'Strict-Transport-Security' /etc/nginx/sites-enabled/https_server.conf
+# Tell core which address and scheme the browser really used (host with port, http or https).
+# Core then accepts sign-ins from whatever address reaches this server, without a hand-kept list
+# of addresses (DOMAINS), while requests coming from other sites are still refused. A scheme
+# header sent by the browser itself is overwritten here.
+COPY 00-xpam-proto.conf /etc/nginx/conf.d/00-xpam-proto.conf
+COPY --chmod=755 45-xpam-forwarded-proto.sh /docker-entrypoint.d/45-xpam-forwarded-proto.sh
+RUN sed -i 's#proxy_set_header Host \$host;#proxy_set_header Host $http_host;#g; s#^\( *\)proxy_set_header X-Forwarded-For \$remote_addr;#&\n\1proxy_set_header X-Forwarded-Proto $scheme;#' /etc/nginx/sites-enabled/https_server.conf \
+    && [ "$(grep -c 'proxy_set_header X-Forwarded-Proto \$scheme;' /etc/nginx/sites-enabled/https_server.conf)" = "2" ] \
+    && [ "$(grep -c 'proxy_set_header Host \$http_host;' /etc/nginx/sites-enabled/https_server.conf)" = "2" ]

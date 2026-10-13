@@ -4,7 +4,7 @@ services:
     container_name: xpam_postgresql
     restart: always
     environment:
-      TZ: ${TZ:-Asia/Shanghai}
+      TZ: ${TZ:-UTC}
       POSTGRES_DB: $DB_NAME
       POSTGRES_USER: $DB_USER
       POSTGRES_PASSWORD: $DB_PASSWORD

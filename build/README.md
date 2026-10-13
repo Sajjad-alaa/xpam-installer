@@ -62,6 +62,10 @@ are in `nginx/`: `default.conf`, `common.conf`, `interface_security.conf`, `secu
 ```bash
 docker build -f /opt/xpam-build/gateway.Dockerfile -t xpam/gateway:<tag> /opt/xpam-build/nginx
 ```
+The front server passes the address (`Host` with port) and scheme (`X-Forwarded-Proto`) the browser
+really used to core, so sign-in works through any address without listing it in `DOMAINS`; with
+`USE_LB=0` the scheme reported by the load balancer in front is used instead.
+
 Routes to `core`, `web`, `workspace`, `koko`, `chen` and `kael` use a variable in `proxy_pass`, so nginx
 looks the address up per request (resolver in the base `nginx.conf`, cached 10 s). That is what
 lets the gateway start while a component is missing and find a recreated one without a reload.

@@ -32,7 +32,7 @@ function set_volume_dir() {
   read_from_input confirm "$(gettext 'Do you need custom persistent store, will use the default directory') ${volume_dir}?" "y/n" "${confirm}"
   if [[ "${confirm}" == "y" ]]; then
     echo
-    echo "$(gettext 'To modify the persistent directory such as logs video, you can select your largest disk and create a directory in it, such as') /data/jumpserver"
+    echo "$(gettext 'To modify the persistent directory such as logs video, you can select your largest disk and create a directory in it, such as') /data/xpam"
     echo "$(gettext 'Note: you can not change it after installation, otherwise the database may be lost')"
     echo
     df -h | grep -Ev "devfs|tmpfs|overlay|shm|snap|boot"
@@ -103,7 +103,7 @@ function set_internal_db() {
   fi
   db_name=$(get_config DB_NAME)
   if [[ -z "${db_name}" ]]; then
-    db_name=jumpserver
+    db_name=xpam
   fi
 
   set_db_config "${db_engine}" "${db_host}" "${db_port}" "${db_user}" "${db_password}" "${db_name}"
@@ -249,11 +249,14 @@ function set_service() {
 
 function set_others() {
   echo_yellow "\n6. $(gettext 'Configure Others')"
-  lang=$(get_config LANGUAGE_CODE "zh")
+  lang=$(get_config LANGUAGE_CODE "en")
   read_from_input lang "$(gettext 'Please enter language')" "zh/en/ja/es/ko/ru/vi" "${lang}"
   set_config LANGUAGE_CODE "${lang}"
 
-  timezone=$(get_config TZ "Asia/Shanghai")
+  timezone=$(get_config TZ)
+  if [[ -z "${timezone}" ]]; then
+    timezone=$(get_system_timezone)
+  fi
   read_from_input timezone "$(gettext 'Please enter timezone')" "" "${timezone}"
   set_config TZ "${timezone}"
 

@@ -17,7 +17,7 @@ function usage() {
     echo "  init             $(gettext 'Initialize configuration file')"
     echo "  port             $(gettext 'Configuration service port')"
     echo "  ssl              $(gettext 'Configuration web ssl')"
-    echo "  env              $(gettext 'Configuration jumpserver environment')"
+    echo "  env              Configure XPAM environment settings"
 }
 
 function backup_config() {
@@ -43,7 +43,7 @@ function set_ntp() {
         log_error "$(gettext 'ntpdate is not installed, please install it first')"
         exit 1
     }
-    ntp_server="ntp.aliyun.com"
+    ntp_server="pool.ntp.org"
     read_from_input ntp_server "$(gettext 'Please enter NTP SERVER')" "" "${ntp_server}"
     ntpdate -u "${ntp_server}"
 }

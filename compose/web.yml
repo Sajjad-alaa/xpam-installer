@@ -23,7 +23,7 @@ services:
     security_opt:
       - no-new-privileges:true
     environment:
-      TZ: ${TZ:-Asia/Shanghai}
+      TZ: ${TZ:-UTC}
     healthcheck:
       test: "check http://localhost:8090/health"
       interval: 10s

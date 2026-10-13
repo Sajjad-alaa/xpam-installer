@@ -6,3 +6,5 @@
 !secureconnection.conf
 !webconnector.conf
 !ai.conf
+!00-xpam-proto.conf
+!45-xpam-forwarded-proto.sh

@@ -453,7 +453,7 @@ function main() {
     exit 1
   fi
 
-  read_from_input confirm "$(gettext 'Are you sure you want to update the current version to') ${to_version} ?" "y/n" "${confirm}"
+  read_from_input confirm "Update XPAM to the current build of $(get_xpam_version)? The configuration and the database are backed up first" "y/n" "${confirm}"
   if [[ "${confirm}" != "y" || -z "${to_version}" ]]; then
     exit 3
   fi
@@ -525,10 +525,15 @@ function main() {
   echo_yellow "\n8. $(gettext 'Cleanup Image')"
   clean_images
 
-  echo_yellow "\n9. $(gettext 'Upgrade successfully. You can now restart the program')"
-  echo "cd ${PROJECT_DIR}"
-  echo "./xpamctl.sh start"
-  echo -e "\n"
+  echo_yellow "\n9. Upgrade finished"
+  confirm="y"
+  read_from_input confirm "Restart XPAM with the new version now?" "y/n" "${confirm}"
+  if [[ "${confirm}" == "y" ]]; then
+    start_xpam_and_wait
+  else
+    echo "Apply it later with: xpamctl start"
+  fi
+  echo
 }
 
 if [[ "$0" == "${BASH_SOURCE[0]}" ]]; then

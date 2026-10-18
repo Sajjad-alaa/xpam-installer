@@ -203,7 +203,44 @@ Website assets opened through a Windows publishing host (RemoteApp machine) use 
 before you publish the WebLite applet to the host. Without that file the installation on the host
 fails with "not found".
 
-## 9. If something goes wrong
+## 9. Just-in-time accounts
+
+Instead of sharing a standing account on a server, XPAM can create an account for the user when it
+is needed and remove it again. Set it up under **PAM → Just-in-time accounts**.
+
+**1. Create a policy** (Policies → Create):
+
+| Setting | Choices |
+|---|---|
+| Account lifetime | **Per connection**: created when the user connects, removed about a minute after the session ends. **While access is granted**: created as soon as a permission with this policy gives the user the asset, removed when the permission ends, is deleted, or no longer includes the user or the asset. **Approved time window**: applies to the permissions created by approved access requests; the account exists from the start to the end of the approved time. |
+| Account name | **Same as XPAM username** (with an optional prefix, e.g. `xpam-sajjad`), **Specific name** (one shared name, e.g. `ops`), **Random, fixed per user**, **Random per session** (per connection only). Names are made valid for Linux and Windows: lower case, at most 20 characters. |
+| Rights | Normal user, or administrator (Linux: sudo for all commands; Windows: member of Administrators). |
+| Linux / Windows | Shell and extra groups (Linux), local groups (Windows; Remote Desktop Users is always added). |
+| Removal | Delete the home folder / profile with the account, or keep it as `<home>.bak` (Linux). |
+
+**2. Attach it.** Choose the policy on an asset permission (Console → Authorizations → the
+permission → *Just-in-time policy*), or select permissions in the policy itself. An "Approved time
+window" policy applies by itself to the permissions created when an access request is approved
+(one such policy per organization).
+
+**3. Connect.** Users choose **Just-in-time account** in the workspace connect dialog. The first
+connection takes a few seconds longer while the account is created. From an SSH client use
+`ssh <user>#@JIT#<asset>@<xpam-server> -p 2222`.
+
+**Live accounts** lists the accounts that exist right now (with *Remove now*); **History** keeps the
+removed ones. A background check every five minutes creates missing accounts and removes leftovers,
+for example after a server was offline during a removal.
+
+What the target needs:
+
+- An account in XPAM that the automations can log in with: on Linux `root` or a sudo-capable
+  account marked *Privileged*; on Windows a local administrator.
+- Linux: SSH. Windows: WinRM (port 5985) enabled, as for every Windows account automation.
+- The just-in-time account is never offered to other users, also not through "All accounts".
+- The desktop client shows the just-in-time account from client version 5.1.0 on; the web workspace
+  needs nothing extra.
+
+## 10. If something goes wrong
 
 | Symptom | Cause and fix |
 |---|---|

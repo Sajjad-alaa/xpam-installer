@@ -1,0 +1,30 @@
+# XPAM release notes
+
+## 5.1.0
+
+**Just-in-time accounts.** XPAM can create an account on a Linux or Windows server for the user when
+it is needed and remove it again, instead of everyone sharing a standing account.
+
+- Three account lifetimes: per connection, while access is granted, and approved time window
+  (for approved access requests).
+- Four naming options: same as the XPAM username (with optional prefix), a specific shared name,
+  random but fixed per user, random per session.
+- Normal or administrator rights per policy (Linux sudo, Windows Administrators).
+- Console: PAM → Just-in-time accounts (policies, live accounts with "Remove now", history), and a
+  policy field on asset permissions. Workspace and SSH clients offer "Just-in-time account".
+- Accounts are removed after the session, when the permission ends, when a user leaves the
+  permission or is deleted, and by a check every five minutes for anything left behind.
+
+Other changes:
+
+- Removing an account from a Linux server now also removes its sudo rule, can delete the home folder,
+  ends the account's processes when asked, and never fails because an earlier `<home>.bak` exists.
+  Removing a Windows account can sign it out and delete its profile.
+- Leaving the admin console for the workspace in the same browser tab no longer signs the user out.
+
+Upgrade from 5.0.0: `xpamctl upgrade`. 5.0.0 stays available: tag `xpam-v5.0.0`, branch `xpam-5.0`,
+images `xpam/*:v5.0.0`.
+
+## 5.0.0
+
+First XPAM release.

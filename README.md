@@ -24,6 +24,13 @@ cd /opt/xpam-installer && ./xpamctl.sh install
 
 Full guide: **[docs/INSTALL.md](docs/INSTALL.md)**.
 
+What changed in each version: **[docs/RELEASE-NOTES.md](docs/RELEASE-NOTES.md)**. To install the
+previous version instead, use the tag `xpam-v5.0.0`:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Sajjad-alaa/xpam-installer/xpam-v5.0.0/quick_start.sh | XPAM_INSTALLER_BRANCH=xpam-v5.0.0 bash
+```
+
 ## Everyday commands
 
 `xpamctl` works from any folder after the installation.
@@ -71,7 +78,7 @@ again within about ten seconds of its return.
 
 The installer downloads `<registry>/<name>:<version>` and refreshes it on every install and
 upgrade, so a server never keeps running an older build with the same tag. The defaults are in
-`static.env`: registry `ghcr.io/sajjad-alaa/xpam`, version `v5.0.0`.
+`static.env`: registry `ghcr.io/sajjad-alaa/xpam`, version `v5.1.0`.
 
 `config.txt` can override this:
 

@@ -17,6 +17,10 @@ RUN /usr/local/bin/uv pip install --python /opt/py3/bin/python \
     "tornado==6.5.9" "pypdf==6.19.0" "werkzeug==3.1.3" "pymongo==4.18.2" \
     "cryptography==50.0.2" "pyOpenSSL==26.4.0" "mistune==3.3.4"
 
+# Oracle driver (thin mode, no Oracle client needed): Oracle secret automations and
+# just-in-time database accounts (upstream ships it only with the enterprise build)
+RUN /usr/local/bin/uv pip install --python /opt/py3/bin/python "oracledb==3.4.2"
+
 COPY apps /opt/jumpserver/apps
 # Compile the Python sources once at build time: faster first start, and the interpreter's
 # warnings about old-style escape sequences do not show up in installation and upgrade logs

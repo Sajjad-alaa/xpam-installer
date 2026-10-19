@@ -1,5 +1,25 @@
 # XPAM release notes
 
+## 5.1.3
+
+Zero standing privilege and just-in-time access, end to end:
+
+- **Just-in-time account only**: a policy can hide all standing accounts from the users it covers.
+- **Self-service Access page** in the workspace: request time-boxed access (1–8 h presets, reason),
+  see the time left, connect, extend or end access early, cancel pending requests.
+- **Automatic approval** by policy (up to N hours, at chosen times) and **two approvers**
+  (four-eyes) for sensitive policies.
+- **On-time ending**: warning message and workspace notice before the end; open sessions are ended
+  and accounts removed when the access ends.
+- **Security**: MFA before the just-in-time account is used, command filters for just-in-time
+  sessions, SSH key credentials on Linux/Unix.
+- **More targets**: MySQL/MariaDB, PostgreSQL, SQL Server and Oracle logins with chosen rights;
+  network devices through command templates.
+- **Overview dashboard**: zero-standing score, live accounts, approvals, standing access with
+  one-click **Convert to JIT**; **access trail** per account; export of live and removed accounts.
+- The approval history shows the chosen just-in-time policy by name; the Oracle driver is now in
+  the core image.
+
 ## 5.1.2
 
 - **Just-in-time policies apply by rules.** Each policy says who (users, user groups or user

@@ -258,14 +258,50 @@ connection takes a few seconds longer while the account is created. From an SSH 
 removed ones. A background check every five minutes creates missing accounts and removes leftovers,
 for example after a server was offline during a removal.
 
+**4. Zero standing privilege (5.1.3).** Turn on *Just-in-time account only* in a policy and the users
+it covers see no shared or personal accounts on its assets any more, only the just-in-time account.
+Nobody keeps standing access.
+
+- **Self-service.** Users open **Access** (key icon, top left of the workspace), search the assets a
+  policy lets them request, choose 1, 2, 4 or 8 hours, give a reason and send. *My access* shows
+  the time left with **Connect**, **Extend** and **End now**; pending requests can be cancelled.
+- **Approve automatically.** A policy can approve requests by itself up to a number of hours and
+  only at chosen times (for example Mon–Fri 08:00–18:00). Longer or out-of-hours requests wait for
+  an approver. Every approval, automatic or not, is kept on the request.
+- **Two approvers.** A policy can ask for a second person to approve (four-eyes); the first approver
+  cannot approve twice. With only one possible approver the request says so.
+- **Ending on time.** Users get a message (and a workspace notice with *Extend 1 h*) shortly before
+  the end; at the end open sessions are stopped and the accounts removed within a minute.
+- **MFA when connecting.** A policy can ask for MFA before its account is used in the web workspace
+  (users need MFA set up in their profile). SSH clients use XPAM's own sign-in MFA.
+- **Command filter.** Choose command groups in the policy; XPAM keeps a matching rule under
+  Command filters ("JIT · policy name") that only applies to that policy's just-in-time sessions.
+- **SSH key.** On Linux/Unix a policy can create the account with a new SSH key instead of a password.
+
+**Overview** (first tab) shows the zero-standing score (assets reached only just-in-time), live
+accounts, failures, waiting and automatically approved requests, and the permissions that still
+give standing accounts. **Convert to JIT** takes the standing accounts out of such a permission;
+its users keep access through the matching policy (the removed accounts are noted in the comment).
+Every account has an **access trail**: request, approval, creation, sessions with command counts,
+removal. Live and history lists can be exported.
+
+**Targets.**
+
+| Target | How |
+|---|---|
+| Linux/Unix, Windows | push and remove automations (the platform must allow account push); Linux needs SSH, Windows WinRM (5985) |
+| MySQL, MariaDB, PostgreSQL, SQL Server, Oracle | a login with *Read only*, *Read and write*, *Administrator* or custom SQL rights, created and dropped with the database's privileged account; its sessions are ended on removal. PostgreSQL logins also expire by themselves (VALID UNTIL) |
+| Network devices (Cisco, Huawei, H3C, any SSH device) | the policy's commands to create and remove the account, run with the device's privileged account. Placeholders `{username}`, `{password}`, `{login_password}` |
+
 What the target needs:
 
-- An account in XPAM that the automations can log in with: on Linux `root` or a sudo-capable
-  account marked *Privileged*; on Windows a local administrator.
-- Linux: SSH. Windows: WinRM (port 5985) enabled, as for every Windows account automation.
+- An account in XPAM marked *Privileged* that may create users: on Linux `root` or a sudo-capable
+  account; on Windows a local administrator; on databases e.g. `root`, `postgres`, `sa`, `system`;
+  on devices an account that may enter configuration mode.
 - The just-in-time account is never offered to other users, also not through "All accounts".
-- The desktop client shows the just-in-time account from client version 5.1.0 on; the web workspace
-  needs nothing extra.
+- Databases and devices behind a gateway are not supported yet.
+- The desktop client shows the just-in-time account from client version 5.1.0 on; the Access page
+  is part of the web workspace.
 
 ## 10. If something goes wrong
 

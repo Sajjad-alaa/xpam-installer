@@ -219,9 +219,14 @@ is needed and remove it again. Set it up under **PAM → Just-in-time accounts**
 | Removal | Delete the home folder / profile with the account, or keep it as `<home>.bak` (Linux). |
 
 **2. Attach it.** Choose the policy on an asset permission (Console → Authorizations → the
-permission → *Just-in-time policy*), or select permissions in the policy itself. An "Approved time
-window" policy applies by itself to the permissions created when an access request is approved
-(one such policy per organization).
+permission → *Just-in-time policy*), or select permissions in the policy itself.
+
+**For access requests, turn on "Apply automatically to approved access requests"** in the policy
+(one policy per organization). From then on nothing is done by hand: when a request is approved,
+the permission it creates already uses the policy and the user can connect with a just-in-time
+account right away. Requests approved earlier and still valid get the policy as well. An "Approved
+time window" policy always applies to approved requests and keeps the account for the whole
+approved time; any other lifetime works too (for example "Per connection" during the approved time).
 
 **3. Connect.** Users choose **Just-in-time account** in the workspace connect dialog. The first
 connection takes a few seconds longer while the account is created. From an SSH client use

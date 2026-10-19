@@ -1,6 +1,6 @@
 services:
   koko:
-    image: ${XPAM_NAMESPACE:-xpam}/secureconnection:${XPAM_VERSION:-${XPAM_DEFAULT_VERSION:-v5.1.0}}
+    image: ${XPAM_NAMESPACE:-xpam}/secureconnection:${XPAM_VERSION:-${XPAM_DEFAULT_VERSION:-v5.1.1}}
     container_name: xpam_secureconnection
     hostname: xpam_secureconnection
     ulimits:

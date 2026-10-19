@@ -1,5 +1,12 @@
 # XPAM release notes
 
+## 5.1.1
+
+- **Approved access requests use just-in-time accounts automatically.** A policy can be set to
+  "Apply automatically to approved access requests" (any account lifetime). The permission created
+  when a request is approved gets the policy right away, so nobody has to edit it by hand. Turning
+  the setting on also covers requests approved earlier that are still valid.
+
 ## 5.1.0
 
 **Just-in-time accounts.** XPAM can create an account on a Linux or Windows server for the user when

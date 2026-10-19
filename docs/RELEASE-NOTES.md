@@ -1,5 +1,23 @@
 # XPAM release notes
 
+## 5.1.5
+
+Approvals, done properly:
+
+- **Approvers per rule**: a just-in-time rule can name its own approvers (e.g. the database team);
+  rules without approvers use Tickets → Flow setup. A request for assets of several rules goes to
+  each rule's approvers in turn. Four-eyes works inside a team (the first approver cannot approve twice).
+- **Nobody approves their own request** — in every approval flow; without another approver the
+  administrators approve.
+- **Reminders, escalation and expiry**: approvers are reminded after 30 min, the administrators are
+  added after 2 h, and requests nobody decides within 24 h (or whose time is already over) are
+  closed and the requester is told. All configurable under Rules → Approval settings (0 = off).
+- **Approvals inbox in the workspace** (Access page): requests waiting for you with the reason and
+  warnings (long access, administrator rights, outside working hours, first time on these assets);
+  approve with one click, reject with a reason the requester sees. A workspace notice tells approvers
+  about new requests.
+- The wizard asks *Who approves?* and orders rules automatically (specific rules before broad ones).
+
 ## 5.1.4
 
 - **Simple setup**: *New just-in-time rule* is a 4-question wizard (who, where, how they get in,

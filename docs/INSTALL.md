@@ -265,6 +265,13 @@ template, choose **who** and **which servers**, choose **Instant**, **An approve
 webhook), Slack (incoming webhook) or Telegram (bot token + chat ID); approvers open the request with
 the button, sign in and approve. Users of a rule with *Ask for MFA* cannot switch their MFA off.
 
+**Approvals (5.1.5).** A rule can name its own approvers (*Who approves?* in the wizard, *Approvers*
+in the full form); otherwise Tickets → Flow setup decides. Requests for assets of several rules are
+approved by each rule's approvers in turn. Approvers see waiting requests on the workspace **Access**
+page (with reason and warnings) and approve or reject there, from the e-mail, or from Teams/Slack/
+Telegram. **Approval settings** sets reminders, escalation to the administrators and when unanswered
+requests close. Nobody can approve their own request.
+
 **4. Zero standing privilege (5.1.3).** Turn on *Just-in-time account only* in a policy and the users
 it covers see no shared or personal accounts on its assets any more, only the just-in-time account.
 Nobody keeps standing access.

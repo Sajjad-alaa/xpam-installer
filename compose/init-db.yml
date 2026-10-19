@@ -1,6 +1,6 @@
 services:
   core:
-    image: ${XPAM_NAMESPACE:-xpam}/core:${XPAM_VERSION:-${XPAM_DEFAULT_VERSION:-v5.1.4}}
+    image: ${XPAM_NAMESPACE:-xpam}/core:${XPAM_VERSION:-${XPAM_DEFAULT_VERSION:-v5.1.5}}
     container_name: xpam_core
     hostname: xpam_core
     command: sleep

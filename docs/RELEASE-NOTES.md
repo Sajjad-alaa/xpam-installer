@@ -1,5 +1,15 @@
 # XPAM release notes
 
+## 5.1.6
+
+- **No account to choose for just-in-time access**: in the console request form, servers covered by
+  a just-in-time rule show "Just-in-time account — created for you and removed afterwards" instead of
+  the account chooser (an existing account can still be picked unless the rule is "JIT only"; with
+  mixed servers the chooser appears only for the others). The approval screen shows the just-in-time
+  account instead of asking the approver to pick accounts.
+- Requests store the account as `@JIT` ("Just-in-time account"); older requests keep working.
+- The request form no longer stays empty for users without a selected organization.
+
 ## 5.1.5
 
 Approvals, done properly:

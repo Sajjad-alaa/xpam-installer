@@ -8,7 +8,7 @@ every build host starts from the same bytes.
 
 ## Build everything
 ```bash
-./build-all.sh                      # all seven images, tagged xpam/<name>:v5.1.1
+./build-all.sh                      # all seven images, tagged xpam/<name>:v5.1.2
 ./build-all.sh core web             # only some
 TAG=v5.0.1 NS=xpam SRC=/opt ./build-all.sh
 ```
@@ -36,7 +36,7 @@ the license code.
 | webconnector (chen) | `xpam/webconnector` | `/webconnector/` | `/chen/` (hidden proxy alias) |
 | ai (kael) | `xpam/ai` | `/ai/` | `/kael/` (hidden proxy alias) |
 
-Tag every image with the installer's XPAM version (`XPAM_DEFAULT_VERSION=v5.1.1` in `static.env`) so compose picks it up.
+Tag every image with the installer's XPAM version (`XPAM_DEFAULT_VERSION=v5.1.2` in `static.env`) so compose picks it up.
 
 The Dockerfile-specific `*.dockerignore` files need BuildKit (default in current Docker).
 
@@ -108,7 +108,7 @@ docker run --rm -v /opt/xpam-secureconnection:/ro:ro -v $PWD/libghostty-vt:/opt/
   -e PKG_CONFIG_PATH=/opt/libghostty-vt/share/pkgconfig golang:1.26-trixie sh -c 'cp -r /ro /src && cd /src && \
   go test ./pkg/httpd/ ./pkg/lion/... ./pkg/common/ ./pkg/config/ && \
   KEY=$(head -c 100 /dev/urandom | base64 | tr -dc A-Za-z0-9 | head -c 32) && \
-  go build -trimpath -ldflags "-X main.Version=v5.1.1-xpam -X github.com/jumpserver/koko/pkg/config.CipherKey=$KEY -w -s" \
+  go build -trimpath -ldflags "-X main.Version=v5.1.2-xpam -X github.com/jumpserver/koko/pkg/config.CipherKey=$KEY -w -s" \
   -o /out/koko ./cmd/koko/'
 
 docker build -f /opt/xpam-build/secureconnection.Dockerfile -t xpam/secureconnection:<tag> ./out
@@ -133,7 +133,7 @@ The SQL Server driver is loaded by its exact file name, so updating it means cha
 ```bash
 docker run --rm -v /opt/xpam-ai:/ro:ro -v $PWD/ai-out:/out -e CGO_ENABLED=0 -e GOFLAGS=-buildvcs=false \
   golang:1.26-trixie sh -c 'cp -r /ro /src && cd /src && go test ./... && \
-  go build -trimpath -ldflags "-s -w -X main.Version=v5.1.1-xpam" -o /out/kael ./cmd/kael'
+  go build -trimpath -ldflags "-s -w -X main.Version=v5.1.2-xpam" -o /out/kael ./cmd/kael'
 docker build -f /opt/xpam-build/ai.Dockerfile -t xpam/ai:<tag> ./ai-out
 ```
 

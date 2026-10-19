@@ -212,21 +212,43 @@ is needed and remove it again. Set it up under **PAM → Just-in-time accounts**
 
 | Setting | Choices |
 |---|---|
-| Account lifetime | **Per connection**: created when the user connects, removed about a minute after the session ends. **While access is granted**: created as soon as a permission with this policy gives the user the asset, removed when the permission ends, is deleted, or no longer includes the user or the asset. **Approved time window**: applies to the permissions created by approved access requests; the account exists from the start to the end of the approved time. |
+| Account lifetime | **Per connection**: created when the user connects, removed about a minute after the session ends. **While access is granted**: created as soon as a permission gives the user the asset under this policy, removed when the permission ends, is deleted, or no longer includes the user or the asset. **Approved time window**: for approved access requests; the account exists from the start to the end of the approved time. |
 | Account name | **Same as XPAM username** (with an optional prefix, e.g. `xpam-sajjad`), **Specific name** (one shared name, e.g. `ops`), **Random, fixed per user**, **Random per session** (per connection only). Names are made valid for Linux and Windows: lower case, at most 20 characters. |
 | Rights | Normal user, or administrator (Linux: sudo for all commands; Windows: member of Administrators). |
 | Linux / Windows | Shell and extra groups (Linux), local groups (Windows; Remote Desktop Users is always added). |
 | Removal | Delete the home folder / profile with the account, or keep it as `<home>.bak` (Linux). |
 
-**2. Attach it.** Choose the policy on an asset permission (Console → Authorizations → the
-permission → *Just-in-time policy*), or select permissions in the policy itself.
+**2. Say who and where it is for** (in the policy, section *Applies to*). Nothing is linked by hand:
 
-**For access requests, turn on "Apply automatically to approved access requests"** in the policy
-(one policy per organization). From then on nothing is done by hand: when a request is approved,
-the permission it creates already uses the policy and the user can connect with a just-in-time
-account right away. Requests approved earlier and still valid get the policy as well. An "Approved
-time window" policy always applies to approved requests and keeps the account for the whole
-approved time; any other lifetime works too (for example "Per connection" during the approved time).
+| Setting | Meaning |
+|---|---|
+| Applies to | **Asset permissions and approved requests**, **Approved access requests only**, or **Only permissions I link to it** (the old manual way). |
+| Who | All users, chosen users, or users by attribute, e.g. *User groups* = `Linux-Admins`. |
+| Where | All assets, chosen assets, or assets by attribute, e.g. *Node* = `/Production/Linux` or *Platform* = `Windows`. |
+| Priority | 1-100. When several policies match the same user and asset, the lowest value wins. |
+
+Example with three policies:
+
+| Policy | Priority | Who | Where | Lifetime |
+|---|---|---|---|---|
+| Linux admins | 10 | group Linux-Admins | node /Production/Linux | while granted, sudo |
+| Contractors | 20 | group Contractors | all assets | per connection, no sudo |
+| Default | 100 | all users | all assets | approved requests only, per connection |
+
+A user who has a permission (or an approved request) for an asset gets a just-in-time account from
+the first policy that matches. Linux/Unix and Windows assets whose platform allows account push
+are supported; other assets are skipped.
+
+**Which policy applies?** The tab with that name shows, for a user and assets or nodes, which policy
+applies and why (or why none does), either with the user's current permissions or as if an access
+request were approved now.
+
+**Access requests.** On the approval screen the approver sees *Just-in-time account*:
+**Automatic (policy rules)** (default; the screen lists which policy each requested asset gets),
+**No just-in-time account**, or a specific policy. After approval nothing else has to be done.
+
+**One permission differently.** On an asset permission you can still choose a policy (it then wins
+over the rules) or turn on *No just-in-time account*.
 
 **3. Connect.** Users choose **Just-in-time account** in the workspace connect dialog. The first
 connection takes a few seconds longer while the account is created. From an SSH client use

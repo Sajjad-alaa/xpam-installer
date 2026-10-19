@@ -1,5 +1,20 @@
 # XPAM release notes
 
+## 5.1.2
+
+- **Just-in-time policies apply by rules.** Each policy says who (users, user groups or user
+  attributes) and where (assets, nodes, platforms or other asset attributes) it is for, plus a
+  priority. XPAM picks the matching policy by itself for asset permissions and approved access
+  requests, so several policies no longer have to be linked to permissions by hand. The old
+  "only permissions I link to it" way is still available.
+- **Approvers choose the just-in-time account on the request**: automatic (the screen shows which
+  policy each asset gets), none, or a specific policy.
+- New **Which policy applies?** tab: shows for a user and assets which policy applies and why.
+- Asset permissions can turn off just-in-time accounts ("No just-in-time account").
+- Upgrading from 5.1.1: a policy that applied to approved requests becomes "Approved access
+  requests only" for all users and assets; other policies keep working with their linked
+  permissions.
+
 ## 5.1.1
 
 - **Approved access requests use just-in-time accounts automatically.** A policy can be set to

@@ -1,5 +1,19 @@
 # XPAM release notes
 
+## 5.1.4
+
+- **Simple setup**: *New just-in-time rule* is a 4-question wizard (who, where, how they get in,
+  how long) with templates *Developers*, *Operations* and *Administrators*; safe defaults for the
+  rest, the full form stays under *Advanced form* / *Edit*. The page has three tabs: Overview,
+  Rules, Accounts; *Test* on a rule shows which rule applies to a user.
+- **Approve from chat**: approval requests also go to Microsoft Teams, Slack and Telegram with an
+  *Open approval* button (Rules → *Approval channels*, with *Send test message*). Chat links always
+  need a sign-in; e-mail links can optionally approve without one. Link lifetime is configurable.
+- **MFA cannot be switched off** by users of a rule that asks for MFA; they set it up at their next
+  sign-in.
+- Rules start with nobody selected; a warning shows when a rule covers all users or all assets.
+- Oracle just-in-time logins tested.
+
 ## 5.1.3
 
 Zero standing privilege and just-in-time access, end to end:

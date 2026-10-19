@@ -1,7 +1,7 @@
 services:
   # Workspace (web terminal): static files only. The gateway forwards /workspace/ here; nothing else depends on it.
   workspace:
-    image: ${XPAM_NAMESPACE:-xpam}/workspace:${XPAM_VERSION:-${XPAM_DEFAULT_VERSION:-v5.1.3}}
+    image: ${XPAM_NAMESPACE:-xpam}/workspace:${XPAM_VERSION:-${XPAM_DEFAULT_VERSION:-v5.1.4}}
     container_name: xpam_workspace
     hostname: xpam_workspace
     ulimits:

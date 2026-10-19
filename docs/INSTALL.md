@@ -258,6 +258,13 @@ connection takes a few seconds longer while the account is created. From an SSH 
 removed ones. A background check every five minutes creates missing accounts and removes leftovers,
 for example after a server was offline during a removal.
 
+**Quick start (5.1.4).** PAM → Just-in-time accounts → **Rules → Create** opens a wizard: pick a
+template, choose **who** and **which servers**, choose **Instant**, **An approver says yes** or
+**Two approvers say yes**, and the longest time. Done. *Advanced form* (or *Edit*) shows every setting.
+**Approval channels** (button on the Rules tab) sends approval requests to Microsoft Teams (Workflows
+webhook), Slack (incoming webhook) or Telegram (bot token + chat ID); approvers open the request with
+the button, sign in and approve. Users of a rule with *Ask for MFA* cannot switch their MFA off.
+
 **4. Zero standing privilege (5.1.3).** Turn on *Just-in-time account only* in a policy and the users
 it covers see no shared or personal accounts on its assets any more, only the just-in-time account.
 Nobody keeps standing access.

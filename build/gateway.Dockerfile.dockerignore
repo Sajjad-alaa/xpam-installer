@@ -8,3 +8,4 @@
 !ai.conf
 !00-xpam-proto.conf
 !45-xpam-forwarded-proto.sh
+!46-xpam-download-fallback.sh

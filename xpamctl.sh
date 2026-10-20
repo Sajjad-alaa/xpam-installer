@@ -84,6 +84,8 @@ function usage() {
   echo "  backup_no_audit   $(gettext 'Backup database without audit data')"
   echo "  backup_audit      $(gettext 'Backup audits tables')"
   echo "  restore_db [file]        $(gettext 'Data recovery through database backup file')"
+  echo "  rotate-secret-key [-y]   Replace SECRET_KEY and re-encrypt all stored secrets (short downtime)"
+  echo "  fetch-applet-files       Put the Windows publishing host installers on this server (checksum checked)"
   echo "  raw               $(gettext 'Execute the original docker compose command')"
   echo "  tail [service]    $(gettext 'View log')"
   echo "  version           Show the XPAM release and the build of each image"
@@ -369,6 +371,12 @@ function main() {
     ;;
   backup_audit)
     bash "${SCRIPT_DIR}/5_db_backup.sh" "audit"
+    ;;
+  fetch-applet-files)
+    bash "${SCRIPT_DIR}/fetch_applet_files.sh" "${target}"
+    ;;
+  rotate-secret-key)
+    bash "${SCRIPT_DIR}/rotate_secret_key.sh" "${target}"
     ;;
   restore_db)
     bash "${SCRIPT_DIR}/6_db_restore.sh" "$target"

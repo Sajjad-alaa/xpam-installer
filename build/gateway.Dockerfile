@@ -30,6 +30,7 @@ RUN sed -i 's#^  server_tokens off;#  server_tokens off;\n  add_header Strict-Tr
 # header sent by the browser itself is overwritten here.
 COPY 00-xpam-proto.conf /etc/nginx/conf.d/00-xpam-proto.conf
 COPY --chmod=755 45-xpam-forwarded-proto.sh /docker-entrypoint.d/45-xpam-forwarded-proto.sh
+COPY --chmod=755 46-xpam-download-fallback.sh /docker-entrypoint.d/46-xpam-download-fallback.sh
 RUN sed -i 's#proxy_set_header Host \$host;#proxy_set_header Host $http_host;#g; s#^\( *\)proxy_set_header X-Forwarded-For \$remote_addr;#&\n\1proxy_set_header X-Forwarded-Proto $scheme;#' /etc/nginx/sites-enabled/https_server.conf \
     && [ "$(grep -c 'proxy_set_header X-Forwarded-Proto \$scheme;' /etc/nginx/sites-enabled/https_server.conf)" = "2" ] \
     && [ "$(grep -c 'proxy_set_header Host \$http_host;' /etc/nginx/sites-enabled/https_server.conf)" = "2" ]

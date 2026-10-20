@@ -376,7 +376,7 @@ function clean_images() {
   # XPAM images are cleaned together with the upstream ones of the replaced version
   old_images=$(docker images --format "{{.Repository}}:{{.Tag}}" \
     | grep -E "^(${namespace}|${xpam_namespace})/" \
-    | awk -F: -v v="${current_version}" '$NF == v' || true)  # exact tag: v5.1.1 is not v5.1.10
+    | awk -F: -v v="${current_version}" '$NF == v' || true)  # exact tag: v5.1.1 is not v5.1.11
   if [[ -n "${old_images}" ]]; then
     confirm="y"
     read_from_input confirm "$(gettext 'Do you need to clean up the old version image')?" "y/n" "${confirm}"

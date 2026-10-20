@@ -2,7 +2,7 @@
 # Build all XPAM images from the source repos.
 #   ./build-all.sh                 build everything
 #   ./build-all.sh core web        build only the named images
-# Images: core gateway web workspace secureconnection webconnector ai browser
+# Images: core gateway web workspace secureconnection webconnector ai browser postgresql-ha
 # Environment: SRC (repos folder, default /opt), NS (default xpam), TAG (default v5.1.15).
 # Needs: docker with BuildKit, and for the web and workspace images node 24 with the repos' node_modules installed.
 set -euo pipefail
@@ -91,6 +91,11 @@ build_browser() {
   docker build -q --build-arg APT_REFRESH="$APT_REFRESH" -f "$HERE/browser.Dockerfile" -t "$NS/browser:$TAG" "$SRC/xpam-secureconnection/browser"
 }
 
+build_postgresql-ha() {
+  say "postgresql-ha"
+  docker build -q --build-arg APT_REFRESH="$APT_REFRESH" -f "$HERE/postgresql-ha.Dockerfile" -t "$NS/postgresql-ha:$TAG" "$HERE"
+}
+
 build_ai() {
   say "ai: binary"
   mkdir -p "$CACHE/ai-out" "$CACHE/gocache" "$CACHE/gomod"
@@ -103,7 +108,7 @@ build_ai() {
   docker build -q --build-arg APT_REFRESH="$APT_REFRESH" -f "$HERE/ai.Dockerfile" -t "$NS/ai:$TAG" "$CACHE/ai-out"
 }
 
-targets=("$@"); [[ ${#targets[@]} -gt 0 ]] || targets=(core gateway web workspace secureconnection webconnector ai browser)
+targets=("$@"); [[ ${#targets[@]} -gt 0 ]] || targets=(core gateway web workspace secureconnection webconnector ai browser postgresql-ha)
 for t in "${targets[@]}"; do "build_$t"; done
 say "done"
-docker images --format '{{.Repository}}:{{.Tag}}  {{.ID}}  {{.CreatedSince}}' | grep -E "^$NS/(core|gateway|web|workspace|secureconnection|webconnector|ai):$TAG " | sort
+docker images --format '{{.Repository}}:{{.Tag}}  {{.ID}}  {{.CreatedSince}}' | grep -E "^$NS/(core|gateway|web|workspace|secureconnection|webconnector|ai|browser|postgresql-ha):$TAG " | sort

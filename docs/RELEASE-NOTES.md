@@ -1,5 +1,22 @@
 # XPAM release notes
 
+## 5.1.11 — key rotation, certificate checks, local downloads only
+
+- **`xpamctl rotate-secret-key`** replaces SECRET_KEY and re-encrypts every stored secret (account
+  secrets and their history, MFA secrets, e-mail and phone, keys, tokens, storage settings,
+  encrypted settings) in one database transaction, and recomputes the e-mail sign-in lookups. It
+  backs up first, refuses when the current key cannot read the data, and verifies a sample with the
+  new key before saving. Recommended once for servers installed before 5.1.10 (their key came from
+  the hardware ID). Plan a few minutes of downtime; everybody signs in again.
+- **Website assets: "Verify certificate".** The remote browser now checks the site's certificate
+  when the option is on (the default for new assets; existing assets keep the old behaviour until
+  you switch it on). A failing certificate ends the session with a clear message, and users cannot
+  click through certificate warnings.
+- **No download fallback to jumpserver.org.** `/download/` serves only local files (opt back in
+  with `DOWNLOAD_FALLBACK=1`). `xpamctl fetch-applet-files` puts the Windows publishing host
+  installers on the server, checksum-checked.
+- Images are rebuilt with current operating-system security updates.
+
 ## 5.1.10 — security hardening
 
 A full review by ten reviewers (one per service, plus image, secret and endpoint scans) found

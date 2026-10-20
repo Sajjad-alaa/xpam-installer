@@ -111,6 +111,20 @@ the environment as `XPAM_REGISTRY_USER` and `XPAM_REGISTRY_TOKEN`. XPAM does not
 - **Name, logo and help links.** A new server is called XPAM and uses the XPAM logo and colours.
   Change the name, logo and theme under System settings → Interface, and the "Documentation" and
   "Support" links of the help menu under System settings → Basic.
+- **Replacing SECRET_KEY.** Servers installed before 5.1.10 derived SECRET_KEY from the hardware
+  ID. Replace it once, in a maintenance window (XPAM is offline for a few minutes and everybody
+  signs in again):
+
+  ```bash
+  xpamctl rotate-secret-key
+  ```
+
+  It backs up the database and `config.txt`, stops XPAM (database and Redis keep running),
+  re-encrypts every stored secret with a new random key in one database transaction, saves the
+  key, clears the cache and starts XPAM. If anything cannot be read with the current key it
+  stops and changes nothing, and XPAM starts again with the old key. Keep the backup it names
+  until you have checked that accounts and sign-in work. Afterwards, randomly generated JIT
+  account names (naming "random, fixed per user") are different from before.
 - **Kubernetes assets.** The session service runs without host privileges. Kubernetes sessions
   in the web terminal need them: set `KOKO_PRIVILEGED=true` in `config.txt` and `xpamctl restart`
   only if you use that feature.
@@ -127,6 +141,8 @@ the environment as `XPAM_REGISTRY_USER` and `XPAM_REGISTRY_TOKEN`. XPAM does not
 | `xpamctl backup_db` | back up the database |
 | `xpamctl restore_db <file>` | restore a backup |
 | `xpamctl upgrade` | update the installer and XPAM to the current build (backs up first) |
+| `xpamctl rotate-secret-key` | replace SECRET_KEY and re-encrypt all stored secrets (see section 4) |
+| `xpamctl fetch-applet-files` | put the Windows publishing host installers on this server (see section 8) |
 | `xpamctl version` | the XPAM release and the exact build of each image |
 | `xpamctl uninstall` | remove XPAM (asks before deleting data) |
 
@@ -165,6 +181,13 @@ Where things are:
 - Session and CSRF cookies are sent over HTTPS only.
 - The SSH service (port 2222) offers only SHA-2 based host key signatures and message
   authentication codes. Very old SSH clients (OpenSSH before 7.2, PuTTY before 0.68) cannot connect.
+- `/download/` serves only files on this server; a missing file is "not found". Upstream fetched
+  missing files from jumpserver.org instead. To allow that again, set `DOWNLOAD_FALLBACK=1` in
+  `config.txt` and run `xpamctl restart`.
+- Website assets opened in the remote browser check the site's certificate (Website asset →
+  "Verify certificate"). It is on for new assets and off for assets created before 5.1.11, so
+  internal sites with self-signed certificates keep working; switch it on for every site with a
+  proper certificate. A site whose certificate fails is not shown and the user sees why.
 - `BOOTSTRAP_TOKEN` in `config.txt` is only used when a component registers for the first time.
   To replace it, put a new random value in `config.txt` and run `xpamctl start`; components that
   are already registered keep working.
@@ -202,6 +225,18 @@ Website assets opened through a Windows publishing host (RemoteApp machine) use 
 `XPAM-WebLite-<version>-x64.msi` from the client release on GitHub to `/data/xpam/web/applets/`
 before you publish the WebLite applet to the host. Without that file the installation on the host
 fails with "not found".
+
+The host also downloads the applet runtime (`Tinker_Installer_v0.3.0.exe` and
+`jumpserver-tinker-python-3.11.11-win64.zip`). Put them on this server before adding the host:
+
+```bash
+xpamctl fetch-applet-files
+```
+
+Every file is checked against `scripts/applet-files.sha256` in the installer. Add the vendor's
+SHA-256 values there, or run it once with `--trust-on-first-use` to record the checksums of the
+files downloaded now (later downloads must match them). `APPLET_FILES_SOURCE=<url>` takes the
+files from another server.
 
 ## 9. Just-in-time accounts
 

@@ -2,17 +2,30 @@
 
 ## 5.1.8
 
-- **Remote browser: a failed automatic sign-in closes the session.** When the website does not
-  accept the stored account (for example the password was changed on the site), the user sees
-  "Automatic sign-in failed — ask your administrator to update the account" and the session ends
-  a few seconds later. The login page is never left open for someone to try other credentials.
-  - While XPAM signs in, the site is covered by a "Signing in…" screen and the user's key presses
-    are ignored, so the login form is never seen or used. The failure message appears about 12
-    seconds after the sign-in attempt.
-  - How success is detected: the asset platform's *success selector* when it is set; otherwise the
-    login form must be gone after signing in.
-  - If the platform has an *interactive selector* (MFA code, captcha) and it appears, the user has
-    3 minutes to complete it before the session is closed.
+**Remote browser: automatic sign-in that covers every case.** While XPAM signs in, the site is
+hidden behind a "Signing in…" screen and the user's key presses are ignored, so the login form is
+never seen or used. When the sign-in works the site appears (about 2–3 seconds); when it fails
+the user is told why and the session ends a few seconds later.
+
+| Situation | What happens |
+|---|---|
+| Normal login form (also inside frames and web components, with or without selectors) | Filled in and sent |
+| Two-step login (user name page, then password page) | Both steps are done |
+| HTTP authentication (Basic, Digest, NTLM) | Answered by XPAM, no browser prompt |
+| Login page built by JavaScript (single-page apps) | Waits for the form, detects the result |
+| MFA code or captcha | The account is filled in, the screen is handed to the user (3 minutes) |
+| Wrong password (form back, 401/403, error message) | "Automatic sign-in failed", session ends |
+| Account locked / disabled | "Account locked", session ends |
+| Website asks for a new password | "New password required", session ends |
+| Website down or unknown | Three tries, then "Website not reachable", session ends |
+| Website signs the account out later | Signed in again automatically (at most 3 times in 10 minutes) |
+| A page fails to load later | XPAM's own "Page not available" page with Try again (Chromium's error page would show the address) |
+| No login page at all | The site is shown after a few seconds |
+
+- The asset platform's *success selector* and *interactive selector* are used when set; they are no
+  longer required.
+- The password stays in the browser service's memory until the session ends (needed to sign in
+  again and for HTTP authentication); it is never written to disk or logs.
 
 ## 5.1.7
 

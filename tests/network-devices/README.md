@@ -5,6 +5,9 @@ Huawei VRP and H3C Comware with a real local-user database (one port per vendor,
 account is `admin` with the password in `EMU_PASSWORD`). It is a test tool only: real devices may
 answer differently, so a new vendor or OS version should also be checked on a real device.
 
+The emulator also serves FortiGate (port 4431) and PAN-OS (port 4432) web admin login pages over HTTPS
+(self-signed), checked against the same accounts; `GET /_emu/logins` lists successful web sign-ins.
+
 - `drivers_test.py`: the vendor drivers (`apps/libs/ansible/modules_utils/network_device.py`) for every
   operation; run it in a container of the core image with the driver copied to `/work`.
 - `e2e.py`: XPAM's real automations (push, discovery, change secret, remove) and just-in-time accounts,

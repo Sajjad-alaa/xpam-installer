@@ -1,5 +1,17 @@
 # XPAM release notes
 
+## 5.1.12 — FortiGate and Palo Alto web admin (GUI)
+
+- **Device web admin in the Remote browser.** FortiGate and PaloAlto assets get an HTTP(s) protocol
+  next to SSH. Choosing it opens the device's admin page signed in with the stored account or the
+  user's just-in-time account (with its read-only/operator/administrator role); the password stays
+  on the server and the session is recorded. A wrong password or an untrusted certificate (when
+  certificate checking is on) ends the session with the reason.
+- Any device platform can get the HTTP(s) protocol (Juniper, Huawei, H3C, Cisco web UIs); the port
+  of the admin page is set on the asset.
+- Approval channel webhooks (Teams, Slack) must be public internet addresses (from the 5.1.11 audit
+  follow-up).
+
 ## 5.1.11 — key rotation, certificate checks, local downloads only
 
 - **`xpamctl rotate-secret-key`** replaces SECRET_KEY and re-encrypts every stored secret (account

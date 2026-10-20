@@ -765,6 +765,139 @@ def listen(port, vendor):
         threading.Thread(target=serve_client, args=(client, vendor), daemon=True).start()
 
 
+# ---------------------------------------------------------------- web admin pages (HTTPS)
+# FortiGate (4431) and PAN-OS (4432) login pages with the field ids of the real ones, checked against
+# the same local-user database as the SSH side. GET /_emu/logins lists successful web sign-ins.
+GUI_PORTS = {4431: 'fortinet', 4432: 'paloalto'}
+GUI_LOGINS, GUI_SESSIONS = [], {}
+
+FORTI_LOGIN = """<!DOCTYPE html><html><head><title>FortiGate</title></head><body>
+<div class="login"><h1>FortiGate-VM64</h1>
+<input id="username" name="username" type="text" autocomplete="off" placeholder="Username">
+<input id="secretkey" name="secretkey" type="password" placeholder="Password">
+<button id="login_button" type="button" class="primary">Login</button>
+<div id="err" style="color:red"></div></div>
+<script>
+document.getElementById('login_button').addEventListener('click', async () => {
+  const body = new URLSearchParams({username: document.getElementById('username').value,
+                                    secretkey: document.getElementById('secretkey').value});
+  const r = await fetch('/logincheck', {method: 'POST', body});
+  if ((await r.text()).trim() === '1') { location.href = '/ng/'; }
+  else { document.getElementById('err').textContent = 'Authentication failure'; }
+});
+</script></body></html>"""
+PAN_LOGIN = """<!DOCTYPE html><html><head><title>Login</title></head><body>
+<form method="post" action="/php/login.php"><h1>PAN-OS</h1>
+<input type="text" name="user" id="user"><input type="password" name="passwd" id="passwd">
+<input type="submit" name="ok" id="submit" value="Log In"><div class="err">%s</div></form></body></html>"""
+DASH = """<!DOCTYPE html><html><head><title>%s</title></head><body><div id="dashboard"><h1>%s</h1>
+<p>Signed in as <b id="who">%s</b> (%s)</p><a href="/logout">Logout</a></div></body></html>"""
+
+
+def gui_handler(vendor):
+    from http.server import BaseHTTPRequestHandler
+    from urllib.parse import parse_qs
+    import json as _json
+    import secrets as _secrets
+
+    class H(BaseHTTPRequestHandler):
+        def log_message(self, *a):
+            pass
+
+        def send(self, code, body='', ctype='text/html', headers=()):
+            data = body.encode()
+            self.send_response(code)
+            self.send_header('Content-Type', ctype)
+            self.send_header('Content-Length', str(len(data)))
+            for k, v in headers:
+                self.send_header(k, v)
+            self.end_headers()
+            self.wfile.write(data)
+
+        def who(self):
+            for part in (self.headers.get('Cookie') or '').split(';'):
+                k, _, v = part.strip().partition('=')
+                if k == 'EMUSESSION' and v in GUI_SESSIONS:
+                    return GUI_SESSIONS[v]
+            return None
+
+        def form(self):
+            n = int(self.headers.get('Content-Length') or 0)
+            return {k: v[0] for k, v in parse_qs(self.rfile.read(n).decode()).items()}
+
+        def signed_in(self, user):
+            dev = STATE.setdefault(vendor, DEVICES[vendor][0]())
+            sid = _secrets.token_hex(16)
+            GUI_SESSIONS[sid] = user
+            GUI_LOGINS.append({'vendor': vendor, 'user': user, 'role': dev.users[user]['role']})
+            return ('Set-Cookie', f'EMUSESSION={sid}; Path=/; Secure; HttpOnly')
+
+        def ok(self, user, pw):
+            dev = STATE.setdefault(vendor, DEVICES[vendor][0]())
+            return dev.auth(user, pw)
+
+        def do_GET(self):
+            if self.path == '/_emu/logins':
+                return self.send(200, _json.dumps(GUI_LOGINS), 'application/json')
+            user = self.who()
+            if self.path == '/logout':
+                return self.send(302, headers=[('Location', '/'), ('Set-Cookie', 'EMUSESSION=; Path=/; Max-Age=0')])
+            if vendor == 'fortinet':
+                if self.path.startswith('/ng') and user:
+                    role = STATE[vendor].users[user]['role']
+                    return self.send(200, DASH % ('FortiGate', 'Dashboard', user, role))
+                if self.path.startswith('/login'):
+                    return self.send(200, FORTI_LOGIN)
+                return self.send(302, headers=[('Location', '/ng/' if user else '/login')])
+            if user and not self.path.startswith('/php/login'):
+                role = STATE[vendor].users[user]['role']
+                return self.send(200, DASH % ('PA-VM', 'Dashboard', user, role))
+            if self.path.startswith('/php/login'):
+                return self.send(200, PAN_LOGIN % '')
+            return self.send(302, headers=[('Location', '/php/login.php')])
+
+        def do_POST(self):
+            f = self.form()
+            if vendor == 'fortinet' and self.path == '/logincheck':
+                if self.ok(f.get('username', ''), f.get('secretkey', '')):
+                    return self.send(200, '1', 'text/plain', [self.signed_in(f['username'])])
+                return self.send(200, '0', 'text/plain')
+            if vendor == 'paloalto' and self.path.startswith('/php/login'):
+                if self.ok(f.get('user', ''), f.get('passwd', '')):
+                    return self.send(302, headers=[('Location', '/'), self.signed_in(f['user'])])
+                return self.send(200, PAN_LOGIN % 'Invalid username or password')
+            return self.send(404, 'not found')
+    return H
+
+
+def gui_listen(port, vendor):
+    import ssl, tempfile, datetime
+    from http.server import ThreadingHTTPServer
+    from cryptography import x509
+    from cryptography.x509.oid import NameOID
+    from cryptography.hazmat.primitives import hashes, serialization
+    from cryptography.hazmat.primitives.asymmetric import ec
+    key = ec.generate_private_key(ec.SECP256R1())
+    name = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, vendor)])
+    now = datetime.datetime.now(datetime.timezone.utc)
+    cert = x509.CertificateBuilder().subject_name(name).issuer_name(name).public_key(key.public_key()) \
+        .serial_number(x509.random_serial_number()).not_valid_before(now - datetime.timedelta(days=1)) \
+        .not_valid_after(now + datetime.timedelta(days=30)).sign(key, hashes.SHA256())
+    d = tempfile.mkdtemp()
+    with open(f'{d}/c.pem', 'wb') as fh:
+        fh.write(cert.public_bytes(serialization.Encoding.PEM))
+    with open(f'{d}/k.pem', 'wb') as fh:
+        fh.write(key.private_bytes(serialization.Encoding.PEM, serialization.PrivateFormat.PKCS8,
+                                   serialization.NoEncryption()))
+    ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+    ctx.load_cert_chain(f'{d}/c.pem', f'{d}/k.pem')
+    httpd = ThreadingHTTPServer(('0.0.0.0', port), gui_handler(vendor))
+    httpd.socket = ctx.wrap_socket(httpd.socket, server_side=True)
+    httpd.serve_forever()
+
+
+for port, vendor in GUI_PORTS.items():
+    threading.Thread(target=gui_listen, args=(port, vendor), daemon=True).start()
 for port, vendor in PORTS.items():
     threading.Thread(target=listen, args=(port, vendor), daemon=True).start()
 print('emulator ready', flush=True)

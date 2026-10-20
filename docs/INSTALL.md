@@ -243,7 +243,26 @@ SHA-256 values there, or run it once with `--trust-on-first-use` to record the c
 files downloaded now (later downloads must match them). `APPLET_FILES_SOURCE=<url>` takes the
 files from another server.
 
-## 9. Just-in-time accounts
+## 9. Web admin of FortiGate and Palo Alto (GUI)
+
+FortiGate and PaloAlto assets have two protocols: **SSH** (command line) and **HTTP(s)** (the web
+admin page, port 443; change the port on the asset when the admin page uses another one, e.g. 8443).
+In the workspace, connect to the device and choose **HTTP(s) → Remote browser**: the admin page
+opens signed in with the chosen account (or the user's just-in-time account), the password never
+reaches the user's computer, and the session is recorded like a remote desktop.
+
+- The sign-in fields and certificate checking are settings of the platform's HTTP(s) protocol
+  (Assets → Platforms → FortiGate → Protocols → HTTP(s) → settings). Certificate checking is off by
+  default because devices ship with a self-signed certificate; switch it on when the devices have
+  a trusted certificate.
+- Other devices (Juniper J-Web, Huawei, H3C, Cisco web UIs): add the HTTP(s) protocol to their
+  platform; the Remote browser finds most login forms by itself, or set the field selectors there.
+- Just-in-time accounts get the platform's role (read-only, operator, administrator or a custom
+  profile), which applies to the web admin page as well as to SSH.
+- The device must be reachable from the XPAM server; devices behind a gateway (jump host) are not
+  supported for web admin sessions.
+
+## 10. Just-in-time accounts
 
 Instead of sharing a standing account on a server, XPAM can create an account for the user when it
 is needed and remove it again. Set it up under **PAM → Just-in-time accounts**.
@@ -357,7 +376,7 @@ What the target needs:
 - The desktop client shows the just-in-time account from client version 5.1.0 on; the Access page
   is part of the web workspace.
 
-## 10. If something goes wrong
+## 11. If something goes wrong
 
 | Symptom | Cause and fix |
 |---|---|

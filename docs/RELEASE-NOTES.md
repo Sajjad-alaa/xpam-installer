@@ -1,5 +1,17 @@
 # XPAM release notes
 
+## 5.1.14 — smoother setup of JIT rules, web assets and devices
+
+- **JIT wizard checks the chosen assets.** Right after you pick servers, databases or devices it shows
+  how many can get just-in-time accounts and, for the others, what to fix (e.g. "Add a privileged
+  account on the asset", "Account push is turned off in the platform") with the asset names — no more
+  finding out when a user's connection fails.
+- **Web assets without selectors.** The sign-in fields are optional and empty by default: the Remote
+  browser finds the login form and recognises a successful sign-in by itself. Fill them only for
+  unusual sites. An address typed without `https://` gets it (and port 443).
+- **Devices:** the form explains that the device's admin account must be marked "Privileged" (used for
+  account push, discovery and just-in-time accounts, and as the enable password).
+
 ## 5.1.13 — smoother just-in-time access
 
 - **Extensions lengthen the same access.** "Extend" counts the extra hours from the current end (it

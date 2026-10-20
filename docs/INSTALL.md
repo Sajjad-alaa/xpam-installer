@@ -188,6 +188,11 @@ Where things are:
   "Verify certificate"). It is on for new assets and off for assets created before 5.1.11, so
   internal sites with self-signed certificates keep working; switch it on for every site with a
   proper certificate. A site whose certificate fails is not shown and the user sees why.
+- Certificates of LDAP, CAS, SMS and Exchange servers are checked (`VERIFY_EXTERNAL_SSL=true`;
+  servers installed before 5.1.11 have `false` in `config.txt`). For a directory with an internal
+  CA, upload the CA certificate in the LDAP settings rather than switching the check off.
+- Approval channel webhooks (Teams, Slack) must be public internet addresses; internal addresses
+  are refused.
 - `BOOTSTRAP_TOKEN` in `config.txt` is only used when a component registers for the first time.
   To replace it, put a new random value in `config.txt` and run `xpamctl start`; components that
   are already registered keep working.

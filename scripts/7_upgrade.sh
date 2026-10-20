@@ -130,7 +130,7 @@ function upgrade_config() {
   check_and_set_config "WEB_PROXY_ALLOWED_HOSTS" "localhost,127.0.0.1"
   migrate_database_expose_config
   check_and_set_config "USE_LB" "1"
-  check_and_set_config "VERIFY_EXTERNAL_SSL" "false"
+  check_and_set_config "VERIFY_EXTERNAL_SSL" "true"
   ensure_config_secret CHAT_AI_DELEGATION_SECRET 32 || return 1
   ensure_config_secret BROWSER_KEY 32 || return 1
   # XPACK

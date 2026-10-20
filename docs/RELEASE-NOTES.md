@@ -15,6 +15,11 @@
 - **No download fallback to jumpserver.org.** `/download/` serves only local files (opt back in
   with `DOWNLOAD_FALLBACK=1`). `xpamctl fetch-applet-files` puts the Windows publishing host
   installers on the server, checksum-checked.
+- Approval channel webhooks (Teams, Slack) are refused when they point at a private, loopback or
+  link-local address, when saved and on every send (an admin could probe internal services through
+  the test button).
+- New installs check the certificates of LDAP, CAS, SMS and Exchange servers
+  (`VERIFY_EXTERNAL_SSL=true`); existing servers keep their setting.
 - Images are rebuilt with current operating-system security updates.
 
 ## 5.1.10 — security hardening

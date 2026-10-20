@@ -144,7 +144,10 @@ function ha_init() {
   set_config HA_NODE_IP "${this}"
   set_config HA_PEER_IP "${peer}"
   set_config HA_WITNESS_IP "${witness}"
-  set_config HA_ETCD_CLUSTER "xpam-a=https://${this}:2380,xpam-b=https://${peer}:2380,xpam-witness=https://${witness}:2380"
+  # the vote starts with this server and the witness; 'ha join' adds the second server as a member
+  # (etcd settles its cluster version only once every initial member has run)
+  set_config HA_ETCD_CLUSTER "xpam-a=https://${this}:2380,xpam-witness=https://${witness}:2380"
+  set_config HA_ETCD_STATE new
 
   # 2. the replication user (password from the environment, never on a command line)
   local db_user db_name
@@ -266,6 +269,20 @@ function ha_join() {
   rm -rf "${work}"
   echo_yellow "\nImages"
   pull_images || { log_error "The images are not available"; return 1; }
+  echo_yellow "\nJoining the vote"
+  local etcd_image members
+  etcd_image="gcr.io/etcd-development/etcd:v3.5.21"
+  etcdctl() {
+    docker run --rm -v "${HA_DIR}/certs:/certs:ro" --entrypoint /usr/local/bin/etcdctl "${etcd_image}" \
+      --endpoints "https://${peer}:2379,https://${witness}:2379" --cacert /certs/ca.crt --cert /certs/node.crt \
+      --key /certs/node.key "$@"
+  }
+  members=$(etcdctl member list 2>&1) || { log_error "The vote (etcd) does not answer: ${members}"; return 1; }
+  if ! grep -q "https://${this}:2380" <<< "${members}"; then
+    etcdctl member add xpam-b --peer-urls "https://${this}:2380" >/dev/null || { log_error "This server could not be added to the vote"; return 1; }
+  fi
+  set_config HA_ETCD_CLUSTER "$(grep '^HA_ETCD_CLUSTER=' "${CONFIG_FILE}" | cut -d= -f2-),xpam-b=https://${this}:2380"
+  set_config HA_ETCD_STATE existing
   echo_yellow "\nCopying the database from the primary"
   $(db_cmd) up -d
   if ! wait_until 7200 "copying (large databases take a while)" \

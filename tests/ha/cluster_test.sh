@@ -35,13 +35,12 @@ docker exec -e RP="$HA_REPL_PASSWORD" hat-seed sh -c \
   'psql -U xpam -d xpam -qc "CREATE ROLE replicator WITH REPLICATION LOGIN PASSWORD '"'"'$RP'"'"'"'
 docker rm -f hat-seed >/dev/null
 
-etcd_run() { # member-name ip node: the etcd container owns the simulated server's network (its address)
+etcd_run() { # member-name ip node initial-cluster state: the etcd container owns the simulated server's network
   docker run -d --name "hat-$3-etcd" --network "$NET" --ip "$2" -v "$WORK/certs:/certs:ro" gcr.io/etcd-development/etcd:v3.5.21 \
     /usr/local/bin/etcd --name "$1" --data-dir /etcd-data --listen-peer-urls https://0.0.0.0:2380 \
     --listen-client-urls https://0.0.0.0:2379 --advertise-client-urls "https://$2:2379" \
-    --initial-advertise-peer-urls "https://$2:2380" \
-    --initial-cluster "xpam-a=https://$A:2380,xpam-b=https://$B:2380,xpam-witness=https://$W:2380" \
-    --initial-cluster-token xpam-ha --initial-cluster-state new --client-cert-auth --trusted-ca-file /certs/ca.crt \
+    --initial-advertise-peer-urls "https://$2:2380" --initial-cluster "$4" \
+    --initial-cluster-token xpam-ha --initial-cluster-state "$5" --client-cert-auth --trusted-ca-file /certs/ca.crt \
     --cert-file /certs/node.crt --key-file /certs/node.key --peer-client-cert-auth --peer-trusted-ca-file /certs/ca.crt \
     --peer-cert-file /certs/node.crt --peer-key-file /certs/node.key --heartbeat-interval 250 --election-timeout 2500 >/dev/null
 }
@@ -55,12 +54,18 @@ sql() { docker exec "hat-$1" psql -U xpam -d xpam -Atqc "$2" 2>/dev/null; }
 wait_for() { for _ in $(seq "${2:-60}"); do eval "$1" && return 0; sleep 2; done; return 1; }
 members() { docker exec "hat-$1" curl -s http://127.0.0.1:8008/cluster 2>/dev/null; }
 
-etcd_run xpam-a $A a; etcd_run xpam-b $B b; etcd_run xpam-witness $W w
+# as 'xpamctl ha init' does: the vote starts with the first server and the witness
+AW="xpam-a=https://$A:2380,xpam-witness=https://$W:2380"
+etcd_run xpam-a $A a "$AW" new; etcd_run xpam-witness $W w "$AW" new
 pg_run a $A $B
 wait_for '[[ $(role a) == 200 ]]' 60
 check 'the converted server becomes the primary and keeps its data' '[[ $(role a) == 200 && $(sql a "select v from t") == before-ha ]]'
 
 # server B joins (empty): it copies the primary
+# as 'xpamctl ha join' does: the second server is added to the vote, then starts
+docker exec hat-a-etcd etcdctl --endpoints https://127.0.0.1:2379 --cacert /certs/ca.crt --cert /certs/node.crt \
+  --key /certs/node.key member add xpam-b --peer-urls "https://$B:2380" >/dev/null
+etcd_run xpam-b $B b "$AW,xpam-b=https://$B:2380" existing
 pg_run b $B $A
 wait_for 'members a | grep -q "\"streaming\""' 90
 check 'the second server copies the database and streams changes' 'members a | grep -q "\"streaming\""'

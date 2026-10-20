@@ -15,7 +15,7 @@ services:
       - --initial-advertise-peer-urls=https://${HA_NODE_IP}:2380
       - --initial-cluster=${HA_ETCD_CLUSTER}
       - --initial-cluster-token=xpam-ha
-      - --initial-cluster-state=new
+      - --initial-cluster-state=${HA_ETCD_STATE:-new}
       - --client-cert-auth
       - --trusted-ca-file=/certs/ca.crt
       - --cert-file=/certs/node.crt

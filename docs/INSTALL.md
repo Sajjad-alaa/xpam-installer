@@ -379,7 +379,73 @@ What the target needs:
 - The desktop client shows the just-in-time account from client version 5.1.0 on; the Access page
   is part of the web workspace.
 
-## 11. If something goes wrong
+## 11. High availability (two servers and a witness)
+
+Two XPAM servers run as **primary** and **standby**. The standby has a live copy of the database
+(synchronous streaming replication, so no committed change is lost) and of the recordings and files
+(copied every minute). If the primary fails, the standby takes over by itself in about 30 seconds of
+database time plus the time XPAM needs to start (one to two minutes). A small third machine, the
+**witness**, votes: a server cut off from the other two can never stay primary (no "split brain").
+
+**What you need**
+
+| | |
+|---|---|
+| Two XPAM servers | same size, same XPAM version, same network (low latency), fixed IPv4 addresses |
+| A witness | any small Linux machine with Docker (1 vCPU, 512 MB), ideally in another rack or room |
+| A load balancer or DNS | sends users to the server whose health URL answers: `GET https://<server>/api/health/` → 200 on the primary only (the standby's services are stopped). Forward 443, 80, 2222 and 5001 to both servers; no sticky sessions needed |
+| Between the servers | TCP 5432, 8008, 2379, 2380, 6379 and 22 (file copy); witness: 2379, 2380 from both servers |
+| On both servers | `rsync`, `openssh`, `openssl`, `curl`, `iptables` (`dnf install -y rsync openssh-clients openssl curl iptables-nft`) |
+
+XPAM limits the replication ports to the other server and the witness by itself (the ports are
+published by Docker, which bypasses firewalld). Replication and the vote use TLS with certificates
+made for the three addresses.
+
+**Set it up**
+
+1. Install the same XPAM version on the second server (`xpamctl install`), nothing else.
+2. On the current XPAM server (it becomes the primary):
+
+   ```bash
+   xpamctl ha init <this-server-ip> <second-server-ip> <witness-ip>
+   ```
+
+   It prepares two bundles in `/opt/xpam/config/ha/` and waits for the witness.
+3. On the witness: copy `xpam-ha-witness.tgz` there (it holds only the cluster certificates) and run
+
+   ```bash
+   mkdir xpam-witness && tar xzf xpam-ha-witness.tgz -C xpam-witness && ./xpam-witness/witness.sh
+   ```
+
+   The first server then backs up, switches its database (XPAM is offline for a few minutes) and
+   starts the agent (`systemctl status xpam-ha`).
+4. On the second server: copy `xpam-ha-join.tgz` there (it holds XPAM's secrets: delete it afterwards)
+   and run `xpamctl ha join xpam-ha-join.tgz`. It copies the database and becomes the standby.
+
+System settings → **High availability** in the console (and `xpamctl ha status` on a server) shows both
+servers, their roles, the replication lag, the last file copy and whether the witness answers.
+
+**When something fails**
+
+| Event | What happens |
+|---|---|
+| The primary fails | the standby becomes primary (database ~30 s), its agent starts XPAM; the load balancer follows the health URL. Users sign in again |
+| The failed server comes back | it rejoins as standby by itself (pg_rewind) and receives what changed meanwhile |
+| The servers lose each other | the one that still reaches the witness is (or becomes) primary; the other stops XPAM |
+| The witness fails | nothing changes; the two servers still form a majority. Bring it back soon |
+| The standby fails right after it rejoined (not yet in sync) | no automatic failover (it could lose the last changes): decide, then `xpamctl ha failover --force` on the server to keep |
+
+**Planned maintenance**: `xpamctl ha switchover` (or "Switch to the other server" in the console)
+moves the primary to the standby in about a minute.
+
+**Upgrading**: upgrade the **standby first**, then the primary, with the usual `xpamctl upgrade` on
+each. On the standby it only updates the images; on the primary it pauses automatic failover, migrates
+the database and starts XPAM.
+
+Other commands: `xpamctl ha role` (this server's role), `xpamctl ha pause on|off` (maintenance mode:
+no automatic failover).
+
+## 12. If something goes wrong
 
 | Symptom | Cause and fix |
 |---|---|

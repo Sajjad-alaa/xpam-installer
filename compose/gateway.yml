@@ -1,7 +1,8 @@
 services:
   # The front door: ports 80/443, certificates and routing. It holds no application files.
   gateway:
-    image: ${XPAM_NAMESPACE:-xpam}/gateway:${XPAM_VERSION:-${XPAM_DEFAULT_VERSION:-v5.1.9}}
+    image: ${XPAM_NAMESPACE:-xpam}/gateway:${XPAM_VERSION:-${XPAM_DEFAULT_VERSION:-v5.1.10}}
+    pull_policy: never  # XPAM images come from xpamctl (never Docker Hub)
     container_name: xpam_gateway
     hostname: xpam_gateway
     ulimits:
@@ -30,7 +31,11 @@ services:
       JDMC_ENABLED: ${USE_XPACK:-0}
       BASIC_AUTH_PASSWORD: ${BASIC_AUTH_PASSWORD:-}
     volumes:
-      - ${VOLUME_DIR}/core/data:/opt/jumpserver/data
+      # read only, and only what nginx serves (not ansible/celery runtime data or certificates)
+      - ${VOLUME_DIR}/core/data/static:/opt/jumpserver/data/static:ro
+      - ${VOLUME_DIR}/core/data/media:/opt/jumpserver/data/media:ro
+      - ${VOLUME_DIR}/core/data/interface:/opt/jumpserver/data/interface:ro
+      - ${VOLUME_DIR}/core/data/.well-known:/opt/jumpserver/data/.well-known:ro
       - ${VOLUME_DIR}/nginx/data/logs:/var/log/nginx
       - ${CONFIG_DIR}/nginx/interface_security.conf:/etc/nginx/includes/interface_security.conf:ro
       - ${VOLUME_DIR}/web/download:/opt/download/public:ro

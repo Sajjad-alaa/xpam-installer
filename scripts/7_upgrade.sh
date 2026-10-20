@@ -315,7 +315,7 @@ function backup_db() {
     if ! bash "${SCRIPT_DIR}/5_db_backup.sh"; then
       confirm="n"
       read_from_input confirm "$(gettext 'Failed to backup the database. Continue to upgrade')?" "y/n" "${confirm}"
-      if [[ "${confirm}" == "n" ]]; then
+      if [[ "${confirm}" != "y" ]]; then  # ("no", "N"... also stop: never upgrade without a backup by accident)
         exit 1
       fi
     fi
@@ -357,7 +357,8 @@ function db_migrations() {
 }
 
 function clean_images() {
-  current_version=$(get_config CURRENT_VERSION)
+  # the version that was running before this upgrade (CURRENT_VERSION is already the new one here)
+  current_version=${version_before_upgrade:-}
 
   if [[ -z "${to_version}" || -z "${current_version}" ]];then
     echo "to_version or current_version is empty, skip clean images"
@@ -374,7 +375,8 @@ function clean_images() {
   xpam_namespace=$(get_xpam_namespace)
   # XPAM images are cleaned together with the upstream ones of the replaced version
   old_images=$(docker images --format "{{.Repository}}:{{.Tag}}" \
-    | grep -E "^(${namespace}|${xpam_namespace})/" | grep "${current_version}" || true)
+    | grep -E "^(${namespace}|${xpam_namespace})/" \
+    | awk -F: -v v="${current_version}" '$NF == v' || true)  # exact tag: v5.1.1 is not v5.1.10
   if [[ -n "${old_images}" ]]; then
     confirm="y"
     read_from_input confirm "$(gettext 'Do you need to clean up the old version image')?" "y/n" "${confirm}"
@@ -429,6 +431,7 @@ function main() {
 
   confirm="y"
   installer_version_before_upgrade=${VERSION}
+  version_before_upgrade=$(get_config CURRENT_VERSION)
   to_version="${VERSION}"
   if [[ -n "${target}" ]]; then
     to_version="${target}"

@@ -236,6 +236,10 @@ class PanShell(Shell):
         if line == 'configure' and not self.config:
             self.config = True
             return 'Entering configuration mode'
+        m = re.match(r'revert config partial admin (\S+)$', line)
+        if m and self.config:
+            d.candidate = None
+            return 'Reverted the candidate configuration of admin ' + m.group(1)
         if line == 'exit':
             if self.config:
                 self.config = False
@@ -489,9 +493,10 @@ class JunosShell(Shell):
                 out += ['set system login user %s uid 2001' % n, 'set system login user %s class %s' % (n, u['role']),
                         'set system login user %s authentication encrypted-password "$6$%s"' % (n, u['pw'])]
             return '\n'.join(out)
-        if line == 'configure':
+        if line in ('configure', 'configure private'):
             self.config = True
-            return 'Entering configuration mode'
+            return ('warning: uncommitted changes will be discarded on exit\n' if line.endswith('private') else '') \
+                + 'Entering configuration mode'
         if line in ('exit', 'exit configuration-mode'):
             if self.config:
                 self.config = False

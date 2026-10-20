@@ -11,8 +11,8 @@ services:
       MINIO_ROOT_PASSWORD: $BOOTSTRAP_TOKEN
       MINIO_REGION_NAME: us-west-rack2
     ports:
-      - 9000:9000
-      - 9001:9001
+      - "${MINIO_EXPOSE_HOST:-127.0.0.1}:9000:9000"
+      - "${MINIO_EXPOSE_HOST:-127.0.0.1}:9001:9001"
     volumes:
       - ${VOLUME_DIR}/minio/data:/data
       - ${CONFIG_DIR}/minio/config:/root/.minio

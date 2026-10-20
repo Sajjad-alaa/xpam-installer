@@ -5,6 +5,8 @@ FROM jumpserver/core@sha256:902c58566c5248f3752309c8fb34c2f61b1ba39bde54a7439b36
 
 # Security updates for the OS packages inherited from the upstream image (same Debian release)
 # (the upstream image points apt at a mirror that is only reachable inside Alibaba Cloud)
+# a new build date re-runs the system upgrade (otherwise the cached layer keeps old packages)
+ARG APT_REFRESH=0
 RUN find /etc/apt -type f \( -name '*.sources' -o -name '*.list' \) -exec \
         sed -i -E 's#https?://mirrors\.(cloud\.)?aliyun(cs)?\.com#http://deb.debian.org#g' {} + \
     && apt-get update \
@@ -15,7 +17,8 @@ RUN find /etc/apt -type f \( -name '*.sources' -o -name '*.list' \) -exec \
 RUN /usr/local/bin/uv pip install --python /opt/py3/bin/python \
     "Django==5.2.17" "PyJWT==2.15.0" "urllib3==2.8.0" "requests==2.33.0" \
     "tornado==6.5.9" "pypdf==6.19.0" "werkzeug==3.1.3" "pymongo==4.18.2" \
-    "cryptography==50.0.2" "pyOpenSSL==26.4.0" "mistune==3.3.4"
+    "cryptography==50.0.2" "pyOpenSSL==26.4.0" "mistune==3.3.4" \
+    "ansible-core==2.16.19" "aiohttp==3.14.4"
 
 # Oracle driver (thin mode, no Oracle client needed): Oracle secret automations and
 # just-in-time database accounts (upstream ships it only with the enterprise build)

@@ -174,11 +174,9 @@ function close() {
 }
 
 function pull() {
-   if [[ -n "${target}" ]]; then
-    ${EXE} pull "${target}"
-    return
-  fi
-  ${EXE} pull
+  # Through the installer's own image list (configured registry, or none when it is "local"),
+  # never "docker compose pull": the bare xpam/* names would be fetched from Docker Hub.
+  pull_images
 }
 
 function restart() {
@@ -225,6 +223,11 @@ function update_installer() {
   [[ -d "${PROJECT_DIR}/.git" ]] && command -v git &>/dev/null || return 0
   before=$(git -C "${PROJECT_DIR}" rev-parse HEAD 2>/dev/null) || return 0
   echo "Updating the installer ..."
+  # "upgrade <version>" writes VERSION into static.env: put it back first, otherwise every later
+  # update stops at "local changes" (the upgrade writes the chosen version again)
+  if [[ -z "$(git -C "${PROJECT_DIR}" status --porcelain -- . ':!static.env' 2>/dev/null)" ]]; then
+    git -C "${PROJECT_DIR}" checkout -- static.env 2>/dev/null
+  fi
   if ! GIT_TERMINAL_PROMPT=0 timeout 120 git -C "${PROJECT_DIR}" pull --ff-only --quiet 2>/dev/null; then
     log_warn "The installer could not be updated from its repository; continuing with the installed copy"
     return 0

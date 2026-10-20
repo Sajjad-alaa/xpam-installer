@@ -204,8 +204,8 @@ function prepare_xpamctl() {
     # The command was called jmsctl before the XPAM rename
     rm -f /usr/bin/jmsctl
     echo -e "#!/usr/bin/env bash\n#" > /usr/bin/xpamctl
-    echo -e "cd ${PROJECT_DIR}" >> /usr/bin/xpamctl
-    echo -e './xpamctl.sh $@' >> /usr/bin/xpamctl
+    printf 'cd %q || exit 1\n' "${PROJECT_DIR}" >> /usr/bin/xpamctl
+    echo 'exec ./xpamctl.sh "$@"' >> /usr/bin/xpamctl
     chmod 755 /usr/bin/xpamctl
   fi
 }

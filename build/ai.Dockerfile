@@ -5,6 +5,8 @@
 FROM jumpserver/kael@sha256:683a00265ad23cbc9ebf38a0a8e3e53717489f62f41644ba65e9da2750c5c420
 # Security updates for the OS packages inherited from the upstream image (same Debian release)
 # (the upstream image points apt at a mirror that is only reachable inside Alibaba Cloud)
+# a new build date re-runs the system upgrade (otherwise the cached layer keeps old packages)
+ARG APT_REFRESH=0
 RUN find /etc/apt -type f \( -name '*.sources' -o -name '*.list' \) -exec \
         sed -i -E 's#https?://mirrors\.(cloud\.)?aliyun(cs)?\.com#http://deb.debian.org#g' {} + \
     && apt-get update \

@@ -8,4 +8,4 @@ services:
       SSL_CERTIFICATE: ${SSL_CERTIFICATE:-}
       SSL_CERTIFICATE_KEY: ${SSL_CERTIFICATE_KEY:-}
     volumes:
-      - ${CONFIG_DIR}/nginx/cert:/etc/nginx/cert
+      - ${CONFIG_DIR}/nginx/cert:/etc/nginx/cert:ro

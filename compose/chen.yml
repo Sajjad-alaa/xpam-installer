@@ -1,6 +1,7 @@
 services:
   chen:
-    image: ${XPAM_NAMESPACE:-xpam}/webconnector:${XPAM_VERSION:-${XPAM_DEFAULT_VERSION:-v5.1.9}}
+    image: ${XPAM_NAMESPACE:-xpam}/webconnector:${XPAM_VERSION:-${XPAM_DEFAULT_VERSION:-v5.1.10}}
+    pull_policy: never  # XPAM images come from xpamctl (never Docker Hub)
     container_name: xpam_webconnector
     hostname: xpam_webconnector
     ulimits:
@@ -8,6 +9,12 @@ services:
     restart: always
     env_file:
       - ${CONFIG_SAFE_FILE}
+    environment:
+      # (XPAM: secrets this service does not use are blanked; the shared file has them all)
+      SECRET_KEY: ""
+      REDIS_PASSWORD: ""
+      BROWSER_KEY: ""
+      CHAT_AI_DELEGATION_SECRET: ""
     volumes:
       - ${VOLUME_DIR}/chen/data:/opt/chen/data
       - ${CONFIG_DIR}/certs:/opt/chen/data/certs

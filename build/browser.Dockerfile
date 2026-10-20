@@ -3,6 +3,8 @@
 # Build:  docker build -f browser.Dockerfile -t xpam/browser:<tag> /opt/xpam-secureconnection/browser
 FROM debian:bookworm-slim
 
+# a new build date re-runs the system upgrade (otherwise the cached layer keeps old packages)
+ARG APT_REFRESH=0
 RUN apt-get update \
     && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
        chromium xvfb x11vnc python3 tini ca-certificates fonts-dejavu-core fonts-liberation fonts-noto-core \

@@ -11,21 +11,14 @@ function check_root() {
 
 
 function random_str() {
-  len=$1
-  if [[ -z ${len} ]]; then
-    len=24
-  fi
-  uuid=""
-  if check_root && command -v dmidecode &>/dev/null; then
-    if [[ ${len} -gt 24 ]]; then
-      uuid=$(dmidecode -s system-uuid | sha256sum | awk '{print $1}' | head -c ${len})
-    fi
-  fi
-  if [[ "${#uuid}" == "${len}" ]]; then
-    echo "${uuid}"
-  else
-    head -c200 < /dev/urandom | base64 | tr -dc A-Za-z0-9 | head -c ${len}; echo
-  fi
+  # Always random (never derived from the hardware ID: anyone who knows the SMBIOS UUID could
+  # rebuild SECRET_KEY and decrypt the stored account secrets).
+  local len=${1:-24}
+  local out=""
+  while [[ ${#out} -lt ${len} ]]; do
+    out="${out}$(head -c 256 < /dev/urandom | tr -dc A-Za-z0-9)"
+  done
+  echo "${out:0:${len}}"
 }
 
 function random_secret() {

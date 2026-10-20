@@ -1,5 +1,70 @@
 # XPAM release notes
 
+## 5.1.10 — security hardening
+
+A full review by ten reviewers (one per service, plus image, secret and endpoint scans) found
+84 issues; the important ones are fixed. Highlights:
+
+**Desktop client and workspace**
+- `jms2://` links can no longer run commands on the user's computer (every field is validated; no
+  shell characters can reach a terminal). Connection-file names cannot leave the config folder.
+- The client pins the XPAM server certificate on first use (a self-signed one keeps working; a
+  changed certificate needs the user's confirmation) instead of accepting any certificate.
+- Terminals only accept typed commands from the page that embeds them; the access token is no longer
+  saved in the browser storage; offline-recording files are served to the app only.
+- WebLite does not start as a free browser when launched without a connection.
+
+**Core**
+- Just-in-time accounts never take over or delete an account that already exists on the target
+  (Linux/Windows user, database login, device account); "john.doe" and "john-doe" never share one.
+- A rule for "all users" only reaches members of its organization; zero standing privilege fails
+  closed; per-connection accounts end within a minute when the user loses the permission.
+- Job Center uses the same rules as connecting (no other user's JIT account, nothing under "JIT only").
+- Approvals: four eyes on every path (never the requester, never the approver of an earlier step,
+  also after escalation); approval channels need the system ticket-settings permission; webhook tests
+  follow no redirects and return no response body; approver e-mail links last 1 hour; chat cards
+  escape the requester's text; the step-up MFA check has an attempt limit.
+- Commands/SQL in JIT rules can only be set by users allowed to view account secrets; device role
+  and VDOM names are validated; account push keeps the role of an existing device account unless
+  "Also change the role of existing accounts" is on; PAN-OS reverts XPAM's half-done changes; Junos
+  uses a private candidate.
+- New installs: SECRET_KEY and other secrets are random (they were derived from the hardware ID).
+- ansible-core 2.16.19, aiohttp 3.14.4.
+
+**Console**
+- Fixed a stored XSS in toast messages; AI answers never load images (data leak by planted text).
+
+**SSH / remote desktop / web proxy**
+- The web proxy (port 5001) reaches only the asset, its allowed sites and public hosts — never XPAM's
+  containers or other internal servers.
+- Share links and removing participants are for the session owner only; monitors cannot send
+  input; Lion's "end session" really ends it; the file manager checks its owner; connect tickets
+  cannot create new tickets.
+
+**Remote browser**
+- New windows (and developer tools) start paused until XPAM has decided: developer tools are closed
+  before they appear and no request passes unguarded. Auto-fill only on the asset's own site; the
+  password stays hidden during a captcha; file dialogs are off; a session whose guard stops is
+  closed; a reaper ends dead or expired sessions; it runs on its own network, isolated from XPAM's
+  containers, with a memory limit (`BROWSER_MEM_LIMIT`, default 3g).
+
+**Web database client**
+- Asset address and database name can no longer inject JDBC options; masking rules with `*` work;
+  command rules match regardless of comments and honour their case setting; kill/lock tasks keep
+  working after an error; sessions that never connect are closed; expiry uses the real time zone;
+  BouncyCastle, commons-lang3 and Guava updated.
+
+**AI assistant**
+- At most 2 active runs per user; the store prunes old contexts and events; `free` is only
+  auto-approved with flags (it disconnects users on Huawei/H3C).
+
+**Installer**
+- XPAM images are never pulled from Docker Hub (`pull_policy: never`); each service gets only the
+  secrets it uses; database dumps are private (700/600); no password appears in the process list;
+  the gateway mounts only what it serves, read-only; Redis evicts only expiring keys; upgrade image
+  cleanup fixed; uninstall keeps the backups; restore asks before replacing the database; system
+  packages in images are refreshed daily at build time.
+
 ## 5.1.9
 
 **Network devices and firewalls: account push, change secret, removal, discovery and just-in-time

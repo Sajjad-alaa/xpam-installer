@@ -12,6 +12,7 @@ DB_HOST=$(get_config DB_HOST)
 DB_PORT=$(get_config DB_PORT)
 DB_USER=$(get_config DB_USER)
 DB_PASSWORD=$(get_config DB_PASSWORD)
+export DB_PASSWORD  # (given to "docker run --env DB_PASSWORD" by name only)
 DB_NAME=$(get_config DB_NAME)
 RESTORE_TMP_FILE=""
 CORE_WAS_RUNNING=0
@@ -28,7 +29,7 @@ function restore_mysql() {
       '
   local docker_env=(
     --env "DB_HOST=${DB_HOST}" --env "DB_PORT=${DB_PORT}" --env "DB_USER=${DB_USER}"
-    --env "DB_PASSWORD=${DB_PASSWORD}" --env "DB_NAME=${DB_NAME}" --env "DB_FILE=${DB_FILE}"
+    --env DB_PASSWORD --env "DB_NAME=${DB_NAME}" --env "DB_FILE=${DB_FILE}"
   )
 
   docker run --rm "${docker_env[@]}" \
@@ -76,7 +77,7 @@ function restore_postgresql() {
       '
   local docker_env=(
     --env "DB_HOST=${DB_HOST}" --env "DB_PORT=${DB_PORT}" --env "DB_USER=${DB_USER}"
-    --env "DB_PASSWORD=${DB_PASSWORD}" --env "DB_NAME=${DB_NAME}"
+    --env DB_PASSWORD --env "DB_NAME=${DB_NAME}"
     --env "RESTORE_FILE=${restore_file}"
   )
 
@@ -114,6 +115,14 @@ function main() {
   if [[ ! -f "${DB_FILE}" ]]; then
     echo "$(gettext 'file does not exist'): ${DB_FILE}"
     return 1
+  fi
+  if [[ "${XPAM_RESTORE_CONFIRMED:-}" != "1" ]]; then
+    # the restore replaces the whole database: ask once (XPAM_RESTORE_CONFIRMED=1 for scripts)
+    confirm="n"
+    read_from_input confirm "$(gettext 'The current database will be replaced by') ${DB_FILE}. $(gettext 'Continue')?" "y/n" "${confirm}"
+    if [[ "${confirm}" != "y" ]]; then
+      return 1
+    fi
   fi
 
   DB_FILE="$(cd "$(dirname "${DB_FILE}")" && pwd -P)/$(basename "${DB_FILE}")"

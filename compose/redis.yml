@@ -4,7 +4,16 @@ services:
     container_name: xpam_redis
     hostname: xpam_redis
     restart: always
-    command: ["redis-server", "/etc/redis.conf", "--requirepass", "$REDIS_PASSWORD"]
+    # The password goes into a private file (never on a command line, which every local user
+    # can read with ps); the image's entrypoint then starts redis as the redis user.
+    command:
+      - sh
+      - -c
+      - >-
+        umask 077 &&
+        printf 'include /etc/redis.conf\nrequirepass "%s"\n' "$$REDIS_PASSWORD" > /tmp/redis-auth.conf &&
+        chown redis:redis /tmp/redis-auth.conf &&
+        exec docker-entrypoint.sh redis-server /tmp/redis-auth.conf
     environment:
       TZ: ${TZ:-UTC}
       REDIS_PORT: $REDIS_PORT
@@ -13,7 +22,7 @@ services:
       - ${VOLUME_DIR}/redis/data:/data
       - ${CONFIG_DIR}/redis/redis.conf:/etc/redis.conf
     healthcheck:
-      test: "redis-cli -h 127.0.0.1 -p $$REDIS_PORT -a $$REDIS_PASSWORD info Replication"
+      test: "REDISCLI_AUTH=\"$$REDIS_PASSWORD\" redis-cli -h 127.0.0.1 -p $$REDIS_PORT info Replication"
       interval: 10s
       timeout: 5s
       retries: 3

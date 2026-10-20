@@ -78,7 +78,7 @@ again within about ten seconds of its return.
 
 The installer downloads `<registry>/<name>:<version>` and refreshes it on every install and
 upgrade, so a server never keeps running an older build with the same tag. The defaults are in
-`static.env`: registry `ghcr.io/sajjad-alaa/xpam`, version `v5.1.9`.
+`static.env`: registry `ghcr.io/sajjad-alaa/xpam`, version `v5.1.10`.
 
 `config.txt` can override this:
 

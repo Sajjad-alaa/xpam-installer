@@ -96,7 +96,7 @@ function set_port() {
         fi
         if [[ "${nec_enabled}" != "0" ]]; then
             nec_vnc_port=$(get_config NEC_VNC_PORT)
-            read_from_input nec_port "$(gettext 'Please enter NEC VNC PORT')" "" "${nec_vnc_port}"
+            read_from_input nec_vnc_port "$(gettext 'Please enter NEC VNC PORT')" "" "${nec_vnc_port}"
             set_config NEC_VNC_PORT "${nec_vnc_port}"
         fi
     fi
@@ -169,11 +169,10 @@ function set_env() {
 
             confirm="n"
             read_from_input confirm "$(gettext 'Do you want to update the environment variable')?" "y/n" "${confirm}"
-            if [[ "${confirm}" != "y" ]]; then
-                break
+            if [[ "${confirm}" == "y" ]]; then  # (declining one change no longer ends the loop)
+                set_config "${key}" "${value}"
+                flag=1
             fi
-            set_config "${key}" "${value}"
-            flag=1
         else
             echo_yellow "$(gettext 'The environment variable has not changed')"
         fi

@@ -1,6 +1,7 @@
 services:
   kael:
-    image: ${XPAM_NAMESPACE:-xpam}/ai:${XPAM_VERSION:-${XPAM_DEFAULT_VERSION:-v5.1.9}}
+    image: ${XPAM_NAMESPACE:-xpam}/ai:${XPAM_VERSION:-${XPAM_DEFAULT_VERSION:-v5.1.10}}
+    pull_policy: never  # XPAM images come from xpamctl (never Docker Hub)
     container_name: xpam_ai
     hostname: xpam_ai
     ulimits:
@@ -9,6 +10,10 @@ services:
     env_file:
       - ${CONFIG_SAFE_FILE}
     environment:
+      # (XPAM: secrets this service does not use are blanked; the shared file has them all)
+      SECRET_KEY: ""
+      REDIS_PASSWORD: ""
+      BROWSER_KEY: ""
       PLATFORM_GATEWAY_ENABLED: "true"
       PLATFORM_DELEGATION_KEY: ${CHAT_AI_DELEGATION_SECRET}
     volumes:

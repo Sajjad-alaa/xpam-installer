@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 #
 set -o pipefail
+# dumps hold every account secret (encrypted) and user: readable by the owner only
+umask 077
 
 BASE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" &>/dev/null && pwd)"
 
@@ -15,6 +17,8 @@ DB_HOST=$(get_config DB_HOST)
 DB_PORT=$(get_config DB_PORT)
 DB_USER=$(get_config DB_USER)
 DB_PASSWORD=$(get_config DB_PASSWORD)
+# passed to "docker run --env NAME" by name only: never visible in the process list
+export MYSQL_PWD="${DB_PASSWORD}" PGPASSWORD="${DB_PASSWORD}"
 DB_NAME=$(get_config DB_NAME)
 
 AUDITS_TABLES=(
@@ -53,6 +57,10 @@ function ensure_backup_dir() {
   if [[ ! -d "${BACKUP_DIR}" ]]; then
     mkdir -p "${BACKUP_DIR}"
   fi
+  # also older installs whose backup folder and dumps were readable by every local user
+  chmod 700 "${BACKUP_DIR}" 2>/dev/null
+  find "${BACKUP_DIR}" -maxdepth 1 -type f -exec chmod 600 {} + 2>/dev/null
+  return 0
 }
 
 function prepare_db_env() {
@@ -101,7 +109,7 @@ function backup_main_db_mysql() {
   dump_cmd+=("${DB_NAME}")
 
   if ! docker run --rm \
-    --env MYSQL_PWD="${DB_PASSWORD}" \
+    --env MYSQL_PWD \
     -i --network=xpam_net \
     "${db_images}" \
     "${dump_cmd[@]}" > "${DB_FILE}"; then
@@ -122,7 +130,7 @@ function backup_main_db_mysql() {
       "${excluded_tables[@]}"
     )
     if ! docker run --rm \
-      --env MYSQL_PWD="${DB_PASSWORD}" \
+      --env MYSQL_PWD \
       -i --network=xpam_net \
       "${db_images}" \
       "${schema_cmd[@]}" >> "${DB_FILE}"; then
@@ -157,7 +165,7 @@ function backup_main_db_postgresql() {
   done
 
   if ! docker run --rm \
-    --env PGPASSWORD="${DB_PASSWORD}" \
+    --env PGPASSWORD \
     -i --network=xpam_net \
     "${db_images}" \
     "${dump_cmd[@]}" > "${DB_FILE}"; then
@@ -215,7 +223,7 @@ function backup_audits_mysql() {
   )
 
   if ! docker run --rm \
-      -e MYSQL_PWD="${DB_PASSWORD}" \
+      -e MYSQL_PWD \
       -i --network=xpam_net \
       "${db_images}" \
       "${dump_cmd[@]}" | gzip >"${backup_file}"; then
@@ -237,7 +245,7 @@ function backup_audits_postgresql() {
   done
 
   docker run --rm \
-    -e PGPASSWORD="${DB_PASSWORD}" \
+    -e PGPASSWORD \
     -i --network=xpam_net \
     "${db_images}" \
     pg_dump \

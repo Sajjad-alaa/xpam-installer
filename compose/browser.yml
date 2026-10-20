@@ -2,7 +2,8 @@ services:
   browser:
     # XPAM browser service: web assets shown through Lion without their address (one isolated
     # Chromium per session). Only Lion talks to it, on the internal network (no published port).
-    image: ${XPAM_NAMESPACE:-xpam}/browser:${XPAM_VERSION:-${XPAM_DEFAULT_VERSION:-v5.1.9}}
+    image: ${XPAM_NAMESPACE:-xpam}/browser:${XPAM_VERSION:-${XPAM_DEFAULT_VERSION:-v5.1.10}}
+    pull_policy: never  # XPAM images come from xpamctl (never Docker Hub)
     container_name: xpam_browser
     hostname: browser
     restart: always
@@ -12,7 +13,10 @@ services:
       BROWSER_MAX_SESSIONS: ${BROWSER_MAX_SESSIONS:-10}
       BROWSER_MAX_HOURS: ${BROWSER_MAX_HOURS:-12}
       TZ: ${TZ:-UTC}
-    shm_size: 512m
+    shm_size: 1g
+    # one busy session must not starve core and the database (about 300-500 MB per session; raise BROWSER_MEM_LIMIT on bigger servers)
+    mem_limit: ${BROWSER_MEM_LIMIT:-3g}
+    pids_limit: 4096
     tmpfs:
       - /tmp:size=2g
     security_opt:
@@ -26,6 +30,6 @@ services:
       retries: 5
       start_period: 10s
     networks:
-      net:
+      browser:
         aliases:
           - browser

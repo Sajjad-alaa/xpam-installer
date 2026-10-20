@@ -135,6 +135,19 @@ function remove_jumpserver() {
   confirm="n"
   read_from_input confirm "$(gettext 'Are you clean up XPAM files')?" "y/n" "${confirm}"
   if [[ "${confirm}" == "y" ]]; then
+    # The database backups (and the config with SECRET_KEY, needed to read them) live in the
+    # data folder: keep them outside of it unless the administrator really wants them gone.
+    if [[ -d "${volume_dir}/db_backup" ]] && ls -A "${volume_dir}/db_backup" 2>/dev/null | grep -q .; then
+      keep="y"
+      read_from_input keep "$(gettext 'Keep the database backups and the configuration')?" "y/n" "${keep}"
+      if [[ "${keep}" == "y" ]]; then
+        keep_dir="/root/xpam-backup-$(date +%Y%m%d%H%M%S)"
+        (umask 077 && mkdir -p "${keep_dir}") || return 1
+        mv "${volume_dir}/db_backup" "${keep_dir}/" || return 1
+        cp -p "${CONFIG_FILE}" "${keep_dir}/config.txt" 2>/dev/null
+        echo "$(gettext 'Backups kept in') ${keep_dir}"
+      fi
+    fi
     remove_managed_dir "${volume_dir}" || return 1
     remove_managed_dir "${jdmc_data_dir}" || return 1
     remove_managed_dir "${kotl_data_dir}" || return 1

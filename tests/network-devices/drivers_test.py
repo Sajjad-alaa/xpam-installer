@@ -38,16 +38,19 @@ for vendor in only:
             r = dev.push('xpam-ro', 'Ro-pass_1.x', 'read_only')
             u = dev.user('xpam-ro')
             check(f'{vendor}: push a read-only account', r == 'created' and u and u['role'] == 'read_only', u)
+            r = dev.push('xpam-ro', 'Ro-pass_1.x', 'admin')
+            u = dev.user('xpam-ro')
+            check(f'{vendor}: push to an existing account keeps its role', r == 'updated' and u['role'] == 'read_only', u)
         check(f'{vendor}: the new account can sign in', login(port, 'xpam-ro', 'Ro-pass_1.x'))
         with session(vendor, HOST, port, 'admin', PW, enable_password=PW) as dev:
             dev.change('xpam-ro', 'Ro-pass_2.y')
-            r = dev.push('xpam-ro', 'Ro-pass_3.z', 'admin')
+            r = dev.push('xpam-ro', 'Ro-pass_3.z', 'admin', update_role=True)
             u = dev.user('xpam-ro')
             check(f'{vendor}: push again updates password and role', r == 'updated' and u and u['role'] == 'admin', u)
         check(f'{vendor}: old password refused, new one works', not login(port, 'xpam-ro', 'Ro-pass_2.y')
               and login(port, 'xpam-ro', 'Ro-pass_3.z'))
         with session(vendor, HOST, port, 'admin', PW, enable_password=PW) as dev:
-            dev.push('xpam-ro', 'Ro-pass_4.w', 'read_only')
+            dev.push('xpam-ro', 'Ro-pass_4.w', 'read_only', update_role=True)
             u = dev.user('xpam-ro')
             check(f'{vendor}: role lowered back to read only', u and u['role'] == 'read_only', u)
         with session('auto', HOST, port, 'admin', PW, enable_password=PW) as dev:

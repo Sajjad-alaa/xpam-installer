@@ -5,3 +5,11 @@ networks:
       driver: default
       config:
         - subnet: ${DOCKER_SUBNET}
+  # XPAM: the Remote browser and the remote-desktop service only. Pages shown in the browser can
+  # reach web assets (outbound) but none of XPAM's own containers (core, redis, postgresql, ai...).
+  browser:
+    driver: bridge
+    ipam:
+      driver: default
+      config:
+        - subnet: ${BROWSER_SUBNET:-192.168.251.0/24}

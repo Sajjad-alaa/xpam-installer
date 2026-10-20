@@ -289,6 +289,9 @@ function persist_installer_version() {
 
 function cleanup_failed_upgrade() {
   local status=$?
+  if [[ "${HA_PAUSED:-0}" == "1" ]]; then
+    bash "${SCRIPT_DIR}/ha.sh" pause off || log_warn "High availability is still in maintenance mode: xpamctl ha pause off"
+  fi
 
   if [[ "${status}" != "0" && "${UPGRADE_COMMITTED}" != "1" ]]; then
     if [[ "${UPGRADE_CONFIG_CHANGED}" == "1" && \
@@ -326,11 +329,17 @@ function backup_db() {
 
 function db_migrations() {
   local role="${ROLE:-master}"
+  if is_ha_enabled; then
+    role=$(bash "${SCRIPT_DIR}/ha.sh" role)
+  fi
   if [[ "${role,,}" == "standby" ]]; then
      echo "Role is standby, skip database migrations"
      return 
   fi
-  if docker ps | grep -E "core|koko"&>/dev/null; then
+  if is_ha_enabled; then
+    # high availability: stop XPAM's services only; the database keeps running (the cluster is paused)
+    bash "${SCRIPT_DIR}/ha.sh" app-stop || { log_error "Failed to stop XPAM before the database migration"; exit 1; }
+  elif docker ps | grep -E "core|koko"&>/dev/null; then
     confirm="y"
     read_from_input confirm "$(gettext 'Detected that the XPAM container is running. Do you want to close the container and continue to upgrade')?" "y/n" "${confirm}"
     if [[ "${confirm}" == "y" ]]; then
@@ -475,6 +484,17 @@ function main() {
   fi
   trap cleanup_failed_upgrade EXIT
 
+  if is_ha_enabled && [[ "$(bash "${SCRIPT_DIR}/ha.sh" role)" == "primary" ]]; then
+    # high availability: no automatic failover while the primary is upgraded (restarted containers)
+    if bash "${SCRIPT_DIR}/ha.sh" pause on; then
+      HA_PAUSED=1
+      echo "High availability: maintenance mode on (no automatic failover during the upgrade)"
+    else
+      log_error "High availability: maintenance mode could not be turned on; upgrade the standby first and check 'xpamctl ha status'"
+      exit 1
+    fi
+  fi
+
   echo_yellow "\n3. $(gettext 'Backup database')"
   backup_db
 
@@ -525,6 +545,10 @@ function main() {
   UPGRADE_COMMITTED=1
   trap - EXIT
   installation_log "upgrade"
+
+  if [[ "${HA_PAUSED:-0}" == "1" ]]; then
+    trap 'bash "${SCRIPT_DIR}/ha.sh" pause off' EXIT  # (after the restart below)
+  fi
 
   echo_yellow "\n8. $(gettext 'Cleanup Image')"
   clean_images

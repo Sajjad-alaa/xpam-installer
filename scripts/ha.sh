@@ -337,6 +337,22 @@ function ha_failover() {
   echo_green "This server is the primary."
 }
 
+function ha_role() {
+  # primary | standby | unknown (this server's database)
+  case "$(patroni_code primary)" in
+    200) echo primary ;;
+    503) echo standby ;;
+    *) echo unknown ;;
+  esac
+}
+
+function ha_pause() { # on|off — maintenance mode: no automatic failover (upgrades)
+  local value=true
+  [[ "$1" == "off" ]] && value=null
+  HA_P="$(get_config HA_PATRONI_PASSWORD)" bash -c 'curl -s -o /dev/null -w "%{http_code}" --max-time 15 -u "patroni:${HA_P}" \
+    -XPATCH -H "Content-Type: application/json" -d "{\"pause\": '"${value}"'}" "http://'"$(get_config HA_NODE_IP)"':8008/config"' | grep -q 200
+}
+
 function main() {
   local action=${1:-status}; shift || true
   case "${action}" in
@@ -347,6 +363,8 @@ function main() {
     status) ha_status ;;
     switchover) ha_switchover ;;
     failover) ha_failover "$@" ;;
+    role) ha_role ;;
+    pause) ha_pause "${1:-on}" ;;
     app-start) app_start ;;
     app-stop) app_stop ;;
     *) echo "usage: xpamctl ha init|join|status|switchover|failover"; return 2 ;;

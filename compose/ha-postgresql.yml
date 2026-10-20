@@ -1,0 +1,31 @@
+services:
+  # XPAM high availability: PostgreSQL under Patroni (see build/postgresql-ha.Dockerfile). The ports are
+  # published on this server's own address only; the agent lets only the other server and the witness in.
+  postgresql:
+    image: ${XPAM_NAMESPACE:-xpam}/postgresql-ha:${XPAM_VERSION:-${XPAM_DEFAULT_VERSION:-v5.1.15}}
+    pull_policy: never  # XPAM images come from xpamctl (never Docker Hub)
+    container_name: xpam_postgresql
+    hostname: postgresql
+    restart: always
+    stop_grace_period: 60s
+    environment:
+      TZ: ${TZ:-UTC}
+      DB_USER: $DB_USER
+      DB_PASSWORD: $DB_PASSWORD
+      DB_NAME: $DB_NAME
+      HA_NODE_NAME: $HA_NODE_NAME
+      HA_NODE_IP: $HA_NODE_IP
+      HA_PEER_IP: $HA_PEER_IP
+      HA_WITNESS_IP: $HA_WITNESS_IP
+      HA_REPL_PASSWORD: $HA_REPL_PASSWORD
+      HA_PATRONI_PASSWORD: $HA_PATRONI_PASSWORD
+      HA_SYNC: ${HA_SYNC:-1}
+      DOCKER_SUBNET: $DOCKER_SUBNET
+    ports:
+      - "${HA_NODE_IP}:5432:5432"
+      - "${HA_NODE_IP}:8008:8008"
+    volumes:
+      - ${VOLUME_DIR}/postgresql/data:/var/lib/postgresql/data
+      - ${CONFIG_DIR}/ha/certs:/etc/xpam-ha:ro
+    networks:
+      - net

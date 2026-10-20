@@ -55,6 +55,11 @@ function get_db_images_file() {
   get_db_info "file"
 }
 
+# XPAM: high availability (two servers + a witness, see scripts/ha.sh)
+function is_ha_enabled() {
+  [[ "$(get_config HA_ENABLED)" == "1" ]]
+}
+
 function get_db_info() {
   info_type=$1
   db_engine=$(get_config DB_ENGINE "mysql")
@@ -88,7 +93,11 @@ function get_db_info() {
       elif [[ "${mariadb_data_exists}" == "1" ]]; then
         echo "mariadb:10.6"
       elif [[ "${postgres_data_exists}" == "1" ]]; then
-        echo "postgres:16.15-bookworm"
+        if is_ha_enabled; then
+          echo "gcr.io/etcd-development/etcd:v3.5.21"  # (xpam/postgresql-ha comes with the XPAM images)
+        else
+          echo "postgres:16.15-bookworm"
+        fi
       fi
       ;;
     "file")
@@ -97,7 +106,11 @@ function get_db_info() {
       elif [[ "${mariadb_data_exists}" == "1" ]]; then
         echo "compose/mariadb.yml -f compose/mysql.port.yml"
       elif [[ "${postgres_data_exists}" == "1" ]]; then
-        echo "compose/postgresql.yml -f compose/postgresql.port.yml"
+        if is_ha_enabled; then
+          echo "compose/ha-postgresql.yml -f compose/ha-etcd.yml"
+        else
+          echo "compose/postgresql.yml -f compose/postgresql.port.yml"
+        fi
       fi
       ;;
     *)
@@ -337,7 +350,9 @@ function get_db_compose_yml() {
   if [[ "${target}" == "all" || "${target}" == "redis" ]]; then
     if [[ "${redis_host}" == "redis" || "${ha_mode}" == "1" || -n "${redis_expose_port}" ]]; then
       cmd+=" -f compose/redis.yml"
-      if [[ -n "${redis_expose_port}" ]]; then
+      if is_ha_enabled; then
+        cmd+=" -f compose/ha-redis.yml"
+      elif [[ -n "${redis_expose_port}" ]]; then
         cmd+=" -f compose/redis.port.yml"
       fi
     fi

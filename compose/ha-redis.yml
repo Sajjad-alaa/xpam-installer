@@ -1,0 +1,5 @@
+services:
+  # XPAM high availability: the standby's Redis follows the primary's (the agent sets REPLICAOF)
+  redis:
+    ports:
+      - "${HA_NODE_IP}:6379:6379"

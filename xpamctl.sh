@@ -85,6 +85,7 @@ function usage() {
   echo "  backup_audit      $(gettext 'Backup audits tables')"
   echo "  restore_db [file]        $(gettext 'Data recovery through database backup file')"
   echo "  rotate-secret-key [-y]   Replace SECRET_KEY and re-encrypt all stored secrets (short downtime)"
+  echo "  ha init|join|status|switchover|failover   High availability: two servers and a witness (see docs)"
   echo "  fetch-applet-files       Put the Windows publishing host installers on this server (checksum checked)"
   echo "  raw               $(gettext 'Execute the original docker compose command')"
   echo "  tail [service]    $(gettext 'View log')"
@@ -127,6 +128,13 @@ function start() {
   retire_legacy_project || return 1
   retire_combined_web || return 1
   retire_renamed_services || return 1
+  if is_ha_enabled && [[ "$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 "http://$(get_config HA_NODE_IP):8008/primary")" != "200" ]]; then
+    # high availability: XPAM's services run on the primary only (the agent starts them when this server becomes primary)
+    EXE=$(get_db_compose_cmd)
+    ${EXE} up -d || return 1
+    echo "High availability: this server is not the primary; its database, Redis and vote are running."
+    return 0
+  fi
   EXE=$(get_docker_compose_cmd_line)
   ${EXE} up -d || return 1
   remove_stopped_openbao_init_container
@@ -374,6 +382,9 @@ function main() {
     ;;
   fetch-applet-files)
     bash "${SCRIPT_DIR}/fetch_applet_files.sh" "${target}"
+    ;;
+  ha)
+    bash "${SCRIPT_DIR}/ha.sh" "${@:2}"
     ;;
   rotate-secret-key)
     bash "${SCRIPT_DIR}/rotate_secret_key.sh" "${target}"

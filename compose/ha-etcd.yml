@@ -1,0 +1,37 @@
+services:
+  # XPAM high availability: this server's vote (etcd member). With the other server and the witness it
+  # decides which server is primary; a server cut off from both others cannot stay primary.
+  etcd:
+    image: gcr.io/etcd-development/etcd:v3.5.21
+    container_name: xpam_etcd
+    restart: always
+    command:
+      - /usr/local/bin/etcd
+      - --name=${HA_NODE_NAME}
+      - --data-dir=/etcd-data
+      - --listen-peer-urls=https://0.0.0.0:2380
+      - --listen-client-urls=https://0.0.0.0:2379
+      - --advertise-client-urls=https://${HA_NODE_IP}:2379
+      - --initial-advertise-peer-urls=https://${HA_NODE_IP}:2380
+      - --initial-cluster=${HA_ETCD_CLUSTER}
+      - --initial-cluster-token=xpam-ha
+      - --initial-cluster-state=new
+      - --client-cert-auth
+      - --trusted-ca-file=/certs/ca.crt
+      - --cert-file=/certs/node.crt
+      - --key-file=/certs/node.key
+      - --peer-client-cert-auth
+      - --peer-trusted-ca-file=/certs/ca.crt
+      - --peer-cert-file=/certs/node.crt
+      - --peer-key-file=/certs/node.key
+      - --heartbeat-interval=250
+      - --election-timeout=2500
+      - --auto-compaction-retention=1
+    ports:
+      - "${HA_NODE_IP}:2379:2379"
+      - "${HA_NODE_IP}:2380:2380"
+    volumes:
+      - ${VOLUME_DIR}/etcd:/etcd-data
+      - ${CONFIG_DIR}/ha/certs:/certs:ro
+    networks:
+      - net

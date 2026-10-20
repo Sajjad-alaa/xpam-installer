@@ -1,0 +1,13 @@
+[Unit]
+Description=XPAM high availability agent
+After=docker.service network-online.target
+Requires=docker.service
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 /opt/xpam-installer/ha/agent.py
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

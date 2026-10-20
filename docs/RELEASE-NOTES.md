@@ -1,5 +1,44 @@
 # XPAM release notes
 
+## 5.1.9
+
+**Network devices and firewalls: account push, change secret, removal, discovery and just-in-time
+accounts with their role** — built in for FortiGate, Palo Alto, Cisco IOS / IOS-XE, Cisco ASA, Cisco
+NX-OS, Juniper, Huawei and H3C (no commands to write).
+
+| | What XPAM does on the device |
+|---|---|
+| Account push | Creates the account (or updates its password and role) |
+| Change secret | Sets the new password (specific or random; random passwords never contain "?") |
+| Remove | Deletes the account ("Sync deletion" in discovered accounts); never the account XPAM signs in with |
+| Discovery | Lists the local accounts with their role; a changed role (for example read only → super_admin) is reported as a risk |
+| Just-in-time | Creates the temporary account with the rule's role and removes it afterwards, also through gateways; never takes over an account that already exists |
+
+Roles (choose per platform for push, per JIT rule for just-in-time accounts):
+
+| Vendor | Read only | Operator | Administrator | Custom |
+|---|---|---|---|---|
+| FortiGate | profile `xpam_read_only` (created) | `prof_admin` | `super_admin` | admin profile name |
+| Palo Alto | `superreader` | `deviceadmin` | `superuser` | admin role profile |
+| Cisco IOS / IOS-XE | privilege 1 | privilege 7 | privilege 15 | privilege 0-15 |
+| Cisco ASA | privilege 5 | privilege 10 | privilege 15 | privilege 0-15 |
+| Cisco NX-OS | `network-operator` | `network-operator` | `network-admin` | role name |
+| Juniper | `read-only` | `operator` | `super-user` | login class |
+| Huawei | level 1 | level 2 | level 15 | level 0-15 |
+| H3C | `network-operator` | `level-10` | `network-admin` | user role |
+
+- New platforms **FortiGate**, **PaloAlto**, **Cisco-ASA** (firewalls), **Cisco-NXOS** (switch) and
+  **Juniper** (router); the built-in **Cisco**, **Huawei** and **H3C** platforms switch to the new
+  methods (an "SSH custom commands" method with commands already filled in is kept).
+- Platform settings of the new methods: vendor (or automatic recognition), role, Palo Alto commit
+  (default: only XPAM's own change, `commit partial admin`), FortiGate VDOM.
+- Changes are saved on the device (`write memory`, `copy running-config startup-config`, `save`,
+  Junos/PAN-OS commit).
+- JIT rules: new **Role on the device**; the rule wizard sets read only (Developers), operator
+  (Operations) or administrator (Administrators). The command templates remain for other SSH devices.
+- Passwords with a space, `?`, quotes, backslash or backtick are refused with a clear message (device
+  command lines treat them specially).
+
 ## 5.1.8
 
 **Remote browser: automatic sign-in that covers every case.** While XPAM signs in, the site is

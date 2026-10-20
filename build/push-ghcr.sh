@@ -4,7 +4,7 @@
 set -euo pipefail
 OWNER=${1:?usage: push-ghcr.sh <github-owner> [name...]}; shift || true
 OWNER=$(echo "$OWNER" | tr '[:upper:]' '[:lower:]')
-NS=${NS:-xpam}; TAG=${TAG:-v5.1.8}
+NS=${NS:-xpam}; TAG=${TAG:-v5.1.9}
 names=("$@"); [[ ${#names[@]} -gt 0 ]] || names=(core gateway web workspace secureconnection webconnector ai browser)
 for name in "${names[@]}"; do
   target="ghcr.io/$OWNER/xpam/$name:$TAG"

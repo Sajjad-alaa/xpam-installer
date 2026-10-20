@@ -21,6 +21,10 @@ RUN /usr/local/bin/uv pip install --python /opt/py3/bin/python \
 # just-in-time database accounts (upstream ships it only with the enterprise build)
 RUN /usr/local/bin/uv pip install --python /opt/py3/bin/python "oracledb==3.4.2"
 
+# Network device accounts (FortiGate, Palo Alto, Cisco, Juniper, Huawei, H3C): push, change secret,
+# removal, discovery and just-in-time accounts (libs/ansible/modules_utils/network_device.py)
+RUN /usr/local/bin/uv pip install --python /opt/py3/bin/python "netmiko==4.5.0"
+
 COPY apps /opt/jumpserver/apps
 # Compile the Python sources once at build time: faster first start, and the interpreter's
 # warnings about old-style escape sequences do not show up in installation and upgrade logs

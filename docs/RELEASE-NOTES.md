@@ -1,5 +1,16 @@
 # XPAM release notes
 
+## 5.1.15 — faster asset management
+
+- **Add many.** Paste a list of addresses (or "name address" lines), pick one platform, node and account,
+  and XPAM creates them all (Assets → Add many). Lines that fail are listed with the reason; the licence
+  limit is checked before anything is created.
+- **Detect platform** (network devices: select them → More → Detect platform). XPAM signs in with the
+  device's privileged account, recognises FortiGate, Palo Alto, Cisco IOS/ASA/NX-OS, Juniper, Huawei or
+  H3C and moves the device to that platform (adding its web admin protocol where there is one).
+- **Needs attention** (Assets → Needs attention): unreachable assets, assets without a privileged account,
+  failed account checks and admin passwords unchanged for 90 days — each with what to do and the assets.
+
 ## 5.1.14 — smoother setup of JIT rules, web assets and devices
 
 - **JIT wizard checks the chosen assets.** Right after you pick servers, databases or devices it shows

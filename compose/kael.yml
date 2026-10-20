@@ -1,6 +1,6 @@
 services:
   kael:
-    image: ${XPAM_NAMESPACE:-xpam}/ai:${XPAM_VERSION:-${XPAM_DEFAULT_VERSION:-v5.1.14}}
+    image: ${XPAM_NAMESPACE:-xpam}/ai:${XPAM_VERSION:-${XPAM_DEFAULT_VERSION:-v5.1.15}}
     pull_policy: never  # XPAM images come from xpamctl (never Docker Hub)
     container_name: xpam_ai
     hostname: xpam_ai

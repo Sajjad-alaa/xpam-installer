@@ -2,12 +2,12 @@
 # Build all XPAM images from the source repos.
 #   ./build-all.sh                 build everything
 #   ./build-all.sh core web        build only the named images
-# Images: core gateway web workspace secureconnection webconnector ai
-# Environment: SRC (repos folder, default /opt), NS (default xpam), TAG (default v5.1.6).
+# Images: core gateway web workspace secureconnection webconnector ai browser
+# Environment: SRC (repos folder, default /opt), NS (default xpam), TAG (default v5.1.7).
 # Needs: docker with BuildKit, and for the web and workspace images node 24 with the repos' node_modules installed.
 set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-SRC=${SRC:-/opt}; NS=${NS:-xpam}; TAG=${TAG:-v5.1.6}
+SRC=${SRC:-/opt}; NS=${NS:-xpam}; TAG=${TAG:-v5.1.7}
 CACHE="$HERE/.cache"; mkdir -p "$CACHE"
 GO_IMAGE=golang:1.26-trixie
 MAVEN_IMAGE=maven:3.9-eclipse-temurin-21
@@ -57,7 +57,7 @@ build_secureconnection() {
       cp -r /ro /src && cd /src
       go test ./pkg/httpd/ ./pkg/lion/... ./pkg/common/ ./pkg/config/ ./pkg/sshd/ >/dev/null
       KEY=$(head -c 100 /dev/urandom | base64 | tr -dc A-Za-z0-9 | head -c 32)
-      go build -trimpath -ldflags "-X main.Version=v5.1.6-xpam -X github.com/jumpserver/koko/pkg/config.CipherKey=$KEY -w -s" -o /out/koko ./cmd/koko/'
+      go build -trimpath -ldflags "-X main.Version=v5.1.7-xpam -X github.com/jumpserver/koko/pkg/config.CipherKey=$KEY -w -s" -o /out/koko ./cmd/koko/'
   say "secureconnection: database client"
   [[ -d "$CACHE/usql-src/.git" ]] || git clone -q "$USQL_REPO" "$CACHE/usql-src"
   git -C "$CACHE/usql-src" checkout -q "$USQL_COMMIT"
@@ -84,6 +84,11 @@ build_webconnector() {
     -t "$NS/webconnector:$TAG" "$SRC/xpam-webconnector"
 }
 
+build_browser() {
+  say "browser"
+  docker build -q -f "$HERE/browser.Dockerfile" -t "$NS/browser:$TAG" "$SRC/xpam-secureconnection/browser"
+}
+
 build_ai() {
   say "ai: binary"
   mkdir -p "$CACHE/ai-out" "$CACHE/gocache" "$CACHE/gomod"
@@ -91,12 +96,12 @@ build_ai() {
     -v "$CACHE/gomod:/go/pkg/mod" -e CGO_ENABLED=0 -e GOFLAGS=-buildvcs=false "$GO_IMAGE" sh -ec '
       cp -r /ro /src && cd /src
       go test ./... >/dev/null
-      go build -trimpath -ldflags "-s -w -X main.Version=v5.1.6-xpam" -o /out/kael ./cmd/kael'
+      go build -trimpath -ldflags "-s -w -X main.Version=v5.1.7-xpam" -o /out/kael ./cmd/kael'
   say "ai: image"
   docker build -q -f "$HERE/ai.Dockerfile" -t "$NS/ai:$TAG" "$CACHE/ai-out"
 }
 
-targets=("$@"); [[ ${#targets[@]} -gt 0 ]] || targets=(core gateway web workspace secureconnection webconnector ai)
+targets=("$@"); [[ ${#targets[@]} -gt 0 ]] || targets=(core gateway web workspace secureconnection webconnector ai browser)
 for t in "${targets[@]}"; do "build_$t"; done
 say "done"
 docker images --format '{{.Repository}}:{{.Tag}}  {{.ID}}  {{.CreatedSince}}' | grep -E "^$NS/(core|gateway|web|workspace|secureconnection|webconnector|ai):$TAG " | sort

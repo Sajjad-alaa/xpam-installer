@@ -1,5 +1,22 @@
 # XPAM release notes
 
+## 5.1.7
+
+- **Web assets open in any browser** (not only in the desktop client) with the new connect method
+  **Remote browser**: the site runs in a secure, isolated browser on the server (new service
+  `browser`) and is shown in the workspace like a remote desktop.
+  - The site address is never shown: no address bar, just the page; a small toolbar has Back,
+    Forward and **Reload**.
+  - Sign-in is filled in on the server from the asset's auto-login settings (selectors or script);
+    the password never reaches the user's computer.
+  - Only the asset's own site and its *Allowed sites* can be opened; other pages are blocked.
+  - Developer tools, downloads, printing and saved passwords are off; every session gets a fresh
+    browser profile that is deleted at the end; sessions are recorded like remote desktops.
+- Clicking a web asset opens it right away with Remote browser, in the web workspace and in the client.
+- The client's built-in browser no longer shows the site address either.
+- New settings in `config.txt`: `BROWSER_KEY` (generated), `BROWSER_MAX_SESSIONS` (default 10),
+  `BROWSER_MAX_HOURS` (default 12), `BROWSER_ENABLED=0` to switch the service off.
+
 ## 5.1.6
 
 - **No account to choose for just-in-time access**: in the console request form, servers covered by

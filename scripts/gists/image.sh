@@ -41,6 +41,7 @@ function get_xpam_image_name() {
     koko) echo "secureconnection" ;;
     chen) echo "webconnector" ;;
     kael) echo "ai" ;;
+    browser) echo "browser" ;;
     *) return 1 ;;
   esac
 }
@@ -57,7 +58,7 @@ function get_xpam_version() {
   local version
 
   version=$(get_config_or_env XPAM_VERSION)
-  echo "${version:-${XPAM_DEFAULT_VERSION:-v5.1.6}}"
+  echo "${version:-${XPAM_DEFAULT_VERSION:-v5.1.7}}"
 }
 
 # Registry holding the XPAM images as <registry>/<name>:<tag>. The default comes from static.env
@@ -204,7 +205,7 @@ function get_image_mappings() {
     case "${service}" in
       "" | worker | celery | jdmc | panda)
         ;;
-      core | web | gateway | workspace | koko | chen | kael)
+      core | web | gateway | workspace | koko | chen | kael | browser)
         xpam_name=$(get_xpam_image_name "${service}")
         if [[ -n "${xpam_registry}" ]]; then
           emit_image_mapping \

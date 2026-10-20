@@ -1,0 +1,31 @@
+services:
+  browser:
+    # XPAM browser service: web assets shown through Lion without their address (one isolated
+    # Chromium per session). Only Lion talks to it, on the internal network (no published port).
+    image: ${XPAM_NAMESPACE:-xpam}/browser:${XPAM_VERSION:-${XPAM_DEFAULT_VERSION:-v5.1.7}}
+    container_name: xpam_browser
+    hostname: browser
+    restart: always
+    environment:
+      BROWSER_KEY: ${BROWSER_KEY:-}
+      BROWSER_ADVERTISE_HOST: browser
+      BROWSER_MAX_SESSIONS: ${BROWSER_MAX_SESSIONS:-10}
+      BROWSER_MAX_HOURS: ${BROWSER_MAX_HOURS:-12}
+      TZ: ${TZ:-UTC}
+    shm_size: 512m
+    tmpfs:
+      - /tmp:size=2g
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:9001/health', timeout=4)"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      net:
+        aliases:
+          - browser

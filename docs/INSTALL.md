@@ -255,8 +255,11 @@ reaches the user's computer, and the session is recorded like a remote desktop.
   (Assets → Platforms → FortiGate → Protocols → HTTP(s) → settings). Certificate checking is off by
   default because devices ship with a self-signed certificate; switch it on when the devices have
   a trusted certificate.
-- Other devices (Juniper J-Web, Huawei, H3C, Cisco web UIs): add the HTTP(s) protocol to their
-  platform; the Remote browser finds most login forms by itself, or set the field selectors there.
+- Juniper (J-Web), Huawei and H3C: their platforms offer HTTP(s) — add it to the device (asset →
+  Protocols → +); it is not added to every switch and router. The Remote browser finds the login form
+  by itself; set the field selectors in the platform's HTTP(s) settings only for unusual pages.
+- Other devices with a web admin page (e.g. Cisco Firepower device manager): add HTTP(s) to their
+  platform. Cisco ASA has no web admin page (ASDM is a Java program) and stays command line only.
 - Just-in-time accounts get the platform's role (read-only, operator, administrator or a custom
   profile), which applies to the web admin page as well as to SSH.
 - The device must be reachable from the XPAM server; devices behind a gateway (jump host) are not

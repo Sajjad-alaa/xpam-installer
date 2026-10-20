@@ -11,6 +11,9 @@
   unusual sites. An address typed without `https://` gets it (and port 443).
 - **Devices:** the form explains that the device's admin account must be marked "Privileged" (used for
   account push, discovery and just-in-time accounts, and as the enable password).
+- **Firewall GUIs:** Juniper (J-Web), Huawei and H3C platforms now offer the HTTP(s) web admin protocol
+  next to SSH — add it to a device with one click (it is not added to every switch and router). FortiGate
+  and Palo Alto have it on every device. Cisco ASA stays command line only (ASDM is a Java program).
 
 ## 5.1.13 — smoother just-in-time access
 

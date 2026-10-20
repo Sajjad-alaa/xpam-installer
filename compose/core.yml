@@ -1,6 +1,6 @@
 services:
   core:
-    image: ${XPAM_NAMESPACE:-xpam}/core:${XPAM_VERSION:-${XPAM_DEFAULT_VERSION:-v5.1.12}}
+    image: ${XPAM_NAMESPACE:-xpam}/core:${XPAM_VERSION:-${XPAM_DEFAULT_VERSION:-v5.1.13}}
     pull_policy: never  # XPAM images come from xpamctl (never Docker Hub)
     container_name: xpam_core
     hostname: xpam_core

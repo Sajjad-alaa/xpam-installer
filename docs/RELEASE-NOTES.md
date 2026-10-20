@@ -1,5 +1,21 @@
 # XPAM release notes
 
+## 5.1.13 — smoother just-in-time access
+
+- **Extensions lengthen the same access.** "Extend" counts the extra hours from the current end (it
+  was refused as "too long" while time was left), keeps the original reason, and once approved the
+  existing access simply ends later — no second card, the JIT account stays. A card shows when an
+  extension is waiting; one extension can wait at a time.
+- **No pointless requests.** Asking again for assets you already have (or that are already waiting
+  for approval) is refused with the reason and the hint to extend.
+- **You are told the decision.** The workspace shows a notice when your request is approved,
+  rejected or closed automatically (with the approver's note); a request closed because nobody
+  approved it in time is also mailed to you.
+- **End now is precise.** It removes only the accounts of that access (another access keeps its
+  accounts) and cancels a waiting extension.
+- PostgreSQL just-in-time logins follow an extension (their built-in expiry moves with the access).
+- Fixed: XPAM's own ticket notes (approval route) were shown to requesters as an approver's comment.
+
 ## 5.1.12 — FortiGate and Palo Alto web admin (GUI)
 
 - **Device web admin in the Remote browser.** FortiGate and PaloAlto assets get an HTTP(s) protocol

@@ -1,5 +1,16 @@
 # XPAM release notes
 
+## 5.1.8
+
+- **Remote browser: a failed automatic sign-in closes the session.** When the website does not
+  accept the stored account (for example the password was changed on the site), the user sees
+  "Automatic sign-in failed — ask your administrator to update the account" and the session ends
+  a few seconds later. The login page is never left open for someone to try other credentials.
+  - How success is detected: the asset platform's *success selector* when it is set; otherwise the
+    login form must be gone about 20 seconds after signing in.
+  - If the platform has an *interactive selector* (MFA code, captcha) and it appears, the user has
+    3 minutes to complete it before the session is closed.
+
 ## 5.1.7
 
 - **Web assets open in any browser** (not only in the desktop client) with the new connect method

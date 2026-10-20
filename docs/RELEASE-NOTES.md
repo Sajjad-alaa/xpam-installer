@@ -6,8 +6,11 @@
   accept the stored account (for example the password was changed on the site), the user sees
   "Automatic sign-in failed — ask your administrator to update the account" and the session ends
   a few seconds later. The login page is never left open for someone to try other credentials.
+  - While XPAM signs in, the site is covered by a "Signing in…" screen and the user's key presses
+    are ignored, so the login form is never seen or used. The failure message appears about 12
+    seconds after the sign-in attempt.
   - How success is detected: the asset platform's *success selector* when it is set; otherwise the
-    login form must be gone about 20 seconds after signing in.
+    login form must be gone after signing in.
   - If the platform has an *interactive selector* (MFA code, captcha) and it appears, the user has
     3 minutes to complete it before the session is closed.
 

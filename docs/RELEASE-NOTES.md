@@ -13,6 +13,11 @@
 - **Console:** System settings → High availability shows both servers, roles, replication lag, the
   last file copy and the witness, and switches the primary for maintenance.
 - **Upgrades in a cluster:** standby first, then the primary (automatic failover is paused meanwhile).
+- **Told and warned:** administrators are notified when XPAM moves to the other server; a console banner
+  shows while protection is reduced (no standby in sync, witness down, recordings not copied).
+- **Floating address** for sites without a load balancer (`xpamctl ha vip`), **server and witness
+  replacement** (`join-bundle`, `witness-bundle`) and **back to one server** (`xpamctl ha disable`).
+- Fixed: Redis did not start again after a container restart or server reboot (since 5.1.10).
 
 ## 5.1.15 — faster asset management
 

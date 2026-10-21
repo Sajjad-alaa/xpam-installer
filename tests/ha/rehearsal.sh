@@ -80,14 +80,25 @@ check 'XPAM services are stopped on the standby' "wait_for \"! on harb 'docker p
 check "B's Redis follows A's" "wait_for \"on harb 'docker exec -e REDISCLI_AUTH=\\\$(grep ^REDIS_PASSWORD= /opt/xpam/config/config.txt | cut -d= -f2) xpam_redis redis-cli info replication' | grep -q role:slave\" 12"
 check 'recordings are copied to the standby (within ~1 min)' "wait_for \"on harb 'cat /data/xpam/core/data/replay/2026-10-21/rehearsal.cast 2>/dev/null' | grep -q recording\" 30"
 check 'xpamctl ha status reports both servers' "[[ \$(on hara 'cd /opt/xpam-installer && bash ./xpamctl.sh ha status') == *xpam-b*sync_standby* ]]"
-API='docker exec -w /opt/jumpserver/apps xpam_core python -c "
-import os, django; os.environ.setdefault(\"DJANGO_SETTINGS_MODULE\", \"jumpserver.settings\"); django.setup()
-from django.conf import settings; settings.ALLOWED_HOSTS = [\"*\"]
-from rest_framework.test import APIClient; from users.models import User
-c = APIClient(); c.force_authenticate(User.objects.get(username=\"admin\"))
-d = c.get(\"/api/v1/settings/ha/status/\").json()
-print(\"API\", d.get(\"enabled\"), sorted(m[\"role\"] for m in d.get(\"members\", [])), (d.get(\"agent\") or {}).get(\"role\"))" 2>/dev/null'
-check 'the console API shows the cluster (primary + synchronous standby)' "[[ \$(on hara \"\$API\") == *'API True'*leader*sync_standby*primary* ]]"
+probe() { # node mode [arg]: the probe inside that server's core (alerts | messages <text> | status)
+  on "$1" "docker cp /src/tests/ha/ha_probe.py xpam_core:/tmp/p.py >/dev/null && docker exec xpam_core python /tmp/p.py $2 '${3:-}' 2>/dev/null | tail -1"
+}
+holds_vip() { on "$1" "ip -o -4 addr show" | grep -q " 172.31.9.100/"; }
+check 'the console API shows the cluster (primary + synchronous standby)' "[[ \$(probe hara status) == *'API True'*leader*sync_standby*primary* ]]"
+check 'no high availability alert while everything is healthy' "wait_for \"[[ \\\$(probe hara alerts) == 'ALERTS []' ]]\" 18"
+
+say "floating address"
+on hara 'cd /opt/xpam-installer && bash ./xpamctl.sh ha vip 172.31.9.100/24' >/dev/null
+on harb 'cd /opt/xpam-installer && bash ./xpamctl.sh ha vip 172.31.9.100/24' >/dev/null
+check 'the primary (A) holds the floating address' "wait_for 'holds_vip hara' 6"
+check 'the standby does not' "! holds_vip harb"
+
+say "witness down"
+docker stop harw >/dev/null
+check 'without the witness XPAM keeps running on A' "sleep 20; on hara \"\$PSQL 'insert into xpam_ha_rehearsal values (\\\$\\\$while-witness-down\\\$\\\$)'\" ; [[ \$(on hara 'curl -s -o /dev/null -w %{http_code} http://$A:8008/primary') == 200 ]]"
+check 'the console warns that the witness does not answer' "wait_for \"[[ \\\$(probe hara alerts) == *ha_witness* ]]\" 18"
+docker start harw >/dev/null
+check 'the warning goes away when the witness is back' "wait_for \"[[ \\\$(probe hara alerts) == 'ALERTS []' ]]\" 24"
 
 say "crash of A"
 docker kill hara >/dev/null
@@ -99,6 +110,8 @@ check "XPAM starts on B by itself ($(( $(date +%s) - start ))s)" "on harb 'docke
 check 'B has the data written on A' "on harb \"\$PSQL 'select v from xpam_ha_rehearsal'\" | grep -qx seed"
 check 'B answers as XPAM (health URL for the load balancer)' "wait_for \"[[ \\\$(on harb 'curl -sk -o /dev/null -w %{http_code} https://127.0.0.1/api/health/') == 200 ]]\" 24"
 check "B's Redis is the master" "on harb 'docker exec -e REDISCLI_AUTH=\$(grep ^REDIS_PASSWORD= /opt/xpam/config/config.txt | cut -d= -f2) xpam_redis redis-cli info replication' | grep -q role:master"
+check 'the floating address moved to B' "wait_for 'holds_vip harb' 6"
+check 'the administrators are told that XPAM moved to B' "wait_for \"[[ \\\$(probe harb messages 'moved to server xpam-b') == 'MESSAGES 1' ]]\" 12"
 
 say "A comes back"
 docker start hara >/dev/null
@@ -106,6 +119,7 @@ wait_for "on hara 'curl -s http://$A:8008/patroni' | grep -q '\"role\": \"replic
 check 'A rejoins as standby (never a second primary)' "on hara 'curl -s http://$A:8008/patroni' | grep -q '\"role\": \"replica\"'"
 check 'XPAM services are stopped on A' "wait_for \"! on hara 'docker ps --format {{.Names}}' | grep -qx xpam_core\" 24"
 check 'B stays the primary' "[[ \$(on harb 'curl -s -o /dev/null -w %{http_code} http://$B:8008/primary') == 200 ]]"
+check 'A does not take the floating address' "! holds_vip hara"
 
 say "planned switchover back to A"
 wait_for "on harb 'curl -s http://$B:8008/cluster' | grep -q sync_standby" 30
@@ -113,6 +127,40 @@ on harb 'cd /opt/xpam-installer && bash ./xpamctl.sh ha switchover' | tail -1
 wait_for "on hara 'docker ps --format \"{{.Names}} {{.Status}}\"' | grep -q '^xpam_core .*(healthy)'" 120
 check 'after the switchover XPAM runs on A' "on hara 'docker ps --format \"{{.Names}} {{.Status}}\"' | grep -q '^xpam_core .*(healthy)'"
 check 'and is stopped on B' "wait_for \"! on harb 'docker ps --format {{.Names}}' | grep -qx xpam_core\" 24"
+check 'the floating address is back on A only' "wait_for 'holds_vip hara' 6 && ! holds_vip harb"
+
+say "power cut: all three machines at once"
+docker kill hara harb harw >/dev/null
+sleep 5
+docker start harw hara harb >/dev/null
+wait_for "[[ \$(on hara 'curl -s -o /dev/null -w %{http_code} http://$A:8008/primary') == 200 || \$(on harb 'curl -s -o /dev/null -w %{http_code} http://$B:8008/primary') == 200 ]]" 60
+PRIMARY=hara; STANDBY=harb; PIP=$A
+if [[ $(on harb "curl -s -o /dev/null -w %{http_code} http://$B:8008/primary") == 200 ]]; then PRIMARY=harb; STANDBY=hara; PIP=$B; fi
+check "after the power cut one server is primary again ($PRIMARY)" "[[ -n $PRIMARY ]]"
+check 'XPAM runs on the primary only' "wait_for \"on $PRIMARY 'docker ps --format \\\"{{.Names}} {{.Status}}\\\"' | grep -q '^xpam_core .*(healthy)'\" 60 && wait_for \"! on $STANDBY 'docker ps --format {{.Names}}' | grep -qx xpam_core\" 24"
+check 'no data was lost' "[[ \$(on $PRIMARY \"\$PSQL 'select count(*) from xpam_ha_rehearsal'\") == 2 ]]"
+check 'the standby follows again (in sync)' "wait_for \"on $PRIMARY 'curl -s http://$PIP:8008/cluster' | grep -q sync_standby\" 30"
+check 'the floating address is on the primary' "wait_for 'holds_vip $PRIMARY' 6 && ! holds_vip $STANDBY"
+if [[ "$PRIMARY" == harb ]]; then
+  on harb 'cd /opt/xpam-installer && bash ./xpamctl.sh ha switchover' | tail -1
+  wait_for "on hara 'docker ps --format \"{{.Names}} {{.Status}}\"' | grep -q '^xpam_core .*(healthy)'" 120
+fi
+
+say "the second server is rebuilt (disk lost) and joins again"
+on harb 'systemctl stop xpam-ha; cd /opt/xpam-installer && bash ./xpamctl.sh down >/dev/null 2>&1; rm -rf /data/xpam/postgresql/data /data/xpam/etcd; sed -i "s/^HA_ENABLED=.*/HA_ENABLED=0/" /opt/xpam/config/config.txt'
+on hara 'cd /opt/xpam-installer && bash ./xpamctl.sh ha join-bundle' >/dev/null
+docker exec hara cat /opt/xpam/config/ha/xpam-ha-join.tgz | docker exec -i harb sh -c 'cat > /root/join2.tgz'
+on harb "cd /opt/xpam-installer && timeout 2400 bash ./xpamctl.sh ha join /root/join2.tgz -y > /root/ha-rejoin.log 2>&1"; tail -2 <(on harb 'cat /root/ha-rejoin.log')
+check 'the rebuilt server is the synchronous standby again' "wait_for \"on hara 'curl -s http://$A:8008/cluster' | grep -q sync_standby\" 30"
+check 'it has all the data' "wait_for \"[[ \\\$(on harb \\\"\\\$PSQL 'select count(*) from xpam_ha_rehearsal'\\\") == 2 ]]\" 12"
+check 'the rebuilt server got the floating address setting from the fresh bundle' "on harb 'grep -q ^HA_VIP=172.31.9.100/24 /opt/xpam/config/config.txt'"
+
+say "back to one server"
+on harb 'cd /opt/xpam-installer && bash ./xpamctl.sh ha disable -y' | tail -1
+on hara 'cd /opt/xpam-installer && timeout 1200 bash ./xpamctl.sh ha disable -y > /root/ha-disable.log 2>&1'; tail -2 <(on hara 'cat /root/ha-disable.log')
+check 'A runs XPAM alone again (no Patroni, no vote)' "wait_for \"on hara 'docker ps --format \\\"{{.Names}} {{.Image}} {{.Status}}\\\"' | grep -q '^xpam_core .*(healthy)'\" 60 && on hara 'docker ps --format {{.Image}}' | grep -q '^postgres:16' && ! on hara 'docker ps --format {{.Names}}' | grep -qx xpam_etcd"
+check 'with all its data' "[[ \$(on hara \"\$PSQL 'select count(*) from xpam_ha_rehearsal'\") == 2 ]]"
+check 'and without the floating address' "! holds_vip hara"
 
 echo "RESULT: $PASS/$((PASS+FAIL)) passed"
 [[ $FAIL -eq 0 ]]

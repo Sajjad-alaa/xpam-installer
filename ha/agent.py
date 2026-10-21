@@ -167,6 +167,62 @@ def witness_alive(conf):
         return False
 
 
+def iface_of(ip):
+    code, out = run(['ip', '-o', '-4', 'addr', 'show'], 10)
+    for line in out.splitlines():
+        parts = line.split()
+        if len(parts) > 3 and parts[3].split('/')[0] == ip:
+            return parts[1]
+    return ''
+
+
+def floating_ip(conf, want):
+    """Optional floating address (HA_VIP=10.0.0.100/24): held by the primary only."""
+    vip = conf.get('HA_VIP', '')
+    if not vip or '/' not in vip:
+        return None
+    dev = conf.get('HA_VIP_DEV') or iface_of(conf['HA_NODE_IP'])
+    if not dev:
+        return None
+    address = vip.split('/')[0]
+    code, out = run(['ip', '-o', '-4', 'addr', 'show', 'dev', dev], 10)
+    has = f' {address}/' in out
+    if want and not has:
+        code, out = run(['ip', 'addr', 'add', vip, 'dev', dev], 10)
+        if code == 0:
+            log(f'floating address {vip} added on {dev}')
+            run(['arping', '-U', '-c', '3', '-I', dev, address], 15)  # (tell the network it moved)
+        else:
+            log('floating address could not be added:', out)
+    elif not want and has:
+        run(['ip', 'addr', 'del', vip, 'dev', dev], 10)
+        log(f'floating address {vip} removed')
+    return want
+
+
+def core_healthy():
+    code, out = run(['docker', 'inspect', '-f', '{{.State.Health.Status}}', 'xpam_core'], 15)
+    return code == 0 and out.strip() == 'healthy'
+
+
+def notify_primary(conf, peer_ok):
+    """Tell the administrators (site message, e-mail) that XPAM moved to this server."""
+    code, out = run(['docker', 'exec', '-w', '/opt/jumpserver/apps', 'xpam_core', 'python', 'manage.py',
+                     'xpam_ha_event', '--node', conf['HA_NODE_NAME'], '--ip', conf['HA_NODE_IP'],
+                     '--peer', conf['HA_PEER_IP'], '--peer-reachable', '1' if peer_ok else '0'], 180)
+    if code:
+        log('administrators could not be notified yet:', out[-200:])
+    return code == 0
+
+
+def previous_role(conf):
+    try:
+        with open(os.path.join(conf.get('VOLUME_DIR', '/data/xpam'), 'core', 'data', 'ha', 'status.json')) as f:
+            return json.load(f).get('role')
+    except (OSError, ValueError):
+        return None
+
+
 def write_status(conf, status):
     path = os.path.join(conf.get('VOLUME_DIR', '/data/xpam'), 'core', 'data', 'ha')
     os.makedirs(path, exist_ok=True)
@@ -184,6 +240,8 @@ def main():
         return 1
     seen, count, acted = None, 0, None
     last_fw = last_probe = 0
+    last_stable = previous_role(conf)   # (None on the first start after setup: no notice then)
+    notify_pending = False
     reach = {'peer_reachable': None, 'witness_reachable': None}
     unknown_since = None
     last_sync, sync = 0, {'ok': None, 'time': None, 'error': ''}
@@ -205,11 +263,18 @@ def main():
                 ensure_firewall(conf)  # (Docker or a reboot may have recreated its chain)
                 last_fw = now
             if count >= STABLE_CHECKS:
+                if role == 'primary' and last_stable not in (None, 'primary'):
+                    notify_pending = True  # failover or switchover to this server
+                if role in ('primary', 'standby'):
+                    last_stable = role
                 if role == 'primary':
                     redis_follow(conf, None)
+                    floating_ip(conf, True)
                     if not app_running():
                         log('primary: starting XPAM')
                         app('start')
+                    if notify_pending and core_healthy():
+                        notify_pending = not notify_primary(conf, reach.get('peer_reachable') is not False)
                     if now - last_sync >= SYNC_EVERY:
                         ok, err = sync_files(conf)
                         last_sync = now
@@ -217,13 +282,17 @@ def main():
                         if not ok:
                             log('file copy to the other server failed:', err)
                 elif role == 'standby':
+                    floating_ip(conf, False)
+                    notify_pending = False
                     if app_running():
                         log('standby: stopping XPAM')
                         app('stop')
                     redis_follow(conf, conf['HA_PEER_IP'])
-                elif role == 'unknown' and unknown_since and now - unknown_since >= UNKNOWN_GRACE and app_running():
-                    log(f'Patroni unreachable for {UNKNOWN_GRACE}s: stopping XPAM')
-                    app('stop')
+                elif role == 'unknown' and unknown_since and now - unknown_since >= UNKNOWN_GRACE:
+                    floating_ip(conf, False)
+                    if app_running():
+                        log(f'Patroni unreachable for {UNKNOWN_GRACE}s: stopping XPAM')
+                        app('stop')
                 if role != acted:
                     log(f'role: {role}')
                     acted = role
@@ -235,6 +304,7 @@ def main():
                 'node': conf['HA_NODE_NAME'], 'node_ip': conf['HA_NODE_IP'], 'peer_ip': conf['HA_PEER_IP'],
                 'witness_ip': conf['HA_WITNESS_IP'], 'role': role, 'app_running': app_running(),
                 **reach, 'file_sync': sync, 'updated': int(now),
+                'floating_ip': conf.get('HA_VIP', ''),
             })
         except Exception as e:  # never die: the service manager would restart us anyway
             log('error:', repr(e))

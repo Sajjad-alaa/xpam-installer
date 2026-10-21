@@ -435,6 +435,22 @@ servers, their roles, the replication lag, the last file copy and whether the wi
 | The witness fails | nothing changes; the two servers still form a majority. Bring it back soon |
 | The standby fails right after it rejoined (not yet in sync) | no automatic failover (it could lose the last changes): decide, then `xpamctl ha failover --force` on the server to keep |
 
+**Being told**: when XPAM moves to the other server, the administrators get a notification (bell in the
+console, and e-mail when mail is set up). While protection is reduced (no standby in sync, witness not
+answering, recordings not copied, agent not reporting) the console shows a red/orange banner.
+
+**Without a load balancer**: a floating address held by the primary (both servers in one network/VLAN):
+`xpamctl ha vip 10.0.0.100/24` on **both** servers; users then open https://10.0.0.100. `xpamctl ha vip off`
+removes it.
+
+**Replacing hardware**
+
+| | |
+|---|---|
+| A server is rebuilt (disk lost, same address) | install the same XPAM version on it; on the primary `xpamctl ha join-bundle`; copy the bundle over and run `xpamctl ha join xpam-ha-join.tgz` |
+| The witness is replaced (same address) | on the primary `xpamctl ha witness-bundle`; on the new witness run its `witness.sh` as at setup |
+| Back to one server | `xpamctl ha disable` on the standby first, then on the primary (it keeps XPAM and all data) |
+
 **Planned maintenance**: `xpamctl ha switchover` (or "Switch to the other server" in the console)
 moves the primary to the standby in about a minute.
 

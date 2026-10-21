@@ -5,10 +5,14 @@ set -euo pipefail
 cd "$(dirname "$0")"
 THIS=@THIS@
 CLUSTER='@CLUSTER@'
+STATE=@STATE@
 ALLOWED='@ALLOWED@'
 command -v docker >/dev/null || { echo "Install Docker first"; exit 1; }
 ip -o -4 addr show | awk '{print $4}' | cut -d/ -f1 | grep -qx "$THIS" || { echo "This machine is not $THIS"; exit 1; }
 install -d -m 700 /opt/xpam-witness /opt/xpam-witness/certs /opt/xpam-witness/etcd
+if [[ "$STATE" == "existing" ]]; then
+  rm -rf /opt/xpam-witness/etcd/member  # (a replacement witness starts empty and receives the vote's data)
+fi
 install -m 600 certs/ca.crt certs/node.crt certs/node.key /opt/xpam-witness/certs/
 
 docker rm -f xpam_etcd_witness >/dev/null 2>&1 || true
@@ -18,7 +22,7 @@ docker run -d --name xpam_etcd_witness --restart always \
   gcr.io/etcd-development/etcd:v3.5.21 /usr/local/bin/etcd --name=xpam-witness --data-dir=/etcd-data \
   --listen-peer-urls=https://0.0.0.0:2380 --listen-client-urls=https://0.0.0.0:2379 \
   --advertise-client-urls="https://$THIS:2379" --initial-advertise-peer-urls="https://$THIS:2380" \
-  --initial-cluster="$CLUSTER" --initial-cluster-token=xpam-ha --initial-cluster-state=new \
+  --initial-cluster="$CLUSTER" --initial-cluster-token=xpam-ha --initial-cluster-state="$STATE" \
   --client-cert-auth --trusted-ca-file=/certs/ca.crt --cert-file=/certs/node.crt --key-file=/certs/node.key \
   --peer-client-cert-auth --peer-trusted-ca-file=/certs/ca.crt --peer-cert-file=/certs/node.crt \
   --peer-key-file=/certs/node.key --heartbeat-interval=250 --election-timeout=2500 --auto-compaction-retention=1 >/dev/null

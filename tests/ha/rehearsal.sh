@@ -80,7 +80,7 @@ check 'XPAM services are stopped on the standby' "wait_for \"! on harb 'docker p
 check "B's Redis follows A's" "wait_for \"on harb 'docker exec -e REDISCLI_AUTH=\\\$(grep ^REDIS_PASSWORD= /opt/xpam/config/config.txt | cut -d= -f2) xpam_redis redis-cli info replication' | grep -q role:slave\" 12"
 check 'recordings are copied to the standby (within ~1 min)' "wait_for \"on harb 'cat /data/xpam/core/data/replay/2026-10-21/rehearsal.cast 2>/dev/null' | grep -q recording\" 30"
 check 'xpamctl ha status reports both servers' "[[ \$(on hara 'cd /opt/xpam-installer && bash ./xpamctl.sh ha status') == *xpam-b*sync_standby* ]]"
-API='docker exec xpam_core python -c "
+API='docker exec -w /opt/jumpserver/apps xpam_core python -c "
 import os, django; os.environ.setdefault(\"DJANGO_SETTINGS_MODULE\", \"jumpserver.settings\"); django.setup()
 from django.conf import settings; settings.ALLOWED_HOSTS = [\"*\"]
 from rest_framework.test import APIClient; from users.models import User

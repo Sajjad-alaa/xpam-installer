@@ -232,8 +232,8 @@ anywhere.
 
 | Suite | Result |
 |---|---|
-| `tests/ha/cluster_test.sh`: containers, RBAC, failover, rewind, split, switchover, lockdown, rotation | RESULT_CLUSTER |
-| `tests/ha/rehearsal.sh`: three real servers through the full install path | RESULT_REHEARSAL |
+| `tests/ha/cluster_test.sh`: containers, RBAC, failover, rewind, split, switchover, lockdown, rotation | **32/32 passed** |
+| `tests/ha/rehearsal.sh`: three real servers through the full install path | **66/66 passed** |
 | Redis ACL (standalone) | all allowed and refused cases as expected |
 | xpam-secureconnection `go test` | pass |
 

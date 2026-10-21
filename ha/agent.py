@@ -63,7 +63,7 @@ def run(cmd, timeout=120, env=None):
 def tls_context(conf):
     """Client TLS with the cluster certificate (Patroni's API and etcd require it)."""
     import ssl
-    certs = os.path.join(conf.get('CONFIG_DIR', '/opt/xpam/config'), 'ha', 'certs')
+    certs = os.path.join((conf.get('CONFIG_DIR') or '/opt/xpam/config'), 'ha', 'certs')
     ctx = ssl.create_default_context(cafile=os.path.join(certs, 'ca.crt'))
     ctx.load_cert_chain(os.path.join(certs, 'node.crt'), os.path.join(certs, 'node.key'))
     return ctx
@@ -142,10 +142,10 @@ def redis_follow(conf, primary):
 
 def sync_files(conf):
     """Copy recordings and files to the other server. (ok, message)"""
-    volume = conf.get('VOLUME_DIR', '/data/xpam')
+    volume = (conf.get('VOLUME_DIR') or '/data/xpam')
     src = os.path.join(volume, 'core', 'data') + '/'
-    key = os.path.join(conf.get('CONFIG_DIR', '/opt/xpam/config'), 'ha', 'ssh', 'id_ed25519')
-    known = os.path.join(conf.get('CONFIG_DIR', '/opt/xpam/config'), 'ha', 'ssh', 'known_hosts')
+    key = os.path.join((conf.get('CONFIG_DIR') or '/opt/xpam/config'), 'ha', 'ssh', 'id_ed25519')
+    known = os.path.join((conf.get('CONFIG_DIR') or '/opt/xpam/config'), 'ha', 'ssh', 'known_hosts')
     ssh = f'ssh -i {key} -o UserKnownHostsFile={known} -o StrictHostKeyChecking=accept-new -o BatchMode=yes -o ConnectTimeout=10'
     code, out = run(['rsync', '-a', '--partial', '--timeout=120', '--exclude=logs/', '--exclude=ha/',
                      '-e', ssh, src, f"root@{conf['HA_PEER_IP']}:{src}"], 3600)
@@ -247,7 +247,7 @@ def notify_primary(conf, peer_ok):
 
 def previous_role(conf):
     try:
-        with open(os.path.join(conf.get('VOLUME_DIR', '/data/xpam'), 'core', 'data', 'ha', 'status.json')) as f:
+        with open(os.path.join((conf.get('VOLUME_DIR') or '/data/xpam'), 'core', 'data', 'ha', 'status.json')) as f:
             return json.load(f).get('role')
     except (OSError, ValueError):
         return None
@@ -263,7 +263,7 @@ def cluster(conf):
 
 def handle_request(conf, members):
     """A switchover asked for in the console (the console has no access to the cluster itself)."""
-    path = os.path.join(conf.get('VOLUME_DIR', '/data/xpam'), 'core', 'data', 'ha', 'request.json')
+    path = os.path.join((conf.get('VOLUME_DIR') or '/data/xpam'), 'core', 'data', 'ha', 'request.json')
     try:
         with open(path) as f:
             req = json.load(f)
@@ -284,7 +284,7 @@ def handle_request(conf, members):
 
 
 def write_status(conf, status):
-    path = os.path.join(conf.get('VOLUME_DIR', '/data/xpam'), 'core', 'data', 'ha')
+    path = os.path.join((conf.get('VOLUME_DIR') or '/data/xpam'), 'core', 'data', 'ha')
     os.makedirs(path, exist_ok=True)
     tmp = os.path.join(path, '.status.json')
     with open(tmp, 'w') as f:

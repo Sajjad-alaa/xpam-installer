@@ -295,8 +295,8 @@ function ha_join() {
   mkdir -p "${volume_dir}/postgresql/data" "${volume_dir}/etcd"
   # the primary's configuration (same keys and passwords), with this server's own role and paths
   cp "${work}/config.txt" "${CONFIG_FILE}"
-  set_config VOLUME_DIR "${volume_dir}"
-  set_config CONFIG_DIR "${config_dir}"
+  [[ -n "${volume_dir}" ]] && set_config VOLUME_DIR "${volume_dir}"
+  [[ -n "${config_dir}" ]] && set_config CONFIG_DIR "${config_dir}"
   set_config HA_NODE_NAME "${this_name:-xpam-b}"
   set_config HA_PEER_NAME "${peer_name:-xpam-a}"
   set_config HA_NODE_IP "${this}"

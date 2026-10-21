@@ -15,6 +15,9 @@
 #   --siem HOST:PORT          also stream the audit log to a SIEM (TCP)
 #   --pgp-keys F1,F2,...      encrypt each unseal key share to its holder (base64 of `gpg --export`)
 #   --seal-config FILE        an auto-unseal "seal" stanza (Transit / cloud KMS / HSM) instead of key shares
+#   --local                   on the XPAM server itself (one address for --nodes and --xpam): XPAM's containers
+#                             may connect (XPAM_DOCKER_SUBNET), unsealed at boot with systemd-creds (TPM2 when
+#                             present). Weaker than separate servers: move later with `xpamctl vault connect`.
 #
 # What this sets up:
 #   - Vault reachable only with a client certificate from the kit's CA, TLS 1.3 only; version, addresses
@@ -113,7 +116,7 @@ load_env() { [[ -f "${BASE}/kit.env" ]] || die "not a Vault server of the kit ($
 
 api() { # method path [curl args...] — as this node (TLS only; add -H @token-file for a token)
   local m=$1 p=$2; shift 2
-  curl -s --max-time 30 --cacert "${BASE}/certs/ca.crt" --cert "${BASE}/certs/node.crt" --key "${BASE}/certs/node.key" \
+  curl -s --tlsv1.3 --max-time 30 --cacert "${BASE}/certs/ca.crt" --cert "${BASE}/certs/node.crt" --key "${BASE}/certs/node.key" \
     -X "$m" "https://${API_HOST:-${NODE_IP}}:8200/v1/${p}" "$@"
 }
 
@@ -149,7 +152,7 @@ admin_login() { # → header file with an admin token (admin certificate, kit pa
     openssl pkey -in "${BASE}/kit/admin.key.enc" -passin env:XV_KIT_PW -out "${SCRATCH}/admin.key" 2>/dev/null \
     || die "wrong kit passphrase"
   local code
-  code=$(curl -s -o "${SCRATCH}/out" -w '%{http_code}' --max-time 30 --cacert "${BASE}/certs/ca.crt" \
+  code=$(curl -s --tlsv1.3 -o "${SCRATCH}/out" -w '%{http_code}' --max-time 30 --cacert "${BASE}/certs/ca.crt" \
     --cert "${BASE}/kit/admin.crt" --key "${SCRATCH}/admin.key" -X POST \
     "https://${NODE_IP}:8200/v1/auth/cert/login" -d '{"name":"vault-admin"}')
   [[ "${code}" == 200 ]] || die "admin login failed (${code}): $(cat "${SCRATCH}/out")"
@@ -266,7 +269,7 @@ set -e
 iptables -N XPAM-VAULT 2>/dev/null || true
 iptables -F XPAM-VAULT
 iptables -A XPAM-VAULT -i lo -j RETURN
-for src in ${XPAM_IPS//,/ } ${ADMIN_IPS//,/ } ${NODES//,/ }; do
+for src in ${XPAM_IPS//,/ } ${XPAM_EXTRA_CIDRS//,/ } ${ADMIN_IPS//,/ } ${NODES//,/ }; do
   iptables -A XPAM-VAULT -p tcp --dport 8200 -s "${src}" -j RETURN
 done
 for src in ${NODES//,/ }; do
@@ -332,7 +335,9 @@ preflight() {
   docker compose version >/dev/null 2>&1 || die "Docker Compose v2 is required"
   command -v openssl >/dev/null && command -v curl >/dev/null && command -v python3 >/dev/null \
     || die "openssl, curl and python3 are required"
-  if [[ "$(awk 'NR>1' /proc/swaps | wc -l)" -gt 0 && "${XPAM_VAULT_ALLOW_SWAP:-}" != 1 ]]; then
+  if [[ "$(awk 'NR>1' /proc/swaps | wc -l)" -gt 0 && "${LOCAL:-0}" == 1 ]]; then
+    yellow "  warning: swap is on: memory holding secrets could be written to disk (swapoff -a recommended)"
+  elif [[ "$(awk 'NR>1' /proc/swaps | wc -l)" -gt 0 && "${XPAM_VAULT_ALLOW_SWAP:-}" != 1 ]]; then
     die "swap is on: Vault keeps secrets in memory, which must never be written to disk (swapoff -a and remove swap from /etc/fstab; XPAM_VAULT_ALLOW_SWAP=1 to override)"
   fi
   if command -v timedatectl >/dev/null && [[ "$(timedatectl show -p NTPSynchronized --value 2>/dev/null)" == no ]]; then
@@ -402,12 +407,13 @@ put_policy() { # hdr name text
 
 xpam_role() { # hdr ip — XPAM server login: its certificate, its address, 20 min tokens (max 1 h)
   local code
-  code=$(python3 - "$2" "${CLUSTER}" "${BASE}/kit/ca.crt" <<'EOF' | api_code POST "auth/cert/certs/xpam-${2//./-}" -H @"$1" --data @-
+  code=$(python3 - "$2" "${CLUSTER}" "${BASE}/kit/ca.crt" "${XPAM_EXTRA_CIDRS:-}" <<'EOF' | api_code POST "auth/cert/certs/xpam-${2//./-}" -H @"$1" --data @-
 import json, sys
-ip, cluster, ca = sys.argv[1:4]
+ip, cluster, ca, extra = sys.argv[1:5]
+cidrs = [ip + "/32"] + [c for c in extra.split(",") if c]
 print(json.dumps({"display_name": "xpam-" + ip.replace(".", "-"), "certificate": open(ca).read(),
                   "allowed_common_names": ["xpam-" + ip.replace(".", "-")], "token_policies": [cluster],
-                  "token_no_default_policy": True, "token_bound_cidrs": [ip + "/32"], "token_type": "service",
+                  "token_no_default_policy": True, "token_bound_cidrs": cidrs, "token_type": "service",
                   "token_ttl": "20m", "token_max_ttl": "1h"}))
 EOF
 )
@@ -464,8 +470,8 @@ bundle_passphrase() { # sets XV_BUNDLE_PW (XPAM_VAULT_BUNDLE_PASSPHRASE or a new
 # ---------------------------------------------------------------- commands
 
 cmd_init() {
-  local nodes="" xpam="" admin="" siem="" pgp="" seal_file=""
-  CLUSTER=xpam
+  local nodes="" xpam="" admin="" siem="" pgp="" seal_file="" extra=""
+  CLUSTER=xpam; LOCAL=0
   while [[ $# -gt 0 ]]; do
     case "$1" in
       --nodes) nodes=$2; shift 2 ;;
@@ -475,6 +481,7 @@ cmd_init() {
       --siem) siem=$2; shift 2 ;;
       --pgp-keys) pgp=$2; shift 2 ;;
       --seal-config) seal_file=$2; shift 2 ;;
+      --local) LOCAL=1; shift ;;
       *) die "unknown option $1" ;;
     esac
   done
@@ -486,7 +493,14 @@ cmd_init() {
     ip -o -4 addr show | awk '{print $4}' | cut -d/ -f1 | grep -qx "${ip}" && this=${ip}
   done
   [[ -n "${this}" ]] || die "none of --nodes is an address of this server"
-  [[ "$(echo "${nodes//,/ }" | wc -w)" -eq 3 ]] || yellow "  warning: 3 Vault servers are recommended (a majority must be up)"
+  if [[ "${LOCAL}" == 1 ]]; then
+    # on the XPAM server itself: XPAM's containers connect from the Docker subnet; unsealed at boot by this server
+    [[ "${nodes}" == "${xpam}" && "$(echo "${nodes//,/ }" | wc -w)" -eq 1 ]] || die "--local: one address, the same for --nodes and --xpam"
+    extra="127.0.0.1/32${XPAM_DOCKER_SUBNET:+,${XPAM_DOCKER_SUBNET}}"
+    command -v systemd-creds >/dev/null || die "--local needs systemd-creds (systemd 250+)"
+  else
+    [[ "$(echo "${nodes//,/ }" | wc -w)" -eq 3 ]] || yellow "  warning: 3 Vault servers are recommended (a majority must be up)"
+  fi
   [[ -z "${seal_file}" || -f "${seal_file}" ]] || die "--seal-config: no such file"
   if [[ -n "${pgp}" ]]; then
     [[ "$(echo "${pgp//,/ }" | wc -w)" -eq "${KEY_SHARES}" ]] || die "--pgp-keys: give ${KEY_SHARES} key files (one per share holder)"
@@ -530,6 +544,8 @@ NODES=${nodes}
 XPAM_IPS=${xpam}
 ADMIN_IPS=${admin}
 CLUSTER=${CLUSTER}
+LOCAL=${LOCAL}
+XPAM_EXTRA_CIDRS=${extra}
 EOF
   chmod 600 "${BASE}/kit.env"
   [[ -n "${seal_file}" ]] && cp "${seal_file}" "${BASE}/seal.hcl"
@@ -568,6 +584,7 @@ EOF
   fi
   local hdr; hdr=$(token_file "${root_token}")
   unset root_token
+  [[ "${LOCAL}" == 1 && -z "${seal_file}" ]] && install_local_unseal
 
   if [[ -n "${pgp}" && -z "${seal_file}" ]]; then
     echo
@@ -598,7 +615,7 @@ EOF
 
   put_policy "${hdr}" "${CLUSTER}" "$(xpam_policy "${CLUSTER}")"
   local cidrs
-  cidrs=$(python3 -c 'import json,sys; print(json.dumps([i + "/32" for i in sys.argv[1].split(",")]))' "${xpam}")
+  cidrs=$(python3 -c 'import json,sys; print(json.dumps([i + "/32" for i in sys.argv[1].split(",")] + [c for c in sys.argv[2].split(",") if c]))' "${xpam}" "${extra}")
   put_policy "${hdr}" vault-admin "$(admin_policy "${CLUSTER}" "${BASE}/kit/ca.crt" "${cidrs}")"
   code=$(api_code POST sys/auth/cert -H @"${hdr}" --data '{"type":"cert","description":"client certificates (kit CA)"}')
   [[ "${code}" == 204 ]] || die "certificate login: $(cat "${SCRATCH}/out")"
@@ -646,6 +663,33 @@ EOF
     echo "   - XPAM server ${ip}: copy ${BASE}/out/xpam-vault-${ip}.enc there and run: xpamctl vault connect xpam-vault-${ip}.enc"
   done
   echo "   - delete the bundles from ${BASE}/out once copied"
+}
+
+install_local_unseal() { # --local: 3 key shares sealed with systemd-creds (TPM2 when present, else this host's key)
+  mkdir -p /etc/xpam-vault; chmod 700 /etc/xpam-vault
+  head -n "${KEY_THRESHOLD}" "${SCRATCH}/shares" | systemd-creds encrypt --name=xpam-vault-unseal - /etc/xpam-vault/unseal.cred \
+    || die "systemd-creds could not seal the unseal key"
+  chmod 600 /etc/xpam-vault/unseal.cred
+  local kind="this server's own key (no TPM)"
+  systemd-creds has-tpm2 >/dev/null 2>&1 && kind="the TPM"
+  info "unsealed at every boot (key shares sealed with ${kind})"
+  mkdir -p "${BASE}/bin"
+  cp "$(readlink -f "${BASH_SOURCE[0]}")" "${BASE}/bin/xpam-vault.sh"
+  chmod 700 "${BASE}/bin/xpam-vault.sh"
+  printf '%s\n' '[Unit]' 'Description=XPAM local Vault: unseal at boot' 'After=docker.service' 'Requires=docker.service' '' \
+    '[Service]' 'Type=simple' "ExecStart=/bin/bash ${BASE}/bin/xpam-vault.sh auto-unseal" 'Restart=on-failure' 'RestartSec=10' '' \
+    '[Install]' 'WantedBy=multi-user.target' > /etc/systemd/system/xpam-vault-unseal.service
+  systemctl daemon-reload
+  systemctl enable xpam-vault-unseal.service >/dev/null 2>&1
+}
+
+cmd_auto_unseal() { # boot: wait for this Vault, unseal it with the sealed shares
+  load_env; scratch
+  local i
+  for i in $(seq 1 600); do [[ "$(api_code GET sys/seal-status)" == 200 ]] && break; sleep 2; done
+  [[ "$(api GET sys/seal-status | json sealed)" == "True" ]] || return 0
+  systemd-creds decrypt --name=xpam-vault-unseal /etc/xpam-vault/unseal.cred - | unseal_from_stdin_keys || die "auto-unseal failed"
+  info "unsealed"
 }
 
 unseal_interactive() { # asks for key shares until this node is unsealed (or reads them from stdin)
@@ -758,5 +802,6 @@ case "${1:-}" in
   status) cmd_status ;;
   add-xpam) shift; cmd_add_xpam "$@" ;;
   snapshot) shift; cmd_snapshot "$@" ;;
+  auto-unseal) cmd_auto_unseal ;;
   *) sed -n '3,10p' "$0" | sed 's/^# \{0,1\}//'; exit 2 ;;
 esac

@@ -2,8 +2,14 @@
 #
 # XPAM and HashiCorp Vault (the XPAM Vault kit, vault/xpam-vault.sh, on separate servers).
 #
-#   xpamctl vault connect <xpam-vault-IP.enc> [-y]   move XPAM's secrets into Vault (this server)
+#   xpamctl vault connect <xpam-vault-IP.enc> [-y]   move XPAM's secrets into Vault (this server); when already
+#                                                    connected: move them to that Vault (e.g. local -> servers)
+#   xpamctl vault local                              a hardened Vault on this server (default at install)
+#   xpamctl vault add-connection <name> <type> <settings.json | --bundle file>   a further vault (several vaults:
+#                                                    storage rules per organization / asset group, mirrors)
+#   xpamctl vault list-connections | remove-connection <name>
 #   xpamctl vault status                             connection, login, where each secret is
+#   xpamctl vault verify                             prove it: TLS 1.3, certificates, least privilege, no secret left
 #   xpamctl vault fetch [--wait]                     read the secrets from Vault into memory (boot service)
 #   xpamctl vault disconnect [-y]                    bring everything back to this server (config.txt, database)
 #
@@ -58,7 +64,7 @@ vcurl() { # url-path [curl args] — tries each Vault server in turn
   local path=$1; shift
   local addr code
   for addr in $(venv VAULT_ADDRS | tr ',' ' '); do
-    code=$(curl -s --max-time 15 --cacert "${VDIR}/ca.crt" --cert "${VDIR}/client.crt" --key "${VDIR}/client.key" \
+    code=$(curl -s --tlsv1.3 --max-time 15 --cacert "${VDIR}/ca.crt" --cert "${VDIR}/client.crt" --key "${VDIR}/client.key" \
       -o "${SCRATCH}/out" -w '%{http_code}' "$@" "${addr}/v1/${path}") || continue
     [[ "${code}" == 000 ]] && continue
     echo "${code}"; return 0
@@ -230,7 +236,12 @@ EOF
 cmd_connect() {
   local bundle=$1 yes=$2
   [[ -f "${bundle}" ]] || { echo "usage: xpamctl vault connect <xpam-vault-IP.enc> [-y]"; return 2; }
-  if secrets_from_vault; then log_error "This server is already connected to Vault (xpamctl vault status)"; return 1; fi
+  # already connected: a move (e.g. from the local Vault to the Vault servers) — the secrets come from memory
+  local moving=0 source_file="${CONFIG_FILE}"
+  if secrets_from_vault; then
+    moving=1
+    [[ -s "${RUN}/all.env" ]] || { log_error "The current Vault cannot be read (xpamctl vault status): nothing to move"; return 1; }
+  fi
   docker ps --format '{{.Names}}' | grep -qx xpam_core || { log_error "XPAM must be running (xpamctl start)"; return 1; }
   local unsupported
   unsupported=$(docker ps --format '{{.Names}}' | grep -E '^xpam_(video_worker|nec|magnus|razor|xrdp)$' | tr '\n' ' ')
@@ -243,6 +254,15 @@ cmd_connect() {
   local d; d=$(mktemp -d "${SCRATCH}/b.XXXX")
   openssl enc -d -aes-256-cbc -pbkdf2 -iter 600000 -pass env:XV_BUNDLE_PW -in "${bundle}" 2>/dev/null | tar xzf - -C "${d}" 2>/dev/null
   [[ -f "${d}/vault.env" && -f "${d}/client.key" ]] || { log_error "Wrong bundle passphrase (or not an XPAM bundle of the Vault kit)"; return 1; }
+  if [[ "${moving}" == 1 ]]; then
+    echo_yellow "0. Moving from $(venv VAULT_ADDRS): account secrets back into the database first"
+    core_exec <<'PY' >/dev/null || { log_error "Reading the account secrets from the current Vault failed: nothing changed"; return 1; }
+from accounts.tasks.vault import restore_secret_from_vault
+restore_secret_from_vault()
+PY
+    cp "${RUN}/all.env" "${SCRATCH}/current.env"; source_file="${SCRATCH}/current.env"
+    rm -rf "${VDIR}.previous"; mv "${VDIR}" "${VDIR}.previous"
+  fi
   mkdir -p "${VDIR}"; chmod 700 "${VDIR}"
   install -m 644 "${d}/ca.crt" "${VDIR}/ca.crt"
   install -m 644 "${d}/client.crt" "${VDIR}/client.crt"
@@ -265,7 +285,7 @@ cmd_connect() {
   echo_check "logged in; startup secrets in Vault: $(python3 -c 'import json,sys; print(len(json.load(sys.stdin)))' < "${SCRATCH}/startup.json")"
 
   echo_yellow "2. Startup secrets into Vault"
-  python3 - "${SCRATCH}/startup.json" "${CONFIG_FILE}" "${XPAM_VAULT_SECRET_KEYS}" <<'EOF' || return 1
+  python3 - "${SCRATCH}/startup.json" "${source_file}" "${XPAM_VAULT_SECRET_KEYS}" <<'EOF' || return 1
 import json, sys
 path, config, keys = sys.argv[1], sys.argv[2], sys.argv[3].split()
 vault = json.load(open(path))
@@ -311,20 +331,7 @@ EOF
   echo_check "${RUN}"
 
   echo_yellow "5. Configuration: account storage in Vault, settings locked, secrets removed from config.txt"
-  local addrs; addrs=$(venv VAULT_ADDRS)
-  set_config VAULT_ENABLED true
-  set_config VAULT_BACKEND hcp
-  set_config VAULT_HCP_HOST "${addrs}"
-  set_config VAULT_HCP_AUTH cert
-  set_config VAULT_HCP_CERT_ROLE "$(venv VAULT_ROLE)"
-  set_config VAULT_HCP_MOUNT_POINT "$(venv VAULT_ACCOUNT_MOUNT)"
-  set_config VAULT_HCP_CA_FILE "${VCLIENT_IN_CONTAINER}/ca.crt"
-  set_config VAULT_HCP_CLIENT_CERT_FILE "${VCLIENT_IN_CONTAINER}/client.crt"
-  set_config VAULT_HCP_CLIENT_KEY_FILE "${VCLIENT_IN_CONTAINER}/client.key"
-  set_config VAULT_LOCKED true
-  local key
-  for key in ${XPAM_VAULT_SECRET_KEYS}; do blank_config "${key}"; done
-  set_config XPAM_SECRETS_FROM_VAULT 1
+  set_vault_config
   gen_safe_config >/dev/null 2>&1 || true
   echo_check "config.txt holds no secrets"
 
@@ -355,6 +362,12 @@ EOF
     echo_warn "account secrets still in the database: ${left:-unknown} (xpamctl vault status; the console: System settings → Vault → Sync)"
   fi
   vault_logout
+  if [[ "${moving}" == 1 && -f /opt/xpam-vault/kit.env ]] && grep -q '^LOCAL=1' /opt/xpam-vault/kit.env; then
+    echo_yellow "8. The local Vault is no longer used: stopped (its data is kept in /opt/xpam-vault until you delete it)"
+    docker compose -f /opt/xpam-vault/compose.yml down >/dev/null 2>&1 || true
+    systemctl disable --now xpam-vault-unseal.service xpam-vault-firewall.service >/dev/null 2>&1 || true
+  fi
+  rm -rf "${VDIR}.previous"
 
   echo
   echo_green "XPAM's secrets are in Vault."
@@ -366,6 +379,98 @@ EOF
     echo "${old}" | sed 's/^/  /'
   fi
   echo "  Delete the bundle: shred -u ${bundle}"
+}
+
+set_vault_config() { # XPAM's account storage in Vault with this server's login, locked; secrets out of config.txt
+  set_config VAULT_ENABLED true
+  set_config VAULT_BACKEND hcp
+  set_config VAULT_HCP_HOST "$(venv VAULT_ADDRS)"
+  set_config VAULT_HCP_AUTH cert
+  set_config VAULT_HCP_CERT_ROLE "$(venv VAULT_ROLE)"
+  set_config VAULT_HCP_MOUNT_POINT "$(venv VAULT_ACCOUNT_MOUNT)"
+  set_config VAULT_HCP_CA_FILE "${VCLIENT_IN_CONTAINER}/ca.crt"
+  set_config VAULT_HCP_CLIENT_CERT_FILE "${VCLIENT_IN_CONTAINER}/client.crt"
+  set_config VAULT_HCP_CLIENT_KEY_FILE "${VCLIENT_IN_CONTAINER}/client.key"
+  set_config VAULT_LOCKED true
+  local key
+  for key in ${XPAM_VAULT_SECRET_KEYS}; do blank_config "${key}"; done
+  set_config XPAM_SECRETS_FROM_VAULT 1
+}
+
+cmd_attach() { # dir (ca.crt, client.crt, client.key, vault.env) — 'ha join': the secrets are already in Vault
+  local d=$1
+  [[ -f "${d}/vault.env" && -f "${d}/client.key" ]] || { echo "no Vault login in ${d}" >&2; return 1; }
+  scratch
+  mkdir -p "${VDIR}"; chmod 700 "${VDIR}"
+  install -m 644 "${d}/ca.crt" "${VDIR}/ca.crt"
+  install -m 644 "${d}/client.crt" "${VDIR}/client.crt"
+  install -m 600 "${d}/client.key" "${VDIR}/client.key"
+  install -m 600 "${d}/vault.env" "${VDIR}/vault.env"
+  vault_login || return 1
+  vault_read_startup || return 1
+  python3 -c 'import json,sys; sys.exit(0 if json.load(open(sys.argv[1])).get("SECRET_KEY") else 1)' "${SCRATCH}/startup.json" \
+    || { echo "Vault holds no XPAM secrets for this installation" >&2; return 1; }
+  vault_logout
+  write_run_files
+  install_boot_service
+  set_vault_config
+  echo_check "secrets read from Vault into memory (${RUN}); config.txt holds none"
+}
+
+cmd_local() { # a hardened Vault on this server (the kit with --local) and XPAM connected to it
+  if secrets_from_vault; then echo "  already connected to Vault (xpamctl vault status)"; return 0; fi
+  [[ -f /opt/xpam-vault/kit.env ]] && { log_error "/opt/xpam-vault already holds a Vault"; return 1; }
+  local ip subnet
+  ip=$(ip -o route get 1.1.1.1 2>/dev/null | awk '{for (i = 1; i < NF; i++) if ($i == "src") print $(i + 1)}')
+  [[ -n "${ip}" ]] || ip=$(hostname -I | awk '{print $1}')
+  subnet=$(get_config DOCKER_SUBNET 192.168.250.0/24)
+  echo "  Vault on this server (${ip}), reachable by XPAM's containers (${subnet}); unsealed at every boot by this server."
+  echo_warn "Someone with root on this server, or a copy of its disk, can still reach the secrets: move them to Vault servers of their own later (xpamctl vault connect)."
+  export XPAM_VAULT_BUNDLE_PASSPHRASE="$(random_str 32)"
+  XPAM_DOCKER_SUBNET="${subnet}" bash "${PROJECT_DIR}/vault/xpam-vault.sh" init --local --nodes "${ip}" --xpam "${ip}" \
+    || { log_error "The local Vault could not be set up"; return 1; }
+  cmd_connect "/opt/xpam-vault/out/xpam-vault-${ip}.enc" -y || return 1
+  shred -u /opt/xpam-vault/out/*.enc 2>/dev/null || rm -f /opt/xpam-vault/out/*.enc
+}
+
+core_manage() { # args — manage.py in XPAM's core container (stdin passed on)
+  docker exec -i xpam_core bash -c 'cd /opt/jumpserver/apps && python manage.py "$@" 2>/dev/null' _ "$@"
+}
+
+cmd_add_connection() { # name type <settings.json | --bundle xpam-vault-IP.enc> — a further vault, managed here
+  local name=$1 vtype=$2 src=$3 file=${4:-}
+  [[ -n "${name}" && -n "${vtype}" && -n "${src}" ]] || {
+    echo "usage: xpamctl vault add-connection <name> <hcp|cyberark|delinea|gcp|aws|azure|openbao> <settings.json>"
+    echo "       xpamctl vault add-connection <name> hcp --bundle <xpam-vault-IP.enc>   (another Vault of the kit)"
+    return 2; }
+  scratch
+  if [[ "${src}" == "--bundle" ]]; then
+    [[ "${vtype}" == hcp && -f "${file}" ]] || { log_error "--bundle: a kit bundle for an hcp connection"; return 1; }
+    export XV_BUNDLE_PW="$(passphrase_from XPAM_VAULT_BUNDLE_PASSPHRASE "Bundle passphrase")"
+    local d; d=$(mktemp -d "${SCRATCH}/c.XXXX")
+    openssl enc -d -aes-256-cbc -pbkdf2 -iter 600000 -pass env:XV_BUNDLE_PW -in "${file}" 2>/dev/null | tar xzf - -C "${d}" 2>/dev/null
+    [[ -f "${d}/vault.env" ]] || { log_error "Wrong bundle passphrase (or not a kit bundle)"; return 1; }
+    python3 - "${d}" > "${SCRATCH}/conn.json" <<'PY'
+import json, sys
+d = sys.argv[1]
+env = dict(l.strip().split('=', 1) for l in open(f'{d}/vault.env') if '=' in l)
+print(json.dumps({
+    'VAULT_HCP_HOST': env['VAULT_ADDRS'], 'VAULT_HCP_AUTH': 'cert', 'VAULT_HCP_CERT_ROLE': env['VAULT_ROLE'],
+    'VAULT_HCP_MOUNT_POINT': env['VAULT_ACCOUNT_MOUNT'], 'VAULT_HCP_CA_PEM': open(f'{d}/ca.crt').read(),
+    'VAULT_HCP_CLIENT_CERT_PEM': open(f'{d}/client.crt').read(), 'VAULT_HCP_CLIENT_KEY_PEM': open(f'{d}/client.key').read(),
+}))
+PY
+    rm -rf "${d}"
+  else
+    [[ -f "${src}" ]] || { log_error "No such settings file: ${src}"; return 1; }
+    cp "${src}" "${SCRATCH}/conn.json"
+  fi
+  core_manage xpam_vault_connection add --name "${name}" --type "${vtype}" --test --update < "${SCRATCH}/conn.json" \
+    || { log_error "The connection was not added (its test failed, or wrong settings)"; return 1; }
+  rm -f "${SCRATCH}/conn.json"
+  echo_check "${name}: usable in System settings → Vault → Storage rules (and as a mirror)"
+  [[ "${src}" != "--bundle" ]] && echo "  Delete the settings file: shred -u ${src}"
+  return 0
 }
 
 cmd_status() {
@@ -393,6 +498,68 @@ print(sum(1 for o in Account.objects.only('id', '_secret').iterator() if o._secr
 EOF
 )
   echo "  account secrets in the database: ${n:-unknown}"
+}
+
+cmd_verify() { # proves the connection is encrypted and XPAM's access is what it should be
+  scratch
+  secrets_from_vault || { echo "  not connected to Vault"; return 1; }
+  local ok=0 bad=0 addr host port out days
+  v() { if eval "$2"; then echo "  PASS  $1"; ok=$((ok+1)); else echo "  FAIL  $1"; bad=$((bad+1)); fi; }
+  echo "  Encryption (each Vault server)"
+  for addr in $(venv VAULT_ADDRS | tr ',' ' '); do
+    host=${addr#https://}; host=${host%%/*}; port=${host##*:}; host=${host%:*}
+    out=$(timeout 15 openssl s_client -connect "${host}:${port}" -servername "${host}" -tls1_3 -verify_return_error \
+      -CAfile "${VDIR}/ca.crt" -cert "${VDIR}/client.crt" -key "${VDIR}/client.key" </dev/null 2>&1)
+    v "${host}: TLS 1.3 ($(grep -m1 -oE 'TLS_[A-Z0-9_]+' <<<"${out}" || echo '?'))" "grep -q 'Protocol *: TLSv1.3\|New, TLSv1.3' <<<\"\${out}\""
+    v "${host}: its certificate is signed by the kit CA and names this address" "grep -q 'Verify return code: 0 (ok)' <<<\"\${out}\""
+    days=$(( ( $(date -d "$(sed -n '/BEGIN CERT/,/END CERT/p' <<<"${out}" | openssl x509 -noout -enddate 2>/dev/null | cut -d= -f2)" +%s 2>/dev/null || date +%s) - $(date +%s) ) / 86400 ))
+    v "${host}: its certificate is valid for ${days} more days" "[[ ${days} -gt 30 ]]"
+    v "${host}: TLS 1.2 is refused" "! timeout 15 openssl s_client -connect ${host}:${port} -tls1_2 -CAfile ${VDIR}/ca.crt -cert ${VDIR}/client.crt -key ${VDIR}/client.key </dev/null 2>&1 | grep -q 'Verify return code: 0'"
+    v "${host}: without a client certificate nothing is answered" "[[ \$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 --cacert ${VDIR}/ca.crt ${addr}/v1/sys/health) == 000 ]]"
+  done
+  days=$(( ( $(date -d "$(openssl x509 -noout -enddate -in "${VDIR}/client.crt" | cut -d= -f2)" +%s) - $(date +%s) ) / 86400 ))
+  v "this server's client certificate is valid for ${days} more days" "[[ ${days} -gt 30 ]]"
+  echo "  Vault and XPAM's access"
+  v "Vault is unsealed and does not reveal its version" "[[ \$(vcurl sys/health) == 200 ]] && python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); sys.exit(0 if not d[\"sealed\"] and not d.get(\"version\") else 1)' ${SCRATCH}/out"
+  v "login with this server's certificate" "vault_login"
+  if [[ -s "${SCRATCH}/token.hdr" ]]; then
+    vcurl auth/token/lookup-self -H @"${SCRATCH}/token.hdr" >/dev/null; cp "${SCRATCH}/out" "${SCRATCH}/self.json"
+    v "the token has only XPAM's policy (no default, no root)" "python3 -c 'import json,sys; p=json.load(open(sys.argv[1]))[\"data\"][\"policies\"]; sys.exit(0 if p == [sys.argv[2]] else 1)' ${SCRATCH}/self.json $(venv VAULT_CLUSTER)"
+    v "the token lasts at most an hour" "python3 -c 'import json,sys; d=json.load(open(sys.argv[1]))[\"data\"]; sys.exit(0 if 0 < d[\"ttl\"] <= 3600 else 1)' ${SCRATCH}/self.json"
+    v "the token works only from this server's address" "python3 -c 'import json,sys; d=json.load(open(sys.argv[1]))[\"data\"]; sys.exit(0 if d.get(\"bound_cidrs\") else 1)' ${SCRATCH}/self.json"
+    v "XPAM cannot list Vault's mounts" "[[ \$(vcurl sys/mounts -H @${SCRATCH}/token.hdr) == 403 ]]"
+    v "XPAM cannot create tokens" "[[ \$(vcurl auth/token/create -X POST -H @${SCRATCH}/token.hdr -d '{}') == 403 ]]"
+    v "XPAM cannot touch the audit log" "[[ \$(vcurl sys/audit -H @${SCRATCH}/token.hdr) == 403 ]]"
+    v "XPAM cannot destroy the history of its startup secrets" "[[ \$(vcurl $(venv VAULT_CLUSTER)-startup/destroy/config -X POST -H @${SCRATCH}/token.hdr -d '{\"versions\":[1]}') == 403 ]]"
+    vault_logout
+  fi
+  echo "  This server"
+  local key left=""
+  for key in ${XPAM_VAULT_SECRET_KEYS}; do [[ -n "$(config_value "${key}")" ]] && left+=" ${key}"; done
+  v "config.txt holds no secret${left:+ (left:${left})}" "[[ -z '${left}' ]]"
+  v "the secrets are in memory only (tmpfs)" "findmnt -no FSTYPE --target ${RUN} | grep -q tmpfs"
+  local sk; sk=$(get_config SECRET_KEY)
+  v "no container holds SECRET_KEY in its settings" "[[ -n '${sk}' ]] && ! docker ps -q | xargs -r docker inspect | grep -qF -- '${sk}'"
+  v "XPAM's own client: TLS 1.3, the kit CA only, login and store OK" "[[ \$(docker exec -i xpam_core bash -c 'cd /opt/jumpserver/apps && python manage.py shell' 2>/dev/null <<'PY' | tail -1
+import ssl
+from accounts.backends import vault_client
+vault_client.type
+backend = vault_client._wrapped
+ok, err = backend.is_active()
+print(ok and backend.client.session.adapters['https://'].ctx.minimum_version == ssl.TLSVersion.TLSv1_3)
+PY
+) == True ]]"
+  local n
+  n=$(core_exec <<'PY' | tail -1
+from accounts.models import Account
+from accounts.models.mixins.vault import VAULT_SAVED_SECRET_MARK
+print(sum(1 for o in Account.objects.only('id', '_secret').iterator() if o._secret and o._secret != VAULT_SAVED_SECRET_MARK))
+PY
+)
+  v "the database keeps no account secret" "[[ '${n}' == 0 ]]"
+  echo
+  echo "  ${ok} passed, ${bad} failed"
+  [[ ${bad} -eq 0 ]]
 }
 
 cmd_disconnect() {
@@ -449,5 +616,11 @@ case "${1:-}" in
   fetch) cmd_fetch "${2:-}" ;;
   put) cmd_put "${2:-}" ;;
   disconnect) cmd_disconnect "${2:-}" ;;
+  verify) cmd_verify ;;
+  attach) cmd_attach "${2:-}" ;;
+  local) cmd_local ;;
+  add-connection) cmd_add_connection "${2:-}" "${3:-}" "${4:-}" "${5:-}" ;;
+  list-connections) core_manage xpam_vault_connection list ;;
+  remove-connection) core_manage xpam_vault_connection remove --name "${2:-}" ;;
   *) sed -n '3,8p' "$0" | sed 's/^# \{0,1\}//'; exit 2 ;;
 esac

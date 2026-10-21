@@ -2,7 +2,9 @@
 #
 # XPAM high availability: two servers (one primary, one standby) and a witness.
 #
-#   xpamctl ha init <this-ip> <other-server-ip> <witness-ip>   on the current XPAM server (becomes primary)
+#   xpamctl ha init <this-ip> <other-ip> <witness-ip> --vault-bundle <xpam-vault-OTHER.enc>
+#                                                               on the current XPAM server (becomes primary);
+#                                                               XPAM's secrets must be in Vault first (vault connect)
 #   xpamctl ha join <xpam-ha-join.enc> [-y]                     on the second server (becomes standby)
 #   (witness)  decrypt xpam-ha-witness.enc and run witness.sh   on the witness (Docker only)
 #   xpamctl ha status                                           roles, replication, files, witness
@@ -197,6 +199,7 @@ function make_join_bundle() {
   cp "${HA_DIR}"/certs/{ca.crt,ca.key.enc,node.crt,node.key,client.crt,client.key,witness.crt,witness.key} "${work}/ha/certs/" || {
     rm -rf "${work}"; log_error "The cluster certificates are incomplete"; return 1; }
   cp -r "${HA_DIR}/ssh" "${work}/ha/"
+  [[ -d "${HA_DIR}/peer-vault" ]] && cp -r "${HA_DIR}/peer-vault" "${work}/vault"  # (the other server's Vault login)
   (umask 077 && encrypt_dir "${work}" "${HA_DIR}/xpam-ha-join.enc")
   rm -rf "${work}"
 }
@@ -243,6 +246,20 @@ function ha_init() {
   local_ip "${this}" || { log_error "${this} is not an address of this server"; return 1; }
   check_requirements || return 1
   docker ps --format '{{.Names}}' | grep -qx xpam_core || { log_error "XPAM must be running"; return 1; }
+  # XPAM: the cluster's configuration holds every password — in high availability it lives in HashiCorp Vault
+  # (the XPAM Vault kit); the other server gets its own Vault login through the join bundle
+  if secrets_from_vault; then
+    [[ -f "${HA_PEER_VAULT_BUNDLE:-}" ]] || { log_error "Give the Vault bundle of the other server: xpamctl ha init ${this} ${peer} ${witness} --vault-bundle xpam-vault-${peer}.enc (from the Vault kit: init --xpam ${this},${peer}, or add-xpam ${peer})"; return 1; }
+    local vb; vb=$(mktemp -d)
+    XV_BUNDLE_PW="$(passphrase_from XPAM_VAULT_BUNDLE_PASSPHRASE "Vault bundle passphrase (the other server's)")" \
+      bash -c 'openssl enc -d -aes-256-cbc -pbkdf2 -iter 600000 -pass env:XV_BUNDLE_PW -in "$1" 2>/dev/null | tar xzf - -C "$2"' _ "${HA_PEER_VAULT_BUNDLE}" "${vb}"
+    grep -q "^VAULT_ROLE=xpam-${peer//./-}$" "${vb}/vault.env" 2>/dev/null || {
+      rm -rf "${vb}"; log_error "That is not the Vault bundle of ${peer} (or a wrong passphrase)"; return 1; }
+    rm -rf "${HA_DIR}/peer-vault"; mkdir -p "${HA_DIR}"; mv "${vb}" "${HA_DIR}/peer-vault"; chmod -R go-rwx "${HA_DIR}/peer-vault"
+  elif [[ "${XPAM_HA_ALLOW_NO_VAULT:-}" != "1" ]]; then
+    log_error "High availability needs XPAM's secrets in HashiCorp Vault first (they are shared by both servers): xpamctl vault connect <bundle> — see docs/VAULT.md"
+    return 1
+  fi
 
   echo_yellow "XPAM high availability"
   echo "  this server  ${this}   (becomes the primary)"
@@ -412,6 +429,13 @@ function ha_join() {
   set_config HA_ENABLED 1
   rm -rf "${HA_DIR}" && mkdir -p "${HA_DIR}"
   cp -r "${work}/ha/certs" "${work}/ha/ssh" "${HA_DIR}/"
+  if [[ -d "${work}/vault" ]]; then
+    # XPAM: the passwords are in Vault — this server logs in with its own certificate and reads them into memory
+    echo_yellow "\nVault (this server's own login)"
+    bash "${BASE_DIR}/vault.sh" attach "${work}/vault" || { rm -rf "${work}"; log_error "This server cannot read XPAM's secrets from Vault"; return 1; }
+  elif grep -q '^XPAM_SECRETS_FROM_VAULT=1' "${work}/config.txt"; then
+    rm -rf "${work}"; log_error "The primary keeps its secrets in Vault but the bundle has no Vault login for this server"; return 1
+  fi
   rm -rf "${work}"
   echo_yellow "\nImages"
   pull_images || { log_error "The images are not available"; return 1; }
@@ -445,7 +469,7 @@ function ha_join() {
   fi
   install_agent "${peer}"
   echo_green "\nThis server is the standby: it follows the primary and takes over by itself if the primary fails."
-  echo "Delete the bundle (it holds XPAM's secrets): rm -f ${bundle}"
+  echo "Delete the bundle: shred -u ${bundle}"
 }
 
 # ---------------------------------------------------------------- operations
@@ -696,8 +720,13 @@ function ha_pause() { # on|off — maintenance mode: no automatic failover (upgr
 function main() {
   local action=${1:-status}; shift || true
   case "${action}" in
-    init) [[ $# -ge 3 ]] || { echo "usage: xpamctl ha init <this-ip> <other-server-ip> <witness-ip>"; return 2; }
-          ha_init "$@" ;;
+    init) [[ $# -ge 3 ]] || { echo "usage: xpamctl ha init <this-ip> <other-server-ip> <witness-ip> --vault-bundle <xpam-vault-OTHER.enc> [-y]"; return 2; }
+          local args=() a
+          while [[ $# -gt 0 ]]; do
+            a=$1; shift
+            if [[ "${a}" == "--vault-bundle" ]]; then export HA_PEER_VAULT_BUNDLE=$1; shift; else args+=("${a}"); fi
+          done
+          ha_init "${args[@]}" ;;
     join) [[ $# -ge 1 ]] || { echo "usage: xpamctl ha join <xpam-ha-join.enc> [-y]"; return 2; }
           ha_join "$@" ;;
     status) ha_status ;;

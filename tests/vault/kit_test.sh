@@ -24,26 +24,41 @@ export XPAM_VAULT_PASSPHRASE="Kit-$(head -c 32 /dev/urandom | tr -dc A-Za-z0-9 |
 export XPAM_VAULT_BUNDLE_PASSPHRASE="Bundle-$(head -c 32 /dev/urandom | tr -dc A-Za-z0-9 | head -c 20)"
 PW="XPAM_VAULT_PASSPHRASE=$XPAM_VAULT_PASSPHRASE XPAM_VAULT_BUNDLE_PASSPHRASE=$XPAM_VAULT_BUNDLE_PASSPHRASE XPAM_VAULT_ALLOW_SWAP=1"
 K=/opt/xpam-vault
+# a Rocky Linux image with Docker already installed saves ~20 minutes of package downloads per run
+NODE_IMAGE=rockylinux/rockylinux:9-ubi-init
+docker image inspect xpam-test/rocky-docker:9 >/dev/null 2>&1 && NODE_IMAGE=xpam-test/rocky-docker:9
+
+# the Vault image: from the host (VAULT_FS_TAR, `docker export` of a hashicorp/vault:2.1.2 container) or pulled
+load_vault() {
+  if [[ -s "${VAULT_FS_TAR:-}" ]]; then
+    docker exec -i "$1" docker import --change 'ENTRYPOINT ["docker-entrypoint.sh"]' --change 'CMD ["server", "-dev"]' \
+      --change 'USER vault' --change 'ENV PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin' \
+      --change 'ENV NAME=vault' - hashicorp/vault:2.1.2 < "${VAULT_FS_TAR}" >/dev/null
+  else
+    on "$1" "for i in 1 2 3 4 5; do timeout 300 docker pull -q hashicorp/vault:2.1.2 >/dev/null 2>&1 && break; sleep 5; done"
+  fi
+}
 
 say "servers"
 docker network create --subnet 172.31.8.0/24 "$NET" >/dev/null
 node() { # name ip
   docker run -d --privileged --name "$1" --hostname "$1" --memory 450m --memory-swap 450m --cpus 1 \
     --network "$NET" --ip "$2" -v "$1-docker:/var/lib/docker" -v /opt/xpam-installer:/src:ro \
-    rockylinux/rockylinux:9-ubi-init >/dev/null
+    "$NODE_IMAGE" >/dev/null
 }
 node xvk1 $N1; node xvk2 $N2; node xvk3 $N3
 docker run -d --name xvkx --network "$NET" --ip $XP --entrypoint sleep "xpam/core:$CORE_TAG" infinity >/dev/null
 docker run -d --name xvks --network "$NET" --ip $ST --entrypoint sleep "xpam/core:$CORE_TAG" infinity >/dev/null
 sleep 8
 for n in xvk1 xvk2 xvk3; do
-  on $n 'for i in $(seq 20); do dnf -y -q install dnf-plugins-core iptables-nft iproute python3 openssl tar procps-ng >/dev/null 2>&1 && break; sleep 10; done
+  on $n 'command -v docker >/dev/null && { systemctl start docker; exit 0; }; for i in $(seq 20); do dnf -y -q install dnf-plugins-core iptables-nft iproute python3 openssl tar procps-ng >/dev/null 2>&1 && break; sleep 10; done
     dnf config-manager --add-repo https://download.docker.com/linux/rhel/docker-ce.repo >/dev/null 2>&1
     for i in $(seq 10); do dnf -y -q install docker-ce docker-ce-cli containerd.io docker-compose-plugin >/dev/null 2>&1 && break; sleep 10; done
     mkdir -p /etc/docker; echo "{\"features\":{\"containerd-snapshotter\":false}}" > /etc/docker/daemon.json
     systemctl enable --now docker >/dev/null 2>&1' &
 done; wait
-for n in xvk1 xvk2 xvk3; do on $n "for i in 1 2 3 4 5; do timeout 300 docker pull -q hashicorp/vault:2.1.2 >/dev/null 2>&1 && break; sleep 5; done" & done; wait
+sleep 3
+load_vault xvk1 & load_vault xvk2 & load_vault xvk3 & wait
 check 'the simulated Vault servers have Docker and the Vault image' "on xvk3 'docker image inspect hashicorp/vault:2.1.2' >/dev/null"
 
 say "init on the first Vault server"
@@ -170,14 +185,16 @@ leader() { # the container of the current leader
 
 say "audit log"
 LN=$(leader)
-check "the active server logs XPAM's read (who, what, from where)" "on $LN 'grep -h \"accounts/x1\" $K/logs/audit.log' | grep -q 'cert-xpam-172-31-8-21'"
+check "the active server logs XPAM's read (who, what, from where)" "on $LN \"grep -h accounts/x1 $K/logs/audit.log\" | grep -q 'cert-xpam-172-31-8-21'"
 check 'the audit log never contains the secret value' "! on xvk1 'grep -h $CANARY $K/logs/audit.log' && ! on xvk2 'grep -h $CANARY $K/logs/audit.log' && ! on xvk3 'grep -h $CANARY $K/logs/audit.log'"
 
 say "restart and leader loss"
 on xvk2 "docker restart xpam_vault >/dev/null"; sleep 5
-check 'a restarted Vault server is sealed' "wait_for \"on xvk1 '$STATUS' 2>/dev/null | grep -qE '$N2 +sealed'\" 20"
+# (status prints the seal states first; its admin part may fail while a leader is being elected)
+st() { on xvk1 "$STATUS" 2>/dev/null; true; }
+check 'a restarted Vault server is sealed' "wait_for \"st | grep -qE '$N2 +sealed'\" 20"
 docker exec xvk1 sed -n 2,4p /root/shares | docker exec -i xvk2 bash /src/vault/xpam-vault.sh unseal >/dev/null
-check 'it unseals with 3 shares and rejoins' "wait_for \"on xvk1 '$STATUS' 2>/dev/null | grep -qE '$N2 +unsealed'\" 20"
+check 'it unseals with 3 shares and rejoins' "wait_for \"st | grep -qE '$N2 +unsealed'\" 20"
 LN=$(leader)
 on $LN "docker stop xpam_vault >/dev/null"
 sleep 12

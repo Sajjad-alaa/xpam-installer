@@ -71,6 +71,49 @@ function start_after_install() {
   start_xpam_and_wait
 }
 
+# XPAM: secrets in HashiCorp Vault from the start — Vault servers of their own (the XPAM Vault kit, recommended)
+# or a hardened Vault on this server (moved to separate servers later with `xpamctl vault connect`).
+#   XPAM_VAULT_MODE=external (with XPAM_VAULT_BUNDLE=<xpam-vault-IP.enc>) | local | none
+function setup_vault_after_install() {
+  local mode bundle choice
+  mode=$(get_config_or_env XPAM_VAULT_MODE)
+  bundle=$(get_config_or_env XPAM_VAULT_BUNDLE)
+  if [[ -z "${mode}" ]]; then
+    if [[ -n "${bundle}" ]]; then
+      mode=external
+    elif [[ "${AUTO_INSTALL:-}" == "1" || ! -t 0 ]]; then
+      mode=local
+    else
+      echo_yellow "\n>>> Where should XPAM keep its secrets (SECRET_KEY, passwords, account passwords)?"
+      echo "  1) HashiCorp Vault on servers of its own (the XPAM Vault kit) — recommended"
+      echo "  2) A hardened HashiCorp Vault on this server — move it to separate servers later (xpamctl vault connect)"
+      echo "  3) On this server only (config.txt and the database)"
+      choice=2
+      read_from_input choice "Choice" "1/2/3" "${choice}"
+      case "${choice}" in
+        1) mode=external; read_from_input bundle "Vault bundle for this server (xpam-vault-IP.enc)" "" "" ;;
+        3) mode=none ;;
+        *) mode=local ;;
+      esac
+    fi
+  fi
+  case "${mode}" in
+    external)
+      echo_green "\n>>> $(gettext 'Secrets into HashiCorp Vault')"
+      bash "${BASE_DIR}/vault.sh" connect "${bundle}" -y \
+        || log_error "Vault was not connected; XPAM runs with its secrets on this server. Retry: xpamctl vault connect <bundle>"
+      ;;
+    local)
+      echo_green "\n>>> $(gettext 'Secrets into a hardened Vault on this server')"
+      bash "${BASE_DIR}/vault.sh" local \
+        || log_error "The local Vault was not set up; XPAM runs with its secrets on this server. Retry: xpamctl vault local"
+      ;;
+    *)
+      echo_warn "XPAM's secrets stay on this server (config.txt). Later: xpamctl vault local, or xpamctl vault connect <bundle>"
+      ;;
+  esac
+}
+
 function post_install() {
   local started=$1 ssh_port
 
@@ -147,6 +190,7 @@ function main() {
   local started=0
   if start_after_install; then
     started=1
+    setup_vault_after_install
   fi
   post_install "${started}"
 }

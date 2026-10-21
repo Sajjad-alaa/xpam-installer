@@ -145,6 +145,29 @@ run -e VAULT_BACKEND=delinea -e VAULT_DELINEA_URL=http://tvmock:8301 -e VAULT_DE
 GCP_JSON=$(python3 -c 'import json,sys; print(json.dumps({"type": "service_account", "project_id": "xpam-test", "private_key_id": "k1", "private_key": open(sys.argv[1]).read(), "client_email": "xpam@xpam-test.iam.gserviceaccount.com", "token_uri": "http://tvmock:8302/token"}))' "$W/gcp.key")
 run -e VAULT_BACKEND=gcp -e VAULT_GCP_PROJECT=xpam-test -e VAULT_GCP_CREDENTIALS="$GCP_JSON" -e VAULT_GCP_API_URL=http://tvmock:8302/v1
 
+say "several vaults: rules, mirrors, moving, external passwords, console lock"
+CONNS=$(python3 - "$CONJUR_KEY" "$DLN_PW" "$GCP_JSON" <<'PY'
+import json, sys
+conjur_key, dln_pw, gcp_json = sys.argv[1:4]
+print(json.dumps({
+  "conjur": {"type": "cyberark", "config": {"VAULT_CYBERARK_URL": "http://tvconjur", "VAULT_CYBERARK_ACCOUNT": "xpamtest",
+             "VAULT_CYBERARK_LOGIN": "host/xpam-server", "VAULT_CYBERARK_API_KEY": conjur_key, "VAULT_CYBERARK_POLICY": "xpam"}},
+  "delinea": {"type": "delinea", "config": {"VAULT_DELINEA_URL": "http://tvmock:8301", "VAULT_DELINEA_USERNAME": "xpam-app",
+              "VAULT_DELINEA_PASSWORD": dln_pw, "VAULT_DELINEA_FOLDER_ID": "7", "VAULT_DELINEA_TEMPLATE_ID": "6003"}},
+  "gcp": {"type": "gcp", "config": {"VAULT_GCP_PROJECT": "xpam-test", "VAULT_GCP_CREDENTIALS": gcp_json,
+          "VAULT_GCP_API_URL": "http://tvmock:8302/v1"}},
+}))
+PY
+)
+printf '%s' "$CONNS" > "$W/conns.json"; chmod 600 "$W/conns.json"   # (KEEP=1: rerun the routing stage alone)
+docker rm -f tvcore >/dev/null 2>&1
+docker run --rm --name tvcore --network $NET --ip $CORE_IP --env-file "$W/core.env" -e VAULT_ENABLED=true \
+  -e VAULT_BACKEND=hcp -e VAULT_HCP_HOST=https://tvvault:8200 -e VAULT_HCP_AUTH=cert -e VAULT_HCP_CERT_ROLE=xpam-test \
+  -e VAULT_HCP_MOUNT_POINT=xpam -e VAULT_HCP_CA_FILE=/vc/ca.crt -e VAULT_HCP_CLIENT_CERT_FILE=/vc/client.crt \
+  -e VAULT_HCP_CLIENT_KEY_FILE=/vc/client.key -e XPAM_TEST_CONNECTIONS="$CONNS" \
+  -v "$HERE/routing_test.py:/t/routing_test.py:ro" -v "$W/vc:/vc:ro" \
+  --entrypoint /opt/py3/bin/python "xpam/core:$TAG" /t/routing_test.py 2>&1 | grep -E '^(PASS|FAIL|RESULT)|Error|Traceback'
+
 say "what the vendors saw"
 docker exec tvmock python3 -c "import urllib.request,json; print('delinea', json.load(urllib.request.urlopen('http://localhost:8301/_state'))['calls'], 'calls;', 'google', json.load(urllib.request.urlopen('http://localhost:8302/_state'))['calls'], 'calls')" 2>/dev/null
 echo "a wrong Conjur key / Delinea password / Google key is refused:"

@@ -26,17 +26,19 @@ export XPAM_VAULT_PASSPHRASE="Kit-$(head -c 32 /dev/urandom | tr -dc A-Za-z0-9 |
 export XPAM_VAULT_BUNDLE_PASSPHRASE="Bundle-$(head -c 32 /dev/urandom | tr -dc A-Za-z0-9 | head -c 20)"
 export XPAM_VAULT_RECOVERY_PASSPHRASE="Recovery-$(head -c 32 /dev/urandom | tr -dc A-Za-z0-9 | head -c 20)"
 PW="XPAM_VAULT_PASSPHRASE=$XPAM_VAULT_PASSPHRASE XPAM_VAULT_BUNDLE_PASSPHRASE=$XPAM_VAULT_BUNDLE_PASSPHRASE XPAM_VAULT_RECOVERY_PASSPHRASE=$XPAM_VAULT_RECOVERY_PASSPHRASE XPAM_VAULT_ALLOW_SWAP=1"
-MIN="CHEN_ENABLED=0 KAEL_ENABLED=0 BROWSER_ENABLED=0 WORKSPACE_ENABLED=0 WEB_ENABLED=0 WORKER_ENABLED=0 SERVER_SIZE=small XPAM_IMAGE_REGISTRY=local"
+MIN="XPAM_VAULT_MODE=none CHEN_ENABLED=0 KAEL_ENABLED=0 BROWSER_ENABLED=0 WORKSPACE_ENABLED=0 WEB_ENABLED=0 WORKER_ENABLED=0 SERVER_SIZE=small XPAM_IMAGE_REGISTRY=local"
 CORE_SHELL="docker exec -i xpam_core bash -c 'cd /opt/jumpserver/apps && python manage.py shell 2>/dev/null'"
 
 say "servers"
 docker network create --subnet 172.31.6.0/24 "$NET" >/dev/null
+NODE_IMAGE=rockylinux/rockylinux:9-ubi-init
+docker image inspect xpam-test/rocky-docker:9 >/dev/null 2>&1 && NODE_IMAGE=xpam-test/rocky-docker:9
 docker run -d --privileged --name xvtv --hostname xvtv --memory 450m --memory-swap 450m --cpus 1 --network $NET --ip $V \
-  -v xvtv-docker:/var/lib/docker -v /opt/xpam-installer:/src:ro rockylinux/rockylinux:9-ubi-init >/dev/null
+  -v xvtv-docker:/var/lib/docker -v /opt/xpam-installer:/src:ro "$NODE_IMAGE" >/dev/null
 docker run -d --privileged --name xvtx --hostname xvtx --memory 1800m --memory-swap 1800m --cpus 2 --network $NET --ip $X \
   -v xvtx-docker:/var/lib/docker -v /opt/xpam-installer:/src:ro rockylinux/rockylinux:9-ubi-init >/dev/null
 sleep 8
-on xvtv 'for i in $(seq 20); do dnf -y -q install dnf-plugins-core iptables-nft iproute python3 openssl tar procps-ng >/dev/null 2>&1 && break; sleep 10; done
+on xvtv 'command -v docker >/dev/null && systemctl start docker && timeout 600 docker pull -q hashicorp/vault:2.1.2 >/dev/null && exit 0; for i in $(seq 20); do dnf -y -q install dnf-plugins-core iptables-nft iproute python3 openssl tar procps-ng >/dev/null 2>&1 && break; sleep 10; done
   dnf config-manager --add-repo https://download.docker.com/linux/rhel/docker-ce.repo >/dev/null 2>&1
   for i in $(seq 10); do dnf -y -q install docker-ce docker-ce-cli containerd.io docker-compose-plugin >/dev/null 2>&1 && break; sleep 10; done
   mkdir -p /etc/docker; echo "{\"features\":{\"containerd-snapshotter\":false}}" > /etc/docker/daemon.json

@@ -79,7 +79,15 @@ check 'B is the standby, streaming in sync' "wait_for \"on hara 'curl -s http://
 check 'XPAM services are stopped on the standby' "wait_for \"! on harb 'docker ps --format {{.Names}}' | grep -qx xpam_core\" 12"
 check "B's Redis follows A's" "wait_for \"on harb 'docker exec -e REDISCLI_AUTH=\\\$(grep ^REDIS_PASSWORD= /opt/xpam/config/config.txt | cut -d= -f2) xpam_redis redis-cli info replication' | grep -q role:slave\" 12"
 check 'recordings are copied to the standby (within ~1 min)' "wait_for \"on harb 'cat /data/xpam/core/data/replay/2026-10-21/rehearsal.cast 2>/dev/null' | grep -q recording\" 30"
-check 'xpamctl ha status reports both servers' "on hara 'cd /opt/xpam-installer && bash ./xpamctl.sh ha status' | grep -q xpam-b"
+check 'xpamctl ha status reports both servers' "[[ \$(on hara 'cd /opt/xpam-installer && bash ./xpamctl.sh ha status') == *xpam-b*sync_standby* ]]"
+API='docker exec xpam_core python -c "
+import os, django; os.environ.setdefault(\"DJANGO_SETTINGS_MODULE\", \"jumpserver.settings\"); django.setup()
+from django.conf import settings; settings.ALLOWED_HOSTS = [\"*\"]
+from rest_framework.test import APIClient; from users.models import User
+c = APIClient(); c.force_authenticate(User.objects.get(username=\"admin\"))
+d = c.get(\"/api/v1/settings/ha/status/\").json()
+print(\"API\", d.get(\"enabled\"), sorted(m[\"role\"] for m in d.get(\"members\", [])), (d.get(\"agent\") or {}).get(\"role\"))" 2>/dev/null'
+check 'the console API shows the cluster (primary + synchronous standby)' "[[ \$(on hara \"\$API\") == *'API True'*leader*sync_standby*primary* ]]"
 
 say "crash of A"
 docker kill hara >/dev/null

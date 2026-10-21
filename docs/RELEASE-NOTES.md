@@ -1,5 +1,19 @@
 # XPAM release notes
 
+## 5.1.16 — high availability
+
+- **Two servers and a witness.** `xpamctl ha init` on the current server, a one-line script on a small
+  witness machine and `xpamctl ha join` on the second server turn XPAM into a primary/standby cluster:
+  PostgreSQL under Patroni with synchronous streaming replication over TLS (no committed change lost),
+  leader election by a vote of both servers and the witness (no split brain), Redis following the
+  primary, recordings and files copied to the standby every minute.
+- **Automatic failover.** If the primary fails, the standby's database takes over in about 30 seconds
+  and its agent starts XPAM; the load balancer (or DNS) follows the health URL, which answers on the
+  primary only. A failed server rejoins as standby by itself.
+- **Console:** System settings → High availability shows both servers, roles, replication lag, the
+  last file copy and the witness, and switches the primary for maintenance.
+- **Upgrades in a cluster:** standby first, then the primary (automatic failover is paused meanwhile).
+
 ## 5.1.15 — faster asset management
 
 - **Add many.** Paste a list of addresses (or "name address" lines), pick one platform, node and account,

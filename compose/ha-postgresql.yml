@@ -2,7 +2,7 @@ services:
   # XPAM high availability: PostgreSQL under Patroni (see build/postgresql-ha.Dockerfile). The ports are
   # published on this server's own address only; the agent lets only the other server and the witness in.
   postgresql:
-    image: ${XPAM_NAMESPACE:-xpam}/postgresql-ha:${XPAM_VERSION:-${XPAM_DEFAULT_VERSION:-v5.1.15}}
+    image: ${XPAM_NAMESPACE:-xpam}/postgresql-ha:${XPAM_VERSION:-${XPAM_DEFAULT_VERSION:-v5.1.16}}
     pull_policy: never  # XPAM images come from xpamctl (never Docker Hub)
     container_name: xpam_postgresql
     hostname: postgresql

@@ -147,7 +147,9 @@ not run code, but it could tamper with data.
 
 - **Allowed:** the service's own keys and channels.
 - **Refused:** XPAM's sessions, the job queue, other channels, `KEYS`, `SCAN`, `FLUSHALL`, `CONFIG`.
-- The xpam-secureconnection Go tests pass.
+- The xpam-secureconnection Go tests pass, and the rebuilt image contains the new setting.
+- **Not yet tried:** a shared SSH session with `SHARE_ROOM_TYPE=redis` on a full install. The
+  rehearsal runs a reduced XPAM without the SSH/RDP service.
 
 ---
 

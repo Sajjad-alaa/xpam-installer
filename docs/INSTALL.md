@@ -397,6 +397,14 @@ database time plus the time XPAM needs to start (one to two minutes). A small th
 | Between the servers | TCP 5432, 8008, 2379, 2380, 6380 and 22 (file copy); witness: 2379, 2380 from both servers |
 | On both servers | `rsync`, `openssh`, `openssl`, `curl`, `iptables` (`dnf install -y rsync openssh-clients openssl curl iptables-nft`) |
 
+**What the other machines can do.** The witness has its own certificate: it votes, but the vote
+store gives XPAM's records only to the account Patroni uses (`xpam-node`, with a password), so the
+witness can neither read nor change them. Adding or removing a member needs the vote's administrator
+account. The CA key is stored only encrypted with the cluster passphrase; the bundles are encrypted.
+XPAM's components (SSH/RDP, database web client, AI) get no secret except the ones they use, named in
+their compose files; the SSH/RDP service's Redis account (only for shared rooms) can use its own keys
+and channels and nothing else.
+
 **Who can reach the database.** Only XPAM's own containers use the database. The other server may
 only replicate: it connects as `replicator` (replication only) and `xpam_rewind` (the four functions
 pg_rewind reads, nothing else), each with a password **and** a client certificate of the cluster's own
@@ -417,17 +425,23 @@ database on the host at all (set `POSTGRESQL_EXPOSE_PORT` in `config.txt` to all
    xpamctl ha init <this-server-ip> <second-server-ip> <witness-ip>
    ```
 
-   It prepares two bundles in `/opt/xpam/config/ha/` and waits for the witness.
-3. On the witness: copy `xpam-ha-witness.tgz` there (it holds only the cluster certificates) and run
+   It shows two passphrases once — keep them in your password safe:
+   - the **cluster passphrase** protects the cluster's CA key (needed to replace certificates later);
+   - the **bundle passphrase** opens the two bundles it prepares in `/opt/xpam/config/ha/`.
+
+   Then it waits for the witness.
+3. On the witness: copy `xpam-ha-witness.enc` there (only the witness's own certificate, encrypted) and run
+   (it asks for the bundle passphrase)
 
    ```bash
-   mkdir xpam-witness && tar xzf xpam-ha-witness.tgz -C xpam-witness && ./xpam-witness/witness.sh
+   mkdir -p xpam-witness && openssl enc -d -aes-256-cbc -pbkdf2 -iter 600000 -in xpam-ha-witness.enc | tar xz -C xpam-witness && ./xpam-witness/witness.sh
    ```
 
    The first server then backs up, switches its database (XPAM is offline for a few minutes) and
    starts the agent (`systemctl status xpam-ha`).
-4. On the second server: copy `xpam-ha-join.tgz` there (it holds XPAM's secrets: delete it afterwards)
-   and run `xpamctl ha join xpam-ha-join.tgz`. It copies the database and becomes the standby.
+4. On the second server: copy `xpam-ha-join.enc` there (XPAM's configuration, encrypted) and run
+   `xpamctl ha join xpam-ha-join.enc` (it asks for the bundle passphrase). It copies the database and
+   becomes the standby.
 
 System settings → **High availability** in the console (and `xpamctl ha status` on a server) shows both
 servers, their roles, the replication lag, the last file copy and whether the witness answers.
@@ -454,7 +468,8 @@ removes it.
 
 | | |
 |---|---|
-| A server is rebuilt (disk lost, same address) | install the same XPAM version on it; on the primary `xpamctl ha join-bundle`; copy the bundle over and run `xpamctl ha join xpam-ha-join.tgz` |
+| A server is rebuilt (disk lost, same address) | install the same XPAM version on it; on the primary `xpamctl ha join-bundle`; copy the bundle over and run `xpamctl ha join xpam-ha-join.enc` |
+| Replace every certificate (e.g. a server was compromised) | on the primary `xpamctl ha rotate-certs` (asks for the cluster passphrase); then `xpamctl ha apply-certs xpam-ha-join.enc` on the other server and the witness bundle on the witness; then `xpamctl ha rotate-certs --finish` on the primary. XPAM keeps running; automatic failover is paused meanwhile |
 | The witness is replaced (same address) | on the primary `xpamctl ha witness-bundle`; on the new witness run its `witness.sh` as at setup |
 | Back to one server | `xpamctl ha disable` on the standby first, then on the primary (it keeps XPAM and all data) |
 

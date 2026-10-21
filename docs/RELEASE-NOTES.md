@@ -21,6 +21,13 @@
   cluster certificate, no XPAM account over the network), Patroni's API and Redis replication require
   the cluster certificate, the firewall is in place before Docker at every boot. A single server no
   longer publishes its database on the host (127.0.0.1:5432); set `POSTGRESQL_EXPOSE_PORT` to allow it.
+- **The witness and the components hold only what they need.** The witness has its own certificate and
+  no rights on XPAM's records in the vote; the CA key is stored only encrypted with the cluster
+  passphrase; the join and witness bundles are encrypted (`.enc`, bundle passphrase); each component
+  gets only the secrets it uses (no more whole-config sharing); the SSH/RDP service has its own Redis
+  account limited to its keys and channels.
+- **Replace every certificate without downtime:** `xpamctl ha rotate-certs` / `apply-certs` /
+  `rotate-certs --finish` (e.g. after a server was compromised).
 - Fixed: Redis did not start again after a container restart or server reboot (since 5.1.10).
 
 ## 5.1.15 — faster asset management

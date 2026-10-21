@@ -81,11 +81,11 @@ PY
     echo_yellow "\n5. Account secrets back into Vault (encrypted with the new key)"
     local i
     for i in $(seq 1 60); do docker ps --format '{{.Names}} {{.Status}}' | grep -q '^xpam_core .*(healthy)' && break; sleep 5; done
-    docker exec -i xpam_core bash -c "cd /opt/jumpserver/apps && python manage.py shell" >/dev/null 2>&1 <<'PY' || \
+    docker exec -i xpam_core bash -c "cd /opt/jumpserver/apps && python manage.py shell" >/dev/null 2>&1 <<'PY' || {
 from accounts.tasks.vault import sync_secret_to_vault
 sync_secret_to_vault()
 PY
-      log_warn "Moving the account secrets back to Vault failed: run it from the console (System settings → Vault → Sync)"
+      log_warn "Moving the account secrets back to Vault failed: run it from the console (System settings → Vault → Sync)"; }
     echo_green "\nSECRET_KEY rotated (the new key is in Vault; Vault keeps the previous one as an older version)."
     return 0
   fi

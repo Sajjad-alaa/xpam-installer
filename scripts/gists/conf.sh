@@ -158,7 +158,8 @@ function set_config() {
     return
   fi
 
-  origin_value=$(get_config "${key}")
+  # (config.txt itself: get_config may answer from the secrets read from Vault)
+  origin_value=$(XPAM_SECRETS_RUN_DIR=/nonexistent get_config "${key}")
   if [[ "$(has_config "${key}")" == "1" && "${value}" == "${origin_value}" ]]; then
     return
   fi

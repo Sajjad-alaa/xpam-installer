@@ -1,0 +1,10 @@
+# XPAM: secrets from HashiCorp Vault (xpamctl vault connect). The container waits for its own secrets, read
+# from Vault into memory at boot (/run/xpam/secrets/redis, only the ones it uses), and starts with them; they are
+# never part of its settings (docker inspect) nor of config.txt.
+services:
+  redis:
+    entrypoint: ["/bin/sh", "-c", "while [ ! -s /run/xpam-secrets/env ]; do sleep 2; done; set -a; . /run/xpam-secrets/env; set +a; exec \"$$@\"", "xpam-secrets", "docker-entrypoint.sh"]
+    volumes:
+      - /run/xpam/secrets/redis:/run/xpam-secrets:ro
+    healthcheck:
+      test: ["CMD-SHELL", ". /run/xpam-secrets/env && REDISCLI_AUTH=\"$$REDIS_PASSWORD\" redis-cli -h 127.0.0.1 -p $$REDIS_PORT info Replication"]

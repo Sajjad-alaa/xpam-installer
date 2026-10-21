@@ -9,6 +9,20 @@ function has_config() {
   fi
 }
 
+# XPAM: secrets kept in HashiCorp Vault (xpamctl vault connect). config.txt then holds none of these; at
+# boot xpam-secrets.service reads them from Vault into memory (/run/xpam/secrets, a tmpfs) and the scripts
+# read them from there (get_config) and write them to Vault (set_config).
+XPAM_VAULT_SECRET_KEYS="SECRET_KEY BOOTSTRAP_TOKEN DB_PASSWORD REDIS_PASSWORD REDIS_KOKO_PASSWORD BROWSER_KEY CHAT_AI_API_KEY CHAT_AI_DELEGATION_SECRET HA_REPL_PASSWORD HA_PATRONI_PASSWORD HA_REWIND_PASSWORD HA_ETCD_PASSWORD HA_ETCD_ROOT_PASSWORD VAULT_OPENBAO_TOKEN SSH_CA_OPENBAO_TOKEN"
+XPAM_SECRETS_RUN_DIR="/run/xpam/secrets"
+
+function is_vault_secret_key() {
+  [[ " ${XPAM_VAULT_SECRET_KEYS} " == *" $1 "* ]]
+}
+
+function secrets_from_vault() {
+  [[ "$(get_config XPAM_SECRETS_FROM_VAULT)" == "1" ]]
+}
+
 function get_config() {
   local key=$1
   local default=${2-''}
@@ -25,6 +39,12 @@ function get_config() {
         value=${line#*=}
       fi
     done <"${CONFIG_FILE}"
+  fi
+
+  if [[ -z "$value" ]] && is_vault_secret_key "${key}" && [[ -r "${XPAM_SECRETS_RUN_DIR}/all.env" ]]; then
+    while IFS= read -r line || [[ -n "${line}" ]]; do
+      [[ "${line}" == "${key}="* ]] && value=${line#*=}
+    done <"${XPAM_SECRETS_RUN_DIR}/all.env"
   fi
 
   if [[ -z "$value" ]];then
@@ -130,6 +150,12 @@ function set_config() {
   if [[ "${value}" == *$'\n'* || "${value}" == *$'\r'* ]]; then
     printf 'Configuration values must be a single line: %s\n' "${key}" >&2
     return 1
+  fi
+
+  if [[ -n "${value}" ]] && is_vault_secret_key "${key}" && secrets_from_vault; then
+    # (the value goes through the environment, never on a command line)
+    XV_VALUE="${value}" bash "${BASE_DIR}/vault.sh" put "${key}"
+    return
   fi
 
   origin_value=$(get_config "${key}")

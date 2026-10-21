@@ -1,0 +1,9 @@
+# XPAM: secrets from HashiCorp Vault (xpamctl vault connect). The container waits for its own secrets, read
+# from Vault into memory at boot (/run/xpam/secrets/browser, only the ones it uses), and starts with them; they are
+# never part of its settings (docker inspect) nor of config.txt.
+services:
+  browser:
+    entrypoint: ["/bin/sh", "-c", "while [ ! -s /run/xpam-secrets/env ]; do sleep 2; done; set -a; . /run/xpam-secrets/env; set +a; exec \"$$@\"", "xpam-secrets", "/usr/bin/tini", "--"]
+    volumes:
+      - /run/xpam/secrets/browser:/run/xpam-secrets:ro
+    command: ["python3", "/opt/xpam-browser/server.py"]

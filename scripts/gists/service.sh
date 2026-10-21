@@ -153,6 +153,19 @@ function get_docker_compose_services() {
   echo "${services}"
 }
 
+# XPAM: with secrets in Vault each service gets compose/vault/<file>.yml on top of its own file (its secrets
+# from memory at start, see scripts/vault.sh)
+function add_vault_overlays() {
+  local cmd=$1 out=$1 f
+  if secrets_from_vault; then
+    for f in $(grep -oE 'compose/[a-z0-9.-]+\.yml' <<<"${cmd}"); do
+      [[ "${out}" == *" -f compose/vault/${f#compose/}"* ]] && continue
+      [[ -f "${PROJECT_DIR}/compose/vault/${f#compose/}" ]] && out+=" -f compose/vault/${f#compose/}"
+    done
+  fi
+  echo "${out}"
+}
+
 function get_docker_compose_cmd_line() {
   ignore_db=${1-}
   use_ipv6=$(get_config USE_IPV6)
@@ -191,7 +204,7 @@ function get_docker_compose_cmd_line() {
     cmd+=" -f compose/cap_addon.yml"
   fi
 
-  echo "${cmd}"
+  add_vault_overlays "${cmd}"
 }
 
 function get_video_worker_cmd_line() {
@@ -376,13 +389,13 @@ function get_db_compose_cmd() {
   else
     cmd+=" -f compose/network-v6.yml"
   fi
-  echo "$cmd"
+  add_vault_overlays "$cmd"
 }
 
 function get_db_migrate_compose_cmd() {
   cmd=$(get_db_compose_cmd "all")
   cmd+=" -f compose/init-db.yml"
-  echo "$cmd"
+  add_vault_overlays "$cmd"
 }
 
 function create_db_ops_env() {

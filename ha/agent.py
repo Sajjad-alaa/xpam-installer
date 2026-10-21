@@ -25,6 +25,7 @@ import urllib.request
 
 INSTALLER = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CONFIG_FILE = os.environ.get('XPAM_CONFIG_FILE', '/opt/xpam/config/config.txt')
+SECRETS_FILE = '/run/xpam/secrets/all.env'
 INTERVAL = 3
 STABLE_CHECKS = 2           # a role must be seen this many times in a row before acting
 UNKNOWN_GRACE = 30          # seconds without Patroni before the services are stopped
@@ -47,6 +48,15 @@ def read_config():
             if line and not line.startswith('#') and '=' in line:
                 k, v = line.split('=', 1)
                 conf[k.strip()] = v.strip().strip('"').strip("'")
+    # XPAM: secrets kept in Vault (xpamctl vault connect) are read into memory at boot: empty in config.txt
+    try:
+        with open(SECRETS_FILE) as f:
+            for line in f:
+                k, sep, v = line.rstrip('\n').partition('=')
+                if sep and v and not conf.get(k):
+                    conf[k] = v
+    except OSError:
+        pass
     return conf
 
 

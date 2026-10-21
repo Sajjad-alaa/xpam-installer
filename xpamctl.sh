@@ -86,6 +86,7 @@ function usage() {
   echo "  restore_db [file]        $(gettext 'Data recovery through database backup file')"
   echo "  rotate-secret-key [-y]   Replace SECRET_KEY and re-encrypt all stored secrets (short downtime)"
   echo "  ha init|join|status|switchover|failover   High availability: two servers and a witness (see docs)"
+  echo "  vault connect|status|disconnect           Secrets in HashiCorp Vault (the XPAM Vault kit, see docs)"
   echo "  fetch-applet-files       Put the Windows publishing host installers on this server (checksum checked)"
   echo "  raw               $(gettext 'Execute the original docker compose command')"
   echo "  tail [service]    $(gettext 'View log')"
@@ -385,6 +386,9 @@ function main() {
     ;;
   ha)
     bash "${SCRIPT_DIR}/ha.sh" "${@:2}"
+    ;;
+  vault)
+    bash "${SCRIPT_DIR}/vault.sh" "${@:2}"
     ;;
   rotate-secret-key)
     bash "${SCRIPT_DIR}/rotate_secret_key.sh" "${target}"

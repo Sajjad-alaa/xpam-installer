@@ -230,6 +230,64 @@ anywhere.
 
 ---
 
+## 6. Tokens readable in a copy of the database
+
+Added after the five, from the question "if someone gets the database, can they decrypt?"
+
+**Background.** Account passwords, SSH keys, MFA seeds and API secrets were already encrypted with
+`SECRET_KEY` (AES-GCM). That key is in `config.txt`, not in the database or the backups. Two kinds of
+token, however, were stored in plain text and could be used directly:
+
+- **Connection tokens.** A user's reusable tokens last up to 30 days and open sessions through the
+  SSH/RDP service.
+- **The desktop client's sign-in tokens** (OAuth2). Access tokens last 1 hour and refresh tokens
+  7 days, and they give API access as that user.
+
+**Fix:**
+
+- **Connection token values are encrypted** like account secrets.
+  - Why not a one-way hash: the SSH/RDP and database proxies fetch the value and compare it
+    themselves, so a hash would break them.
+  - Against a copy of the database, encryption protects just as well: whoever also has `SECRET_KEY`
+    can decrypt every account password anyway.
+- **OAuth2 tokens are kept only as SHA-256**, using the library's RFC 9700 option
+  (`COMPLIANT_BCP_RFC9700_TOKEN_STORAGE`, refresh grace period 0).
+  - Lookups already went by the hash.
+  - The user's token list now shows the start of the hash instead of the token.
+- **Migration `authentication 0011`** handles existing data:
+  - it encrypts existing connection token values, so tokens already in use keep working;
+  - it blanks the plain copies of earlier OAuth tokens, which keep working through their hash;
+  - rolling back decrypts the values again.
+
+**Files:**
+
+- `authentication/models/connection_token.py`
+- `authentication/migrations/0011_xpam_tokens_at_rest.py`
+- `authentication/serializers/token.py`
+- `jumpserver/settings/libs.py`
+
+**Tested** with `tests/tokens/at_rest_test.py` on a throwaway database: **19/19 passed**. It covers:
+
+- new and pre-upgrade tokens are encrypted, and decryption works through upgrade and rollback;
+- the components' secret API returns the usable value;
+- no plain value is left in either table;
+- an old OAuth token still signs in by its hash, and a wrong one is refused;
+- the desktop client's real flow works: PKCE sign-in, refresh, single-use refresh, revoke;
+- the token list shows the hash prefix.
+
+The repo's own OAuth tests pass (15/15). `terminal.tests` shows the same 2 failures and 16 errors with
+or without this change, so they predate it.
+
+**Not yet tried:** an SSH login through the SSH/RDP service with a connection token on a full install.
+The component reads the value through the same field the test checks.
+
+**What remains:**
+
+- A database copy **plus** `SECRET_KEY` still decrypts everything; see "What remains by design".
+- **Write** access to the database is still as bad as having the key, because the attacker can grant
+  themselves access and let XPAM decrypt for them.
+- An external vault (`VAULT_ENABLED`) keeps account secrets out of the database entirely.
+
 ## Test results
 
 | Suite | Result |
@@ -238,6 +296,7 @@ anywhere.
 | `tests/ha/rehearsal.sh`: three real servers through the full install path | **66/66 passed** |
 | Redis ACL (standalone) | all allowed and refused cases as expected |
 | xpam-secureconnection `go test` | pass |
+| `tests/tokens/at_rest_test.py`: tokens at rest (#6) | **19/19 passed** |
 
 ## What an administrator does differently
 

@@ -28,6 +28,9 @@
   account limited to its keys and channels.
 - **Replace every certificate without downtime:** `xpamctl ha rotate-certs` / `apply-certs` /
   `rotate-certs --finish` (e.g. after a server was compromised).
+- **No usable token in a copy of the database:** connection tokens are stored encrypted like account
+  secrets, and the desktop client's sign-in tokens (OAuth2) only as a SHA-256 hash. Existing tokens keep
+  working (encrypted / hashed by the upgrade).
 - Fixed: Redis did not start again after a container restart or server reboot (since 5.1.10).
 
 ## 5.1.15 — faster asset management

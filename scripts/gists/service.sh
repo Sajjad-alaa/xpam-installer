@@ -93,11 +93,8 @@ function get_db_info() {
       elif [[ "${mariadb_data_exists}" == "1" ]]; then
         echo "mariadb:10.6"
       elif [[ "${postgres_data_exists}" == "1" ]]; then
-        if is_ha_enabled; then
-          echo "gcr.io/etcd-development/etcd:v3.5.21"  # (xpam/postgresql-ha comes with the XPAM images)
-        else
-          echo "postgres:16.15-bookworm"
-        fi
+        # (also in high availability: backups run pg_dump from this image)
+        echo "postgres:16.15-bookworm"
       fi
       ;;
     "file")

@@ -1,5 +1,27 @@
 # XPAM release notes
 
+## 5.1.17 — external vaults, hardened
+
+- **XPAM Vault kit** (`vault/xpam-vault.sh`): a hardened HashiCorp Vault cluster on three servers of its
+  own. Vault answers only clients with a certificate from the kit's CA (TLS 1.3 only), behind its own
+  firewall, in non-root read-only containers. Every request is audited (secret values only as HMAC). XPAM
+  logs in with its own certificate, its tokens work only from its own address, and it cannot delete
+  history. Administrators can run the cluster but cannot read XPAM's secrets or give themselves access.
+  No root token is kept.
+- **Nothing secret on the XPAM server:** `xpamctl vault connect` moves `SECRET_KEY`, the database and
+  Redis passwords and the component tokens to Vault. At boot they're read into memory, and each
+  container gets only its own. `config.txt`, Docker's container settings and backups hold none of them.
+  Account passwords and keys go to Vault too, encrypted with `SECRET_KEY` first. A recovery copy is
+  kept under a recovery passphrase.
+- **Console lock:** with `VAULT_LOCKED`, the vault settings come from the server only. A console
+  administrator can't point XPAM at another vault or restore secrets into the database.
+- **New account-storage vaults:** CyberArk Conjur, Delinea Secret Server and Google Secret Manager, next
+  to HashiCorp Vault, Azure Key Vault, AWS Secrets Manager and OpenBao. Adding another vault is a small
+  documented plugin (`docs/VAULT.md`).
+- **HashiCorp Vault backend:** certificate login, token renewal, failover across several Vault servers,
+  TLS always verified, no administrative rights needed.
+- `xpamctl rotate-secret-key` also re-encrypts the account secrets held in Vault.
+
 ## 5.1.16 — high availability
 
 - **Two servers and a witness.** `xpamctl ha init` on the current server, a one-line script on a small

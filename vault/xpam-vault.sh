@@ -346,8 +346,11 @@ preflight() {
 xpam_policy() { # cluster
   cat <<EOF
 # XPAM ($1): account secrets in its own store
-path "$1/data/orgs/*"     { capabilities = ["create", "read", "update", "patch", "delete"] }
-path "$1/metadata/orgs/*" { capabilities = ["create", "read", "update", "patch", "delete", "list"] }
+path "$1/data/orgs/*"         { capabilities = ["create", "read", "update", "patch", "delete"] }
+path "$1/metadata/orgs/*"     { capabilities = ["create", "read", "update", "patch", "delete", "list"] }
+# (the password history of accounts is kept under accounts/<id>/histories/)
+path "$1/data/accounts/*"     { capabilities = ["create", "read", "update", "patch", "delete"] }
+path "$1/metadata/accounts/*" { capabilities = ["create", "read", "update", "patch", "delete", "list"] }
 # its startup secrets: read and write (rotation); never delete or destroy their history
 path "$1-startup/data/config" { capabilities = ["create", "read", "update"] }
 # its own token only

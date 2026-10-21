@@ -60,10 +60,14 @@ def stored(account):
     return Account.objects.get(id=account.id)._secret
 
 
-host = Host.objects.filter(name='vault-test').first() or Host.objects.create(
-    name='vault-test', address='192.0.2.10', platform=Platform.objects.get(name='Linux'))
+from django.db import transaction  # noqa: E402
+
+with transaction.atomic():  # (asset signals run on commit)
+    host, _ = Host.objects.get_or_create(
+        name='vault-test', defaults={'address': '192.0.2.10', 'platform': Platform.objects.get(name='Linux')})
 canary = 'canary-' + uuid.uuid4().hex
-account = Account.objects.create(asset=host, name='vt-' + uuid.uuid4().hex[:6], username='vt', secret_type='password',
+account = Account.objects.create(asset=host, name='vt-' + uuid.uuid4().hex[:6], username='vt-' + uuid.uuid4().hex[:6],
+                                 secret_type='password',
                                  secret=canary)
 check('the database keeps only the marker', stored(account) == VAULT_SAVED_SECRET_MARK, stored(account)[:30])
 value = raw(account)

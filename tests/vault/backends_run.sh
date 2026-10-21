@@ -4,7 +4,7 @@
 #   CyberArk Conjur  — a real Conjur Open Source 1.27.0 (XPAM's host owns its policy branch)
 #   Delinea, Google  — mock servers following their documented APIs (tests/vault/mock_vendors.py)
 # all on a throwaway Docker network with a throwaway PostgreSQL and Redis.
-#   tests/vault/backends_run.sh [core-tag]
+#   tests/vault/backends_run.sh [core-tag]      (CORE_SRC=/opt/xpam-core: use that source's backends)
 set -uo pipefail
 TAG=${1:-v5.1.17}
 NET=tvnet
@@ -96,6 +96,8 @@ V secrets enable -path=xpam -version=2 kv >/dev/null
 V policy write xpam - >/dev/null <<'EOF'
 path "xpam/data/orgs/*"     { capabilities = ["create", "read", "update", "patch", "delete"] }
 path "xpam/metadata/orgs/*" { capabilities = ["create", "read", "update", "patch", "delete", "list"] }
+path "xpam/data/accounts/*"     { capabilities = ["create", "read", "update", "patch", "delete"] }
+path "xpam/metadata/accounts/*" { capabilities = ["create", "read", "update", "patch", "delete", "list"] }
 path "auth/token/lookup-self" { capabilities = ["read"] }
 path "auth/token/renew-self"  { capabilities = ["update"] }
 path "auth/token/revoke-self" { capabilities = ["update"] }
@@ -127,7 +129,9 @@ EOF
 say "backends"
 run() { # extra env...
   docker rm -f tvcore >/dev/null 2>&1
-  docker run --rm --name tvcore --network $NET --ip $CORE_IP --env-file "$W/core.env" -e VAULT_ENABLED=true "$@" \
+  local src=()
+  [[ -n "${CORE_SRC:-}" ]] && src=(-v "$CORE_SRC/apps/accounts/backends:/opt/jumpserver/apps/accounts/backends:ro")
+  docker run --rm --name tvcore --network $NET --ip $CORE_IP --env-file "$W/core.env" -e VAULT_ENABLED=true "${src[@]}" "$@" \
     -v "$HERE/backends_test.py:/t/backends_test.py:ro" -v "$W/vc:/vc:ro" -v "$W:/w:ro" \
     --entrypoint /opt/py3/bin/python "xpam/core:$TAG" /t/backends_test.py 2>&1 | grep -E '^(PASS|FAIL|RESULT)|Error|Traceback'
 }

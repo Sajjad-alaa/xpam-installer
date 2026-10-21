@@ -17,10 +17,10 @@ Only the Python standard library is used (the host's python3).
 """
 import json
 import os
-import socket
 import subprocess
 import sys
 import time
+import urllib.error
 import urllib.request
 
 INSTALLER = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -121,28 +121,50 @@ def sync_files(conf):
     return code == 0, (out[-300:] if code else '')
 
 
-def tcp_open(host, port, timeout=2):
-    try:
-        with socket.create_connection((host, port), timeout=timeout):
-            return True
-    except OSError:
-        return False
-
-
 def ensure_firewall(conf):
-    """Only the other server and the witness may reach the replication ports (published by Docker,
-    which bypasses firewalld: the rule goes into Docker's DOCKER-USER chain)."""
-    allowed = [conf['HA_PEER_IP'], conf['HA_WITNESS_IP']]
+    """Only the other server and the witness may reach the replication ports of THIS server (published by
+    Docker, which bypasses firewalld: the rule goes into Docker's DOCKER-USER chain). It matches only
+    connections addressed to this server, so the containers' own outgoing connections are never touched."""
     run(['iptables', '-N', CHAIN], 10)
     run(['iptables', '-F', CHAIN], 10)
-    for ip in allowed:
-        run(['iptables', '-A', CHAIN, '-s', ip, '-j', 'RETURN'], 10)
-    run(['iptables', '-A', CHAIN, '-j', 'DROP'], 10)
-    rule = ['DOCKER-USER', '!', '-i', 'br-+', '-p', 'tcp', '-m', 'multiport', '--dports', HA_PORTS, '-j', CHAIN]
+    for rule in (['-i', 'br-+', '-j', 'RETURN'], ['-i', 'docker0', '-j', 'RETURN'],
+                 ['-s', conf['HA_PEER_IP'], '-j', 'RETURN'], ['-s', conf['HA_WITNESS_IP'], '-j', 'RETURN'],
+                 ['-j', 'DROP']):
+        run(['iptables', '-A', CHAIN, *rule], 10)
+    # (the first version matched by interface: remove it)
+    old = ['DOCKER-USER', '!', '-i', 'br-+', '-p', 'tcp', '-m', 'multiport', '--dports', HA_PORTS, '-j', CHAIN]
+    while run(['iptables', '-D', *old], 10)[0] == 0:
+        pass
+    rule = ['DOCKER-USER', '-p', 'tcp', '-m', 'multiport', '--dports', HA_PORTS, '-m', 'conntrack',
+            '--ctorigdst', conf['HA_NODE_IP'], '-j', CHAIN]
     if run(['iptables', '-C', *rule], 10)[0] != 0:
         code, out = run(['iptables', '-I', *rule], 10)
         if code:
             log('firewall rule could not be added:', out)
+
+
+def peer_alive(conf):
+    """The other server's Patroni answers (no authentication needed for /liveness)."""
+    try:
+        with urllib.request.urlopen(f"http://{conf['HA_PEER_IP']}:8008/liveness", timeout=3):
+            return True
+    except urllib.error.HTTPError:
+        return True  # (answers, even if not healthy)
+    except Exception:
+        return False
+
+
+def witness_alive(conf):
+    """The witness's vote answers its health check (mutual TLS with the cluster certificate)."""
+    import ssl
+    certs = os.path.join(conf.get('CONFIG_DIR', '/opt/xpam/config'), 'ha', 'certs')
+    try:
+        ctx = ssl.create_default_context(cafile=os.path.join(certs, 'ca.crt'))
+        ctx.load_cert_chain(os.path.join(certs, 'node.crt'), os.path.join(certs, 'node.key'))
+        with urllib.request.urlopen(f"https://{conf['HA_WITNESS_IP']}:2379/health", timeout=3, context=ctx) as r:
+            return json.loads(r.read()).get('health') in ('true', True)
+    except Exception:
+        return False
 
 
 def write_status(conf, status):
@@ -161,7 +183,8 @@ def main():
         log('high availability is not enabled in', CONFIG_FILE)
         return 1
     seen, count, acted = None, 0, None
-    last_fw = 0
+    last_fw = last_probe = 0
+    reach = {'peer_reachable': None, 'witness_reachable': None}
     unknown_since = None
     last_sync, sync = 0, {'ok': None, 'time': None, 'error': ''}
     log(f"agent started on {conf['HA_NODE_NAME']} ({conf['HA_NODE_IP']}), peer {conf['HA_PEER_IP']}, "
@@ -205,12 +228,13 @@ def main():
                     log(f'role: {role}')
                     acted = role
 
+            if now - last_probe >= 30:  # (not every loop: the other machines log each connection)
+                reach = {'peer_reachable': peer_alive(conf), 'witness_reachable': witness_alive(conf)}
+                last_probe = now
             write_status(conf, {
                 'node': conf['HA_NODE_NAME'], 'node_ip': conf['HA_NODE_IP'], 'peer_ip': conf['HA_PEER_IP'],
                 'witness_ip': conf['HA_WITNESS_IP'], 'role': role, 'app_running': app_running(),
-                'peer_reachable': tcp_open(conf['HA_PEER_IP'], 8008),
-                'witness_reachable': tcp_open(conf['HA_WITNESS_IP'], 2379),
-                'file_sync': sync, 'updated': int(now),
+                **reach, 'file_sync': sync, 'updated': int(now),
             })
         except Exception as e:  # never die: the service manager would restart us anyway
             log('error:', repr(e))

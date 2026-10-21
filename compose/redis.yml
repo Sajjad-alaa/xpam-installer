@@ -5,12 +5,15 @@ services:
     hostname: xpam_redis
     restart: always
     # The password goes into a private file (never on a command line, which every local user
-    # can read with ps); the image's entrypoint then starts redis as the redis user.
+    # can read with ps); the image's entrypoint then starts redis as the redis user. The old file is
+    # removed first: after a restart it belongs to redis, and fs.protected_regular keeps even root from
+    # rewriting another user's file in /tmp (the container would restart in a loop).
     command:
       - sh
       - -c
       - >-
         umask 077 &&
+        rm -f /tmp/redis-auth.conf &&
         printf 'include /etc/redis.conf\nrequirepass "%s"\n' "$$REDIS_PASSWORD" > /tmp/redis-auth.conf &&
         chown redis:redis /tmp/redis-auth.conf &&
         exec docker-entrypoint.sh redis-server /tmp/redis-auth.conf

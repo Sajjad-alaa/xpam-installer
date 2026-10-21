@@ -26,11 +26,15 @@ docker run -d --name xpam_etcd_witness --restart always \
 # only the two XPAM servers may reach the vote (Docker-published ports bypass firewalld: DOCKER-USER)
 cat > /opt/xpam-witness/firewall.sh <<FW
 #!/bin/sh
+# only connections addressed to the witness are checked (its own outgoing connections are not)
 iptables -N XPAM-HA 2>/dev/null; iptables -F XPAM-HA
+iptables -A XPAM-HA -i docker0 -j RETURN
+iptables -A XPAM-HA -i br-+ -j RETURN
 for ip in $ALLOWED; do iptables -A XPAM-HA -s \$ip -j RETURN; done
 iptables -A XPAM-HA -j DROP
-iptables -C DOCKER-USER ! -i br-+ -p tcp -m multiport --dports 2379,2380 -j XPAM-HA 2>/dev/null || \
-  iptables -I DOCKER-USER ! -i br-+ -p tcp -m multiport --dports 2379,2380 -j XPAM-HA
+while iptables -D DOCKER-USER ! -i br-+ -p tcp -m multiport --dports 2379,2380 -j XPAM-HA 2>/dev/null; do :; done
+iptables -C DOCKER-USER -p tcp -m multiport --dports 2379,2380 -m conntrack --ctorigdst $THIS -j XPAM-HA 2>/dev/null || \
+  iptables -I DOCKER-USER -p tcp -m multiport --dports 2379,2380 -m conntrack --ctorigdst $THIS -j XPAM-HA
 FW
 chmod 700 /opt/xpam-witness/firewall.sh
 cat > /etc/systemd/system/xpam-witness-firewall.service <<UNIT

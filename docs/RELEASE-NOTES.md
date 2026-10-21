@@ -17,6 +17,10 @@
   shows while protection is reduced (no standby in sync, witness down, recordings not copied).
 - **Floating address** for sites without a load balancer (`xpamctl ha vip`), **server and witness
   replacement** (`join-bundle`, `witness-bundle`) and **back to one server** (`xpamctl ha disable`).
+- **Only XPAM reaches the database.** In a cluster the other server can only replicate (password and
+  cluster certificate, no XPAM account over the network), Patroni's API and Redis replication require
+  the cluster certificate, the firewall is in place before Docker at every boot. A single server no
+  longer publishes its database on the host (127.0.0.1:5432); set `POSTGRESQL_EXPOSE_PORT` to allow it.
 - Fixed: Redis did not start again after a container restart or server reboot (since 5.1.10).
 
 ## 5.1.15 — faster asset management

@@ -394,12 +394,19 @@ database time plus the time XPAM needs to start (one to two minutes). A small th
 | Two XPAM servers | same size, same XPAM version, same network (low latency), fixed IPv4 addresses |
 | A witness | any small Linux machine with Docker (1 vCPU, 512 MB), ideally in another rack or room |
 | A load balancer or DNS | sends users to the server whose health URL answers: `GET https://<server>/api/health/` → 200 on the primary only (the standby's services are stopped). Forward 443, 80, 2222 and 5001 to both servers; no sticky sessions needed |
-| Between the servers | TCP 5432, 8008, 2379, 2380, 6379 and 22 (file copy); witness: 2379, 2380 from both servers |
+| Between the servers | TCP 5432, 8008, 2379, 2380, 6380 and 22 (file copy); witness: 2379, 2380 from both servers |
 | On both servers | `rsync`, `openssh`, `openssl`, `curl`, `iptables` (`dnf install -y rsync openssh-clients openssl curl iptables-nft`) |
 
-XPAM limits the replication ports to the other server and the witness by itself (the ports are
-published by Docker, which bypasses firewalld). Replication and the vote use TLS with certificates
-made for the three addresses.
+**Who can reach the database.** Only XPAM's own containers use the database. The other server may
+only replicate: it connects as `replicator` (replication only) and `xpam_rewind` (the four functions
+pg_rewind reads, nothing else), each with a password **and** a client certificate of the cluster's own
+CA; XPAM's account is refused from any other machine, even with the password. Patroni's API requires
+the cluster certificate for every call; Redis replicates over TLS (6380, certificate required) and its
+plain port is never published; the vote (etcd) uses mutual TLS. A firewall rule lets the other server
+reach only the replication ports and the witness only the vote; it is installed before Docker starts
+at every boot (Docker-published ports bypass firewalld). XPAM itself has no access to the cluster: the
+console reads the agent's status. A single server (without high availability) does not publish its
+database on the host at all (set `POSTGRESQL_EXPOSE_PORT` in `config.txt` to allow a local tool).
 
 **Set it up**
 

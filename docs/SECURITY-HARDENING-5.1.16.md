@@ -278,8 +278,12 @@ token, however, were stored in plain text and could be used directly:
 The repo's own OAuth tests pass (15/15). `terminal.tests` shows the same 2 failures and 16 errors with
 or without this change, so they predate it.
 
-**Not yet tried:** an SSH login through the SSH/RDP service with a connection token on a full install.
-The component reads the value through the same field the test checks.
+**End to end** on a throwaway stack (new core image, SSH/RDP service, an SSH server):
+
+- The connection token is stored encrypted.
+- Logging in through the SSH/RDP service as `JMS-<token id>` with the token value runs a command on
+  the target.
+- A wrong value is refused.
 
 **What remains:**
 

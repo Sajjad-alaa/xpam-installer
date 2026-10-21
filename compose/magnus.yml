@@ -8,6 +8,8 @@ services:
     restart: always
     env_file:
       - ${CONFIG_SAFE_FILE}
+    environment:
+      BOOTSTRAP_TOKEN: ${BOOTSTRAP_TOKEN}
     ports:
       - ${MAGNUS_PORT:-5525}:5525
     volumes:

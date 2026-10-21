@@ -3,8 +3,8 @@
 # XPAM high availability: two servers (one primary, one standby) and a witness.
 #
 #   xpamctl ha init <this-ip> <other-server-ip> <witness-ip>   on the current XPAM server (becomes primary)
-#   xpamctl ha join <xpam-ha-join.tgz> [-y]                     on the second server (becomes standby)
-#   (witness)  tar xzf xpam-ha-witness.tgz && ./witness.sh      on the witness (Docker only)
+#   xpamctl ha join <xpam-ha-join.enc> [-y]                     on the second server (becomes standby)
+#   (witness)  decrypt xpam-ha-witness.enc and run witness.sh   on the witness (Docker only)
 #   xpamctl ha status                                           roles, replication, files, witness
 #   xpamctl ha switchover                                       planned: the other server becomes primary
 #   xpamctl ha failover --force                                 emergency: make THIS server primary
@@ -12,6 +12,9 @@
 #   xpamctl ha witness-bundle                                   replace the witness (same address)
 #   xpamctl ha disable [-y]                                     back to one server (standby first, then primary)
 #   xpamctl ha join-bundle                                      a fresh join bundle (to rebuild the other server)
+#   xpamctl ha rotate-certs [--finish] / apply-certs <bundle>   replace the CA and every certificate
+# Bundles are encrypted (bundle passphrase); the CA key is kept encrypted (cluster passphrase). For
+# automation: XPAM_HA_BUNDLE_PASSPHRASE / XPAM_HA_PASSPHRASE in the environment.
 #
 # PostgreSQL runs under Patroni (automatic failover decided by a vote of both servers and the witness);
 # the agent (systemd service xpam-ha) starts XPAM on the primary only and copies files to the standby.
@@ -48,6 +51,69 @@ function patroni_write() { # method path json — with the REST password (from t
     HA_M="$1" HA_D="$3" bash -c 'curl -s -o /dev/null -w "%{http_code}" --max-time 60 --cacert "$HA_C/ca.crt" \
       --cert "$HA_C/node.crt" --key "$HA_C/node.key" -u "patroni:${HA_P}" -X "$HA_M" \
       -H "Content-Type: application/json" -d "$HA_D" "$HA_U"'
+}
+
+# ---------------------------------------------------------------- secrets at rest
+
+function passphrase_from() { # VAR "what": from the environment (automation), else typed (not shown)
+  local var=$1 what=$2 value
+  value="${!var:-}"
+  if [[ -z "${value}" ]]; then
+    read -r -s -p "${what}: " value </dev/tty; echo >&2
+  fi
+  printf '%s' "${value}"
+}
+
+function encrypt_dir() { # src-dir out-file — AES-256, key from the passphrase in HA_BUNDLE_PW (PBKDF2)
+  tar czf - -C "$1" . | openssl enc -aes-256-cbc -pbkdf2 -iter 600000 -salt -pass env:HA_BUNDLE_PW -out "$2"
+}
+
+function decrypt_to() { # file dest-dir — with the passphrase in HA_BUNDLE_PW
+  openssl enc -d -aes-256-cbc -pbkdf2 -iter 600000 -pass env:HA_BUNDLE_PW -in "$1" 2>/dev/null | tar xzf - -C "$2"
+}
+
+function protect_ca_key() { # dir — the CA key encrypted with the cluster passphrase (HA_CLUSTER_PW); no plain copy left
+  if openssl pkey -in "$1/ca.key" -aes256 -passout env:HA_CLUSTER_PW -out "$1/ca.key.enc"; then
+    shred -u "$1/ca.key" 2>/dev/null || rm -f "$1/ca.key"
+  else
+    log_error "The CA key could not be encrypted"; return 1
+  fi
+}
+
+function ca_key_ok() { # the cluster passphrase (HA_CLUSTER_PW) opens the CA key
+  openssl pkey -in "${HA_DIR}/certs/ca.key.enc" -passin env:HA_CLUSTER_PW -noout 2>/dev/null
+}
+
+function ha_etcdctl() { # [--root] args — etcdctl against the vote with this server's certificate
+  # (--root: the vote's administrator account, password passed by name in the environment, never as an argument)
+  local env=()
+  if [[ "${1:-}" == "--root" ]]; then
+    shift
+    export ETCDCTL_USER="root:$(get_config HA_ETCD_ROOT_PASSWORD)"
+    env=(-e ETCDCTL_USER)
+  fi
+  docker run --rm -i "${env[@]}" -v "${HA_DIR}/certs:/certs:ro" --entrypoint /usr/local/bin/etcdctl \
+    gcr.io/etcd-development/etcd:v3.5.21 \
+    --endpoints "${HA_ETCD_ENDPOINTS:-https://$(get_config HA_NODE_IP):2379,https://$(get_config HA_PEER_IP):2379}" \
+    --cacert /certs/ca.crt --cert /certs/node.crt --key /certs/node.key "$@"
+  local code=$?
+  unset ETCDCTL_USER
+  return ${code}
+}
+
+function setup_vote_accounts() {
+  # before PostgreSQL starts: XPAM's records (/xpam/) only for the account xpam-node (Patroni, with its
+  # password); the witness's certificate gets no account (it votes, it cannot change the records)
+  if ha_etcdctl --root auth status 2>/dev/null | grep -q 'Status: true'; then
+    return 0
+  fi
+  get_config HA_ETCD_ROOT_PASSWORD | tr -d '\n' | ha_etcdctl user add root --interactive=false >/dev/null 2>&1 || true
+  ha_etcdctl user grant-role root root >/dev/null 2>&1 || true
+  ha_etcdctl role add xpam >/dev/null 2>&1 || true
+  ha_etcdctl role grant-permission xpam --prefix=true readwrite /xpam/ >/dev/null || return 1
+  get_config HA_ETCD_PASSWORD | tr -d '\n' | ha_etcdctl user add xpam-node --interactive=false >/dev/null 2>&1 || true
+  ha_etcdctl user grant-role xpam-node xpam >/dev/null || return 1
+  ha_etcdctl auth enable >/dev/null || return 1
 }
 
 function wait_until() { # seconds message command...
@@ -122,15 +188,43 @@ function check_requirements() {
 }
 
 function make_join_bundle() {
-  # the configuration (same keys and passwords) and the cluster keys, for 'xpamctl ha join' on the other server
+  # the configuration (same keys and passwords) and the cluster certificates, for 'xpamctl ha join' on
+  # the other server: encrypted with the bundle passphrase (HA_BUNDLE_PW); the CA key only encrypted
   local work
   work=$(mktemp -d)
-  mkdir -p "${work}/ha"
+  mkdir -p "${work}/ha/certs"
   cp "${CONFIG_FILE}" "${work}/config.txt"
-  cp -r "${HA_DIR}/certs" "${HA_DIR}/ssh" "${work}/ha/"
-  (umask 077 && tar czf "${HA_DIR}/xpam-ha-join.tgz" -C "${work}" .)
+  cp "${HA_DIR}"/certs/{ca.crt,ca.key.enc,node.crt,node.key,client.crt,client.key,witness.crt,witness.key} "${work}/ha/certs/" || {
+    rm -rf "${work}"; log_error "The cluster certificates are incomplete"; return 1; }
+  cp -r "${HA_DIR}/ssh" "${work}/ha/"
+  (umask 077 && encrypt_dir "${work}" "${HA_DIR}/xpam-ha-join.enc")
   rm -rf "${work}"
 }
+
+function make_witness_bundle() { # cluster state(new|existing|keep) — the witness's certificate only, encrypted
+  local work
+  work=$(mktemp -d)
+  mkdir -p "${work}/certs"
+  cp "${HA_DIR}/certs/ca.crt" "${work}/certs/ca.crt"
+  cp "${HA_DIR}/certs/witness.crt" "${work}/certs/node.crt"
+  cp "${HA_DIR}/certs/witness.key" "${work}/certs/node.key"
+  sed -e "s#@THIS@#$(get_config HA_WITNESS_IP)#g" -e "s#@CLUSTER@#$1#g" -e "s#@STATE@#$2#g" \
+      -e "s#@ALLOWED@#$(get_config HA_NODE_IP) $(get_config HA_PEER_IP)#g" "${PROJECT_DIR}/ha/witness.sh.in" > "${work}/witness.sh"
+  chmod 700 "${work}/witness.sh"
+  (umask 077 && encrypt_dir "${work}" "${HA_DIR}/xpam-ha-witness.enc")
+  rm -rf "${work}"
+}
+
+function bundle_passphrase() { # sets HA_BUNDLE_PW (XPAM_HA_BUNDLE_PASSPHRASE or a new one, shown once)
+  if [[ -n "${XPAM_HA_BUNDLE_PASSPHRASE:-}" ]]; then
+    export HA_BUNDLE_PW="${XPAM_HA_BUNDLE_PASSPHRASE}"
+  else
+    export HA_BUNDLE_PW="$(random_str 24)"
+    echo_yellow "Bundle passphrase (needed to open the bundles on the other machines): ${HA_BUNDLE_PW}"
+  fi
+}
+
+WITNESS_UNPACK="mkdir -p xpam-witness && openssl enc -d -aes-256-cbc -pbkdf2 -iter 600000 -in xpam-ha-witness.enc | tar xz -C xpam-witness && ./xpam-witness/witness.sh"
 
 # ---------------------------------------------------------------- init (first server)
 
@@ -164,8 +258,20 @@ function ha_init() {
   # 1. secrets, certificates and keys (kept when init is run again)
   umask 077
   mkdir -p "${HA_DIR}/ssh"
-  [[ -s "${HA_DIR}/certs/node.crt" ]] || bash "${PROJECT_DIR}/ha/certs.sh" "${HA_DIR}/certs" "${this}" "${peer}" "${witness}"
+  if [[ ! -s "${HA_DIR}/certs/ca.key.enc" ]]; then
+    rm -rf "${HA_DIR}/certs"
+    bash "${PROJECT_DIR}/ha/certs.sh" "${HA_DIR}/certs" "${this}" "${peer}" "${witness}" || return 1
+    if [[ -n "${XPAM_HA_PASSPHRASE:-}" ]]; then
+      export HA_CLUSTER_PW="${XPAM_HA_PASSPHRASE}"
+    else
+      export HA_CLUSTER_PW="$(random_str 32)"
+      echo_yellow "Cluster passphrase (keep it in your password safe: needed to replace the certificates): ${HA_CLUSTER_PW}"
+    fi
+    protect_ca_key "${HA_DIR}/certs" || return 1
+  fi
   [[ -s "${HA_DIR}/ssh/id_ed25519" ]] || ssh-keygen -q -t ed25519 -N '' -C xpam-ha -f "${HA_DIR}/ssh/id_ed25519"
+  [[ -n "$(get_config HA_ETCD_PASSWORD)" ]] || set_config HA_ETCD_PASSWORD "$(random_str 32)"
+  [[ -n "$(get_config HA_ETCD_ROOT_PASSWORD)" ]] || set_config HA_ETCD_ROOT_PASSWORD "$(random_str 32)"
   [[ -n "$(get_config HA_REPL_PASSWORD)" ]] || set_config HA_REPL_PASSWORD "$(random_str 32)"
   [[ -n "$(get_config HA_PATRONI_PASSWORD)" ]] || set_config HA_PATRONI_PASSWORD "$(random_str 32)"
   [[ -n "$(get_config HA_REWIND_PASSWORD)" ]] || set_config HA_REWIND_PASSWORD "$(random_str 32)"
@@ -198,24 +304,17 @@ GRANT EXECUTE ON FUNCTION pg_catalog.pg_read_binary_file(text) TO xpam_rewind;
 GRANT EXECUTE ON FUNCTION pg_catalog.pg_read_binary_file(text, bigint, bigint, boolean) TO xpam_rewind;
 SQL
 
-  # 3. bundles: the witness gets only the certificates; the other server gets the configuration
-  local work
-  work=$(mktemp -d)
-  mkdir -p "${work}/witness/certs"
-  cp "${HA_DIR}/certs/ca.crt" "${HA_DIR}/certs/node.crt" "${HA_DIR}/certs/node.key" "${work}/witness/certs/"
-  sed -e "s#@THIS@#${witness}#g" -e "s#@CLUSTER@#$(get_config HA_ETCD_CLUSTER)#g" -e "s#@STATE@#new#g" \
-      -e "s#@ALLOWED@#${this} ${peer}#g" "${PROJECT_DIR}/ha/witness.sh.in" > "${work}/witness/witness.sh"
-  chmod 700 "${work}/witness/witness.sh"
-  tar czf "${HA_DIR}/xpam-ha-witness.tgz" -C "${work}/witness" .
-  rm -rf "${work}"
-  make_join_bundle
+  # 3. bundles (encrypted): the witness gets only its certificate; the other server the configuration
+  bundle_passphrase
+  make_witness_bundle "$(get_config HA_ETCD_CLUSTER)" new || return 1
+  make_join_bundle || return 1
 
   echo_green "\nPrepared. Now:"
-  echo "  1. witness ${witness}: copy ${HA_DIR}/xpam-ha-witness.tgz there and run:"
-  echo "       mkdir xpam-witness && tar xzf xpam-ha-witness.tgz -C xpam-witness && ./xpam-witness/witness.sh"
+  echo "  1. witness ${witness}: copy ${HA_DIR}/xpam-ha-witness.enc there and run (it asks for the bundle passphrase):"
+  echo "       ${WITNESS_UNPACK}"
   echo "  2. this server continues by itself as soon as the witness answers."
-  echo "  3. afterwards, on ${peer}: copy ${HA_DIR}/xpam-ha-join.tgz there (it holds XPAM's secrets: delete it after) and run:"
-  echo "       xpamctl ha join xpam-ha-join.tgz"
+  echo "  3. afterwards, on ${peer}: copy ${HA_DIR}/xpam-ha-join.enc there and run:"
+  echo "       xpamctl ha join xpam-ha-join.enc"
   echo
   wait_until 3600 "waiting for the witness on ${witness}:2379" bash -c "exec 3<>/dev/tcp/${witness}/2379" 2>/dev/null || {
     log_error "The witness did not answer. Run 'xpamctl ha init ${this} ${peer} ${witness}' again when it runs."; return 1; }
@@ -235,6 +334,14 @@ SQL
   cd "${PROJECT_DIR}" || return 1
   ${old_cmd} down
   mkdir -p "$(get_config VOLUME_DIR)/etcd"
+  # the vote first, and its accounts before PostgreSQL starts
+  $(db_cmd) up -d etcd
+  export HA_ETCD_ENDPOINTS="https://${this}:2379,https://${witness}:2379"  # (the other server is not there yet)
+  vote_up() { ha_etcdctl endpoint health --cluster >/dev/null 2>&1; }
+  wait_until 120 "waiting for the vote (this server and the witness)" vote_up || {
+    log_error "The vote does not form ('docker logs xpam_etcd')"; return 1; }
+  setup_vote_accounts || { log_error "The vote's accounts could not be set up"; return 1; }
+  unset HA_ETCD_ENDPOINTS
   $(db_cmd) up -d
   if ! wait_until 300 "waiting for PostgreSQL under Patroni to become primary" \
       bash -c '[[ $(curl -s -o /dev/null -w "%{http_code}" --max-time 5 --cacert "'"${HA_DIR}"'/certs/ca.crt" --cert "'"${HA_DIR}"'/certs/node.crt" --key "'"${HA_DIR}"'/certs/node.key" "https://'"${this}"':8008/primary") == 200 ]]'; then
@@ -243,7 +350,7 @@ SQL
   fi
   install_agent "${peer}"
   wait_until 600 "waiting for XPAM to start" bash -c 'docker ps --format "{{.Names}} {{.Status}}" | grep -q "^xpam_core .*(healthy)"' || true
-  echo_green "\nThis server is the primary. Next: 'xpamctl ha join xpam-ha-join.tgz' on ${peer}."
+  echo_green "\nThis server is the primary. Next: 'xpamctl ha join xpam-ha-join.enc' on ${peer}."
 }
 
 # ---------------------------------------------------------------- join (second server)
@@ -257,8 +364,9 @@ function ha_join() {
   check_requirements || return 1
   local work
   work=$(mktemp -d)
-  tar xzf "${bundle}" -C "${work}" || { log_error "Not an XPAM high availability bundle"; return 1; }
-  [[ -f "${work}/config.txt" && -s "${work}/ha/certs/node.crt" ]] || { log_error "Not an XPAM high availability bundle"; return 1; }
+  export HA_BUNDLE_PW="$(passphrase_from XPAM_HA_BUNDLE_PASSPHRASE "Bundle passphrase")"
+  decrypt_to "${bundle}" "${work}" && [[ -f "${work}/config.txt" && -s "${work}/ha/certs/node.crt" ]] || {
+    rm -rf "${work}"; log_error "Not an XPAM high availability bundle, or a wrong passphrase"; return 1; }
   local this peer witness bundle_version this_name peer_name
   # the bundle comes from the other server: its "peer" is this server
   this=$(grep '^HA_PEER_IP=' "${work}/config.txt" | cut -d= -f2-)
@@ -308,13 +416,9 @@ function ha_join() {
   echo_yellow "\nImages"
   pull_images || { log_error "The images are not available"; return 1; }
   echo_yellow "\nJoining the vote"
-  local etcd_image members
-  etcd_image="gcr.io/etcd-development/etcd:v3.5.21"
-  etcdctl() {
-    docker run --rm -v "${HA_DIR}/certs:/certs:ro" --entrypoint /usr/local/bin/etcdctl "${etcd_image}" \
-      --endpoints "https://${peer}:2379,https://${witness}:2379" --cacert /certs/ca.crt --cert /certs/node.crt \
-      --key /certs/node.key "$@"
-  }
+  local members
+  export HA_ETCD_ENDPOINTS="https://${peer}:2379,https://${witness}:2379"
+  etcdctl() { ha_etcdctl --root "$@"; }  # (adding a member needs the vote's administrator account)
   members=$(etcdctl member list 2>&1) || { log_error "The vote (etcd) does not answer: ${members}"; return 1; }
   local old_id
   old_id=$(grep "https://${this}:2380" <<< "${members}" | cut -d, -f1 | tr -d ' ')
@@ -332,6 +436,7 @@ function ha_join() {
   set_config HA_ETCD_CLUSTER "$(etcdctl member list -w simple | awk -F', ' -v me="${this_name:-xpam-b}" \
     '{n=$3; if (n=="") n=me; printf "%s%s=%s", (NR>1?",":""), n, $4}')"
   set_config HA_ETCD_STATE existing
+  unset HA_ETCD_ENDPOINTS
   echo_yellow "\nCopying the database from the primary"
   $(db_cmd) up -d
   if ! wait_until 7200 "copying (large databases take a while)" \
@@ -399,12 +504,6 @@ function ha_failover() {
   echo_green "This server is the primary."
 }
 
-function ha_etcdctl() { # etcdctl against the vote, with this server's certificates
-  docker run --rm -v "${HA_DIR}/certs:/certs:ro" --entrypoint /usr/local/bin/etcdctl gcr.io/etcd-development/etcd:v3.5.21 \
-    --endpoints "https://$(get_config HA_NODE_IP):2379,https://$(get_config HA_PEER_IP):2379" \
-    --cacert /certs/ca.crt --cert /certs/node.crt --key /certs/node.key "$@"
-}
-
 function ha_vip() { # <ip/prefix>|off — the floating address held by the primary (both servers)
   is_ha_enabled || { log_error "High availability is not enabled"; return 1; }
   local vip=$1 current dev
@@ -422,38 +521,105 @@ function ha_vip() { # <ip/prefix>|off — the floating address held by the prima
   python3 -c 'import ipaddress,sys; i=ipaddress.IPv4Interface(sys.argv[1]); assert "/" in sys.argv[1]' "${vip}" 2>/dev/null || {
     log_error "Give the address with its prefix, e.g. 10.0.0.100/24"; return 1; }
   set_config HA_VIP "${vip}"
-  make_join_bundle
   echo "Floating address ${vip}: the primary holds it (set the same on the other server: xpamctl ha vip ${vip})."
 }
 
 function ha_join_bundle() {
   is_ha_enabled || { log_error "High availability is not enabled"; return 1; }
-  make_join_bundle
-  echo "Join bundle (holds XPAM's secrets: delete it after use): ${HA_DIR}/xpam-ha-join.tgz"
-  echo "On the rebuilt server ($(get_config HA_PEER_IP)), after installing the same XPAM version: xpamctl ha join xpam-ha-join.tgz"
+  bundle_passphrase
+  make_join_bundle || return 1
+  echo "Join bundle (encrypted): ${HA_DIR}/xpam-ha-join.enc"
+  echo "On the rebuilt server ($(get_config HA_PEER_IP)), after installing the same XPAM version: xpamctl ha join xpam-ha-join.enc"
 }
 
 function ha_witness_bundle() { # a bundle for a replacement witness (same address)
   is_ha_enabled || { log_error "High availability is not enabled"; return 1; }
-  local witness this peer members old_id cluster work
-  witness=$(get_config HA_WITNESS_IP); this=$(get_config HA_NODE_IP); peer=$(get_config HA_PEER_IP)
-  members=$(ha_etcdctl member list 2>&1) || { log_error "The vote does not answer: ${members}"; return 1; }
+  local witness members old_id cluster
+  witness=$(get_config HA_WITNESS_IP)
+  members=$(ha_etcdctl --root member list 2>&1) || { log_error "The vote does not answer: ${members}"; return 1; }
   old_id=$(grep "https://${witness}:2380" <<< "${members}" | cut -d, -f1 | tr -d ' ')
   if [[ -n "${old_id}" ]]; then
-    ha_etcdctl member remove "${old_id}" >/dev/null || { log_error "The old witness could not be removed from the vote"; return 1; }
+    ha_etcdctl --root member remove "${old_id}" >/dev/null || { log_error "The old witness could not be removed from the vote"; return 1; }
   fi
-  ha_etcdctl member add xpam-witness --peer-urls "https://${witness}:2380" >/dev/null || { log_error "The witness could not be added to the vote"; return 1; }
-  cluster=$(ha_etcdctl member list -w simple | awk -F', ' '{n=$3; u=$4; if (n=="") n="xpam-witness"; printf "%s%s=%s", (NR>1?",":""), n, u}')
+  ha_etcdctl --root member add xpam-witness --peer-urls "https://${witness}:2380" >/dev/null || { log_error "The witness could not be added to the vote"; return 1; }
+  cluster=$(ha_etcdctl --root member list -w simple | awk -F', ' '{n=$3; u=$4; if (n=="") n="xpam-witness"; printf "%s%s=%s", (NR>1?",":""), n, u}')
+  bundle_passphrase
+  make_witness_bundle "${cluster}" existing || return 1
+  echo "Replacement witness bundle (encrypted): ${HA_DIR}/xpam-ha-witness.enc"
+  echo "On the new witness (${witness}): ${WITNESS_UNPACK}"
+}
+
+# ---------------------------------------------------------------- replacing every certificate
+
+function apply_certs_local() {
+  # take the certificates now in ${HA_DIR}/certs: the vote restarts (seconds), PostgreSQL, Patroni and
+  # Redis re-read them without a restart (XPAM keeps running)
+  docker restart xpam_etcd >/dev/null || return 1
+  docker exec xpam_postgresql xpam-reload-certs >/dev/null || return 1
+  docker exec xpam_redis sh -c 'cp /etc/xpam-ha/ca.crt /etc/xpam-ha/node.crt /etc/xpam-ha/node.key /tmp/xpam-tls/ && chown redis:redis /tmp/xpam-tls/*' || return 1
+  local r
+  for r in "tls-cert-file /tmp/xpam-tls/node.crt" "tls-key-file /tmp/xpam-tls/node.key" "tls-ca-cert-file /tmp/xpam-tls/ca.crt"; do
+    # shellcheck disable=SC2086
+    REDISCLI_AUTH="$(get_config REDIS_PASSWORD)" docker exec -e REDISCLI_AUTH xpam_redis redis-cli CONFIG SET ${r} >/dev/null || return 1
+  done
+}
+
+function install_certs() { # from-dir — keep the previous set aside, take the new one
+  local stamp
+  stamp=$(date +%F_%H%M%S)
+  cp -a "${HA_DIR}/certs" "${HA_DIR}/certs.before-${stamp}"
+  cp "$1"/{ca.crt,ca.key.enc,node.crt,node.key,client.crt,client.key,witness.crt,witness.key} "${HA_DIR}/certs/" || return 1
+  chmod 600 "${HA_DIR}"/certs/*
+}
+
+function ha_rotate_certs() { # [--finish]
+  is_ha_enabled || { log_error "High availability is not enabled"; return 1; }
+  [[ "$(ha_role)" == "primary" ]] || { log_error "Run it on the primary"; return 1; }
+  if [[ "${1:-}" == "--finish" ]]; then
+    local cluster
+    cluster=$(patroni cluster)
+    grep -q '"sync_standby"' <<< "${cluster}" && grep -q '"streaming"' <<< "${cluster}" || {
+      log_error "The other server does not follow yet (apply its bundle first: xpamctl ha apply-certs)"; return 1; }
+    ha_etcdctl --root endpoint health --cluster 2>&1 | grep -c 'is healthy' | grep -qx 3 || {
+      log_error "The vote is not complete yet (run the witness bundle on the witness)"; return 1; }
+    ha_pause off || return 1
+    echo_green "Done: every machine uses the new certificates; automatic failover is on again."
+    return 0
+  fi
+  grep -q '"sync_standby"' <<< "$(patroni cluster)" || { log_error "The other server must be in sync first (xpamctl ha status)"; return 1; }
+  export HA_CLUSTER_PW="$(passphrase_from XPAM_HA_PASSPHRASE "Cluster passphrase")"
+  ca_key_ok || { log_error "Wrong cluster passphrase"; return 1; }
+  echo_yellow "Replacing the CA and every certificate (XPAM keeps running; automatic failover is paused meanwhile)"
+  local work cluster
   work=$(mktemp -d)
-  mkdir -p "${work}/certs"
-  cp "${HA_DIR}/certs/ca.crt" "${HA_DIR}/certs/node.crt" "${HA_DIR}/certs/node.key" "${work}/certs/"
-  sed -e "s#@THIS@#${witness}#g" -e "s#@CLUSTER@#${cluster}#g" -e "s#@STATE@#existing#g" \
-      -e "s#@ALLOWED@#${this} ${peer}#g" "${PROJECT_DIR}/ha/witness.sh.in" > "${work}/witness.sh"
-  chmod 700 "${work}/witness.sh"
-  (umask 077 && tar czf "${HA_DIR}/xpam-ha-witness.tgz" -C "${work}" .)
+  bash "${PROJECT_DIR}/ha/certs.sh" "${work}" "$(get_config HA_NODE_IP)" "$(get_config HA_PEER_IP)" "$(get_config HA_WITNESS_IP)" || return 1
+  protect_ca_key "${work}" || return 1
+  ha_pause on || { log_error "Maintenance mode could not be turned on: nothing was changed"; rm -rf "${work}"; return 1; }
+  cluster=$(ha_etcdctl --root member list -w simple | awk -F', ' '{printf "%s%s=%s", (NR>1?",":""), $3, $4}')
+  install_certs "${work}" || return 1
   rm -rf "${work}"
-  echo "Replacement witness bundle: ${HA_DIR}/xpam-ha-witness.tgz"
-  echo "On the new witness (${witness}): mkdir xpam-witness && tar xzf xpam-ha-witness.tgz -C xpam-witness && ./xpam-witness/witness.sh"
+  bundle_passphrase
+  make_join_bundle || return 1
+  make_witness_bundle "${cluster}" keep || return 1
+  apply_certs_local || { log_error "The new certificates could not be applied here (the previous set is in ${HA_DIR}/certs.before-*)"; return 1; }
+  echo_green "\nThis server uses the new certificates. Now:"
+  echo "  1. on the other server ($(get_config HA_PEER_IP)): copy ${HA_DIR}/xpam-ha-join.enc there and run: xpamctl ha apply-certs xpam-ha-join.enc"
+  echo "  2. on the witness ($(get_config HA_WITNESS_IP)): copy ${HA_DIR}/xpam-ha-witness.enc there and run: ${WITNESS_UNPACK}"
+  echo "  3. here: xpamctl ha rotate-certs --finish"
+}
+
+function ha_apply_certs() { # bundle — on the other server, after 'rotate-certs' on the primary
+  is_ha_enabled || { log_error "High availability is not enabled"; return 1; }
+  local bundle=$1 work
+  [[ -f "${bundle}" ]] || { log_error "Bundle not found: ${bundle}"; return 1; }
+  work=$(mktemp -d)
+  export HA_BUNDLE_PW="$(passphrase_from XPAM_HA_BUNDLE_PASSPHRASE "Bundle passphrase")"
+  decrypt_to "${bundle}" "${work}" && [[ -s "${work}/ha/certs/node.crt" ]] || {
+    rm -rf "${work}"; log_error "Not an XPAM high availability bundle, or a wrong passphrase"; return 1; }
+  install_certs "${work}/ha/certs" || { rm -rf "${work}"; return 1; }
+  rm -rf "${work}"
+  apply_certs_local || { log_error "The new certificates could not be applied"; return 1; }
+  echo_green "This server uses the new certificates. Delete the bundle: rm -f ${bundle}"
 }
 
 function ha_disable() {
@@ -532,7 +698,7 @@ function main() {
   case "${action}" in
     init) [[ $# -ge 3 ]] || { echo "usage: xpamctl ha init <this-ip> <other-server-ip> <witness-ip>"; return 2; }
           ha_init "$@" ;;
-    join) [[ $# -ge 1 ]] || { echo "usage: xpamctl ha join <xpam-ha-join.tgz> [-y]"; return 2; }
+    join) [[ $# -ge 1 ]] || { echo "usage: xpamctl ha join <xpam-ha-join.enc> [-y]"; return 2; }
           ha_join "$@" ;;
     status) ha_status ;;
     switchover) ha_switchover ;;
@@ -542,11 +708,14 @@ function main() {
          ha_vip "$1" ;;
     witness-bundle) ha_witness_bundle ;;
     join-bundle) ha_join_bundle ;;
+    rotate-certs) ha_rotate_certs "$@" ;;
+    apply-certs) [[ $# -ge 1 ]] || { echo "usage: xpamctl ha apply-certs <xpam-ha-join.enc>"; return 2; }
+                 ha_apply_certs "$1" ;;
     disable) ha_disable "$@" ;;
     pause) ha_pause "${1:-on}" ;;
     app-start) app_start ;;
     app-stop) app_stop ;;
-    *) echo "usage: xpamctl ha init|join|status|switchover|failover|vip|join-bundle|witness-bundle|disable|role|pause"; return 2 ;;
+    *) echo "usage: xpamctl ha init|join|status|switchover|failover|vip|join-bundle|witness-bundle|rotate-certs|apply-certs|disable|role|pause"; return 2 ;;
   esac
 }
 

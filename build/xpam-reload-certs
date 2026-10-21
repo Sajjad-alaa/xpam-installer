@@ -1,0 +1,13 @@
+#!/bin/bash
+# XPAM high availability: take new cluster certificates (mounted at /etc/xpam-ha) without restarting
+# PostgreSQL: PostgreSQL re-reads its TLS files on reload, Patroni (PID 1) its API certificate on SIGHUP.
+set -euo pipefail
+RUN=/run/xpam-ha
+for f in ca.crt node.crt node.key client.crt client.key; do
+  [[ -f "/etc/xpam-ha/$f" ]] || continue
+  install -m 0600 -o postgres -g postgres "/etc/xpam-ha/$f" "$RUN/$f.new"
+  mv -f "$RUN/$f.new" "$RUN/$f"
+done
+gosu postgres pg_ctl reload -D /var/lib/postgresql/data >/dev/null
+kill -HUP 1
+echo reloaded

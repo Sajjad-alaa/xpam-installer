@@ -11,8 +11,8 @@ RUN echo "apt refresh ${APT_REFRESH}" && apt-get update \
     && /opt/patroni/bin/pip install --no-cache-dir "patroni[etcd3]==${PATRONI_VERSION}" "psycopg2-binary==${PSYCOPG2_VERSION}" \
     && apt-get purge -y --auto-remove \
     && rm -rf /var/lib/apt/lists/*
-COPY patroni-entrypoint.sh /usr/local/bin/patroni-entrypoint.sh
-RUN chmod 755 /usr/local/bin/patroni-entrypoint.sh
+COPY patroni-entrypoint.sh xpam-reload-certs /usr/local/bin/
+RUN chmod 755 /usr/local/bin/patroni-entrypoint.sh /usr/local/bin/xpam-reload-certs
 EXPOSE 5432 8008
 HEALTHCHECK --interval=10s --timeout=5s --start-period=60s --retries=3 \
     CMD curl -fsS --cacert /run/xpam-ha/ca.crt --cert /run/xpam-ha/node.crt --key /run/xpam-ha/node.key \

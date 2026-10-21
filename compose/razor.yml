@@ -8,6 +8,8 @@ services:
     restart: always
     env_file:
       - ${CONFIG_SAFE_FILE}
+    environment:
+      BOOTSTRAP_TOKEN: ${BOOTSTRAP_TOKEN}
     ports:
       - ${RAZOR_RDP_PORT:-3389}:3389
     volumes:

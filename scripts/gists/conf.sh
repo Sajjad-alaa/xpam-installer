@@ -56,6 +56,10 @@ function get_config_or_env() {
 }
 
 CONFIG_SAFE_EXCLUDES="DB_HOST DB_PORT DB_PASSWORD VAULT_OPENBAO_TOKEN SSH_CA_OPENBAO_TOKEN"
+# XPAM: the components (SSH/RDP, database web client, AI...) get config-safe.txt: every setting whose name
+# looks like a secret is left out, and each component's compose file passes the few secrets it uses by
+# name (an allow-list: a secret added to config.txt later reaches no component by accident).
+CONFIG_SAFE_SECRET_PATTERN='(PASSWORD|PASSWD|SECRET|TOKEN|PASSPHRASE|PRIVATE|CREDENTIAL|_KEY$|_KEY_|^KEY_)|^(HA|DB|VAULT|SSH_CA|OPENBAO|REDIS_KOKO)_'
 
 function is_config_excluded() {
   local key=$1
@@ -81,6 +85,8 @@ function gen_safe_config() {
     for excluded in ${CONFIG_SAFE_EXCLUDES}; do
       sed_in_place "/^[[:space:]]*${excluded}=/d" "${tmp_file}"
     done
+    awk -v pat="${CONFIG_SAFE_SECRET_PATTERN}" -F= '/^[[:space:]]*#/ || NF < 2 {print; next}
+      {k=$1; gsub(/[[:space:]]/, "", k); if (k !~ pat) print}' "${tmp_file}" > "${tmp_file}.f" && mv -f "${tmp_file}.f" "${tmp_file}"
     if [[ "$(get_config_or_env USE_XPACK)" != "1" ]]; then
       # CE cannot run the local worker. Do not let a stale EE setting make KoKo
       # submit recordings to a worker when the installation is switched to CE.

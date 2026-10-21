@@ -137,6 +137,7 @@ function upgrade_config() {
   check_and_set_config "VERIFY_EXTERNAL_SSL" "true"
   ensure_config_secret CHAT_AI_DELEGATION_SECRET 32 || return 1
   ensure_config_secret BROWSER_KEY 32 || return 1
+  ensure_config_secret REDIS_KOKO_PASSWORD 32 || return 1  # (the SSH/RDP service's own Redis account)
   # XPACK
   use_xpack=$(get_config_or_env USE_XPACK)
   if [[ "${use_xpack}" == "1" ]]; then

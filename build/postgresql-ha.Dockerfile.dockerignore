@@ -1,2 +1,3 @@
 *
 !patroni-entrypoint.sh
+!xpam-reload-certs

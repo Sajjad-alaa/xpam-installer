@@ -9,7 +9,8 @@ set -euo pipefail
 RUN=/run/xpam-ha
 DATA=/var/lib/postgresql/data
 install -d -m 0700 -o postgres -g postgres "$RUN"
-for f in ca.crt node.crt node.key; do
+for f in ca.crt node.crt node.key client.crt client.key; do
+  [[ -f "/etc/xpam-ha/$f" ]] || continue
   install -m 0600 -o postgres -g postgres "/etc/xpam-ha/$f" "$RUN/$f"
 done
 mkdir -p "$DATA" && chown postgres:postgres "$DATA" && chmod 0700 "$DATA"
@@ -22,6 +23,7 @@ ip, peer, witness = e['HA_NODE_IP'], e['HA_PEER_IP'], e['HA_WITNESS_IP']
 run = '/run/xpam-ha'
 subnet = e.get('DOCKER_SUBNET') or '192.168.250.0/24'
 user = e['DB_USER']
+client = 'client' if os.path.exists(f'{run}/client.crt') else 'node'
 tls = {'sslmode': 'verify-ca', 'sslcert': f'{run}/node.crt', 'sslkey': f'{run}/node.key', 'sslrootcert': f'{run}/ca.crt'}
 params = {
     'wal_level': 'replica', 'hot_standby': 'on', 'wal_log_hints': 'on', 'max_wal_senders': 10,
@@ -41,9 +43,12 @@ config = {
         'authentication': {'username': 'patroni', 'password': e['HA_PATRONI_PASSWORD']},
     },
     'ctl': {'certfile': f'{run}/node.crt', 'keyfile': f'{run}/node.key', 'cacert': f'{run}/ca.crt'},
+    # the vote: mutual TLS, and the account xpam-node (the only one allowed to read and write XPAM's
+    # records; the witness's certificate has no account)
     'etcd3': {
         'hosts': [f'{h}:2379' for h in (ip, peer, witness)], 'protocol': 'https',
-        'cacert': f'{run}/ca.crt', 'cert': f'{run}/node.crt', 'key': f'{run}/node.key',
+        'cacert': f'{run}/ca.crt', 'cert': f'{run}/{client}.crt', 'key': f'{run}/{client}.key',
+        **({'username': 'xpam-node', 'password': e['HA_ETCD_PASSWORD']} if e.get('HA_ETCD_PASSWORD') else {}),
     },
     'bootstrap': {
         'dcs': {

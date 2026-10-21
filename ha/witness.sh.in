@@ -13,6 +13,9 @@ install -d -m 700 /opt/xpam-witness /opt/xpam-witness/certs /opt/xpam-witness/et
 if [[ "$STATE" == "existing" ]]; then
   rm -rf /opt/xpam-witness/etcd/member  # (a replacement witness starts empty and receives the vote's data)
 fi
+if [[ "$STATE" == "keep" ]]; then
+  STATE=existing  # (new certificates only: the vote's data stays)
+fi
 install -m 600 certs/ca.crt certs/node.crt certs/node.key /opt/xpam-witness/certs/
 
 docker rm -f xpam_etcd_witness >/dev/null 2>&1 || true

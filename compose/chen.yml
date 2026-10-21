@@ -10,11 +10,8 @@ services:
     env_file:
       - ${CONFIG_SAFE_FILE}
     environment:
-      # (XPAM: secrets this service does not use are blanked; the shared file has them all)
-      SECRET_KEY: ""
-      REDIS_PASSWORD: ""
-      BROWSER_KEY: ""
-      CHAT_AI_DELEGATION_SECRET: ""
+      # (XPAM: config-safe.txt has no secrets; the ones this service uses, by name)
+      BOOTSTRAP_TOKEN: ${BOOTSTRAP_TOKEN}
     volumes:
       - ${VOLUME_DIR}/chen/data:/opt/chen/data
       - ${CONFIG_DIR}/certs:/opt/chen/data/certs

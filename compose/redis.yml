@@ -7,20 +7,22 @@ services:
     # The password goes into a private file (never on a command line, which every local user
     # can read with ps); the image's entrypoint then starts redis as the redis user. The old file is
     # removed first: after a restart it belongs to redis, and fs.protected_regular keeps even root from
-    # rewriting another user's file in /tmp (the container would restart in a loop).
+    # rewriting another user's file in /tmp (the container would restart in a loop). The account "koko" is
+    # the SSH/RDP service's (shared rooms only): its own keys and channels, no other data, no admin commands.
     command:
       - sh
       - -c
       - >-
         umask 077 &&
         rm -f /tmp/redis-auth.conf &&
-        printf 'include /etc/redis.conf\nrequirepass "%s"\n' "$$REDIS_PASSWORD" > /tmp/redis-auth.conf &&
+        printf 'include /etc/redis.conf\nrequirepass "%s"\nuser koko on >"%s" resetkeys ~JUMPSERVER:KOKO:* ~JUMPSERVER:LION:* resetchannels &JUMPSERVER:KOKO:* &JUMPSERVER:LION:* &JMS:KOKO:SESSIONS:* -@all +@connection +@read +@write +@pubsub +@keyspace -@dangerous -@admin -scan -keys\n' "$$REDIS_PASSWORD" "$${REDIS_KOKO_PASSWORD:-$$(head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n')}" > /tmp/redis-auth.conf &&
         chown redis:redis /tmp/redis-auth.conf &&
         exec docker-entrypoint.sh redis-server /tmp/redis-auth.conf
     environment:
       TZ: ${TZ:-UTC}
       REDIS_PORT: $REDIS_PORT
       REDIS_PASSWORD: $REDIS_PASSWORD
+      REDIS_KOKO_PASSWORD: ${REDIS_KOKO_PASSWORD:-}
     volumes:
       - ${VOLUME_DIR}/redis/data:/data
       - ${CONFIG_DIR}/redis/redis.conf:/etc/redis.conf

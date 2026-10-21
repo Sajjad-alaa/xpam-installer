@@ -8,6 +8,8 @@ services:
     restart: always
     env_file:
       - ${CONFIG_SAFE_FILE}
+    environment:
+      BOOTSTRAP_TOKEN: ${BOOTSTRAP_TOKEN}
     ports:
       - ${XRDP_PORT:-3390}:3390
     volumes:

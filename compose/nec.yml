@@ -8,6 +8,8 @@ services:
     restart: always
     env_file:
       - ${CONFIG_SAFE_FILE}
+    environment:
+      BOOTSTRAP_TOKEN: ${BOOTSTRAP_TOKEN}
     ports:
       - ${NEC_VNC_PORT:-15900}:15900
     volumes:

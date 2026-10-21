@@ -9,6 +9,8 @@ services:
     restart: always
     env_file:
       - ${CONFIG_SAFE_FILE}
+    environment:
+      BOOTSTRAP_TOKEN: ${BOOTSTRAP_TOKEN}
     volumes:
       - ${VOLUME_DIR}/video-worker/data:/opt/video-worker/data
     healthcheck:

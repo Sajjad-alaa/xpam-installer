@@ -21,6 +21,19 @@
 - **HashiCorp Vault backend:** certificate login, token renewal, failover across several Vault servers,
   TLS always verified, no administrative rights needed.
 - `xpamctl rotate-secret-key` also re-encrypts the account secrets held in Vault.
+- **Vault from the start:** the installer asks for Vault servers of the kit (recommended) or sets up a
+  hardened Vault on the XPAM server. That local Vault unseals at boot with `systemd-creds` (using the
+  TPM when there is one), and `xpamctl vault connect` later moves everything to separate servers.
+- **High availability requires Vault:** `ha init` takes the second server's Vault bundle, and `ha join`
+  logs that server in to Vault with its own certificate. No password travels in the HA bundle.
+- **Several vaults at once:** further vault connections (managed on the server), plus storage rules per
+  organization, asset group, platform and username. An optional **mirror** to a second vault is the
+  administrator's choice: XPAM writes to both and reads the mirror if the vault fails. Rule changes move
+  secrets. Accounts can **read their password from an existing vault** without XPAM keeping, rotating or
+  pushing it.
+- **Encryption you can check:** XPAM refuses anything below TLS 1.3 to Vault and trusts only the kit's
+  CA. `xpamctl vault verify` checks the protocol, certificates and expiry, that TLS 1.2 and missing
+  client certificates are refused, least privilege, and that nothing is left on disk.
 
 ## 5.1.16 — high availability
 

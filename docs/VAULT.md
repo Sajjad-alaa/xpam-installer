@@ -17,6 +17,33 @@ Before XPAM writes an account secret to any vault, it encrypts it with `SECRET_K
 | Vault administrator rights | no: the values in Vault are encrypted with `SECRET_KEY`, which they cannot read (see "administrators" below) |
 | root on the **running** XPAM server | yes. XPAM has to use the passwords, so the process holds them. Vault's audit log records every read, and access can be revoked in Vault at once |
 
+## 0. At install
+
+`xpamctl install` (or `quick_start.sh`) ends by asking where XPAM keeps its secrets:
+
+| Choice | What happens | Protects against |
+|---|---|---|
+| **1. Vault servers of their own** (recommended) | You set up the kit (section 1) first; the installer connects with this server's bundle | A stolen disk, snapshot or backup **and** root on the XPAM server copying the vault |
+| **2. A hardened Vault on this server** (the default when unattended) | The kit runs on the XPAM server itself (`--local`) and unseals at boot with `systemd-creds`. That uses the TPM if there is one, otherwise a key on this disk | Copies of `config.txt`, database backups, Docker's settings. **Not** root on the server or a full disk copy without a TPM. Move it later with `xpamctl vault connect` |
+| **3. On this server only** | As before | Nothing beyond file permissions and database encryption |
+
+For automation, set:
+- `XPAM_VAULT_MODE=external` with `XPAM_VAULT_BUNDLE=<xpam-vault-IP.enc>` and
+  `XPAM_VAULT_BUNDLE_PASSPHRASE`; or
+- `XPAM_VAULT_MODE=local`; or
+- `XPAM_VAULT_MODE=none`.
+
+On an existing installation:
+- `xpamctl vault local` sets up the local Vault;
+- `xpamctl vault connect <bundle>` connects to Vault servers. When XPAM is already connected, it
+  **moves** everything there, for example from the local Vault: the account secrets come back from the
+  current Vault, the startup secrets are written to the new one, XPAM switches over, and the account
+  secrets go to the new Vault. The local Vault is then stopped; its data stays in `/opt/xpam-vault`
+  until you delete it.
+
+The Vault image is `hashicorp/vault:2.1.2` from Docker Hub. For an offline installation, load it first,
+or set `XPAM_VAULT_IMAGE` to your registry's copy.
+
 ---
 
 ## 1. The XPAM Vault kit (HashiCorp Vault)
@@ -148,15 +175,82 @@ bundles, database backups from before. Move them offline or `shred -u` them.
 | `xpamctl vault disconnect` | Brings everything back to this server: secrets into `config.txt`, account secrets into the database |
 | Console: System settings → Vault | Shows the configuration and the **Test** button. The settings can't be changed there, and "Restore to database" is refused, so a console administrator can't redirect secrets to another vault |
 
-**High availability:** connect **both** servers, each with its own bundle (`--xpam` at `init` lists
-both addresses). After that, the HA join bundle no longer carries any secret.
+**High availability requires Vault.** The cluster's configuration holds every password, so
+`xpamctl ha init` refuses until XPAM's secrets are in a Vault of the kit. The steps:
+1. Kit `init` with `--xpam A,B` (both addresses).
+2. On A, `xpamctl vault connect xpam-vault-A.enc`.
+3. On A, `xpamctl ha init A B W --vault-bundle xpam-vault-B.enc`. B's Vault login then travels inside
+   the encrypted HA join bundle.
+4. `xpamctl ha join` on B logs B in to Vault with its own certificate before it needs any password.
+
+The join bundle carries no XPAM secret.
+
+### Proving it: `xpamctl vault verify`
+
+| Checked | How |
+|---|---|
+| Encryption to each Vault server | TLS 1.3 negotiated (cipher shown); the server certificate is signed by the kit CA and names that address; days until it expires |
+| What is refused | TLS 1.2 (with a valid certificate); any request without a client certificate |
+| This server's client certificate | Days until it expires |
+| Vault | Unsealed; its version is not revealed |
+| XPAM's token | Only XPAM's policy (no `default`, no `root`), at most an hour, bound to this server's address |
+| Least privilege | XPAM cannot list mounts, create tokens, touch the audit log or destroy the history of its startup secrets |
+| This server | `config.txt` holds no secret, the secrets are in memory (tmpfs) only, no container holds `SECRET_KEY` in its settings, the database keeps no account secret |
+| XPAM's own client | Inside the core container: TLS 1.3 minimum and the kit CA only (a server with a public certificate is refused) |
+
+XPAM's client never accepts less than TLS 1.3, even from a misconfigured Vault.
+`VAULT_HCP_TLS_MIN_VERSION=1.2` exists only for an older Vault outside the kit.
 
 **Components that cannot use Vault yet:** the upstream video worker, nec, magnus, razor and xrdp
 images. `connect` refuses to run while one of them is running.
 
 ---
 
-## 3. Other vaults (account storage)
+## 3. Several vaults at once
+
+Besides the configured vault, XPAM can use further **vault connections**, of any supported type.
+
+**Adding a connection, on the server:**
+- `xpamctl vault add-connection <name> <type> settings.json`. The file holds the `VAULT_<TYPE>_*`
+  settings of section 4; shred it afterwards.
+- `xpamctl vault add-connection <name> hcp --bundle xpam-vault-IP.enc` for another Vault of the kit.
+
+A connection added this way is *managed*: the console shows and tests it but cannot change it. With
+`VAULT_LOCKED` the console cannot add connections at all. Connection settings are stored in XPAM's
+database, encrypted with `SECRET_KEY`. The console never shows their passwords or keys.
+
+**Storage rules** (System settings → Vault storage rules, per organization):
+- Match on **asset groups**, **platforms** and a **username pattern** (e.g. `svc_*`).
+- Choose the **vault** (empty means the configured one) and, optionally, a **mirror**.
+- The first matching rule by priority wins. A rule without conditions is the organization's default.
+- Each secret remembers where it is. Changing a rule moves the secrets concerned in the background,
+  removing the old copy. You can also press "Apply rules now".
+
+| Need | How |
+|---|---|
+| Each organization in its own vault | One rule without conditions in each organization |
+| Network devices in Delinea, servers in HashiCorp | A rule on the "Network" asset group to the Delinea connection |
+| Service accounts in a separate vault | A rule with username `svc_*` |
+| A copy in a second vault (the administrator decides) | Set **Mirror** on a rule, or the configured vault's mirror (System settings → Vault → Mirror). New secrets go to both; existing ones are copied when you switch it on; if the vault fails, XPAM reads the mirror |
+| Passwords that live in the customer's vault | On the account: Password → **Read from an existing vault**, with the connection, the path and the field. XPAM reads it when connecting, keeps no copy, and never rotates, pushes or deletes it |
+
+What the path means for an existing secret:
+
+| Vault | Path | Field |
+|---|---|---|
+| HashiCorp / OpenBao | API path, e.g. `secret/data/app/db` | the key (e.g. `password`) |
+| CyberArk Conjur | variable id, e.g. `prod/db/password` | – |
+| Delinea | secret id | field slug (default `password`) |
+| Google | secret name (or `projects/…/secrets/…`) | version (default latest) |
+| AWS | secret name or ARN | key of a JSON secret |
+| Azure | secret name | version |
+
+XPAM's account in that vault needs read access to those secrets. With the kit, that means a policy line
+added by an emergency root token, since the kit's administrators cannot widen XPAM's policy.
+
+---
+
+## 4. Other vaults (account storage)
 
 Put these in `config.txt` (`VAULT_ENABLED=true`, `VAULT_BACKEND=…`), then restart XPAM. Credentials
 can also be entered in the console page of the vault; `xpamctl vault connect` does this for HashiCorp.
@@ -236,7 +330,7 @@ As before (`VAULT_AZURE_*`, `VAULT_AWS_*`, `VAULT_OPENBAO_*`).
 
 ---
 
-## 4. Adding another vault
+## 5. Adding another vault
 
 A vault is a small plugin in `apps/accounts/backends/<name>/`. CyberArk, Delinea and Google are about
 150 lines each and good templates.

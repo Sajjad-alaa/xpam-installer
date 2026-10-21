@@ -66,19 +66,29 @@ docker save gcr.io/etcd-development/etcd:v3.5.21 | docker exec -i harw docker lo
 docker exec hara cat /opt/xpam/config/ha/xpam-ha-witness.tgz | docker exec -i harw sh -c 'mkdir -p /root/w && tar xzf - -C /root/w'
 on harw '/root/w/witness.sh' | tail -1
 wait_for "on hara 'grep -q \"This server is the primary\" /root/ha-init.log'" 120
-check 'A is the primary after init' "[[ \$(on hara 'curl -s -o /dev/null -w %{http_code} http://$A:8008/primary') == 200 ]]"
+check 'A is the primary after init' "[[ \$(on hara 'curl -s -o /dev/null -w %{http_code} --cacert /opt/xpam/config/ha/certs/ca.crt --cert /opt/xpam/config/ha/certs/node.crt --key /opt/xpam/config/ha/certs/node.key https://$A:8008/primary') == 200 ]]"
 check 'XPAM runs on A under high availability' "wait_for \"on hara 'docker ps --format \\\"{{.Names}} {{.Status}}\\\"' | grep -q '^xpam_core .*(healthy)'\" 60"
 check 'the seeded data survived the switch to Patroni' "on hara \"\$PSQL 'select v from xpam_ha_rehearsal'\" | grep -qx seed"
 check 'the agent runs on A' "on hara 'systemctl is-active xpam-ha' | grep -qx active"
-check 'the replication ports accept only the other server and the witness' "on hara 'iptables -S XPAM-HA' | grep -q \"$B\" && on hara 'iptables -S XPAM-HA' | grep -q DROP"
+check 'the cluster ports accept only the other server (and the vote the witness)' "on hara 'iptables -S XPAM-HA' | grep -q \"$B.*5432\" && on hara 'iptables -S XPAM-HA' | grep -q \"$W.*2379,2380\" && on hara 'iptables -S XPAM-HA' | grep -q DROP"
+check 'the firewall is installed before Docker at boot' "on hara 'systemctl is-enabled xpam-ha-firewall' | grep -qx enabled"
 
 say "ha join on B"
 docker exec hara cat /opt/xpam/config/ha/xpam-ha-join.tgz | docker exec -i harb sh -c 'cat > /root/join.tgz'
 on harb "cd /opt/xpam-installer && timeout 2400 bash ./xpamctl.sh ha join /root/join.tgz -y > /root/ha-join.log 2>&1"; tail -3 <(on harb 'cat /root/ha-join.log')
-check 'B is the standby, streaming in sync' "wait_for \"on hara 'curl -s http://$A:8008/cluster' | grep -q sync_standby\" 30"
+check 'B is the standby, streaming in sync' "wait_for \"on hara 'curl -s --cacert /opt/xpam/config/ha/certs/ca.crt --cert /opt/xpam/config/ha/certs/node.crt --key /opt/xpam/config/ha/certs/node.key https://$A:8008/cluster' | grep -q sync_standby\" 30"
 check 'XPAM services are stopped on the standby' "wait_for \"! on harb 'docker ps --format {{.Names}}' | grep -qx xpam_core\" 12"
 check "B's Redis follows A's" "wait_for \"on harb 'docker exec -e REDISCLI_AUTH=\\\$(grep ^REDIS_PASSWORD= /opt/xpam/config/config.txt | cut -d= -f2) xpam_redis redis-cli info replication' | grep -q role:slave\" 12"
 check 'recordings are copied to the standby (within ~1 min)' "wait_for \"on harb 'cat /data/xpam/core/data/replay/2026-10-21/rehearsal.cast 2>/dev/null' | grep -q recording\" 30"
+tcp() { on "$1" "timeout 4 bash -c 'exec 3<>/dev/tcp/$2/$3'" >/dev/null 2>&1; }
+check 'the witness cannot reach the database, Patroni or Redis of A' "! tcp harw $A 5432 && ! tcp harw $A 8008 && ! tcp harw $A 6380 && ! tcp harw $A 6379"
+check 'the witness reaches the vote of A' "tcp harw $A 2379"
+check "Redis without TLS is not published (only 6380 for replication)" "! tcp harb $A 6379 && tcp harb $A 6380"
+DBU=$(on harb 'grep ^DB_USER= /opt/xpam/config/config.txt | cut -d= -f2'); DBP=$(on harb 'grep ^DB_PASSWORD= /opt/xpam/config/config.txt | cut -d= -f2'); DBN=$(on harb 'grep ^DB_NAME= /opt/xpam/config/config.txt | cut -d= -f2')
+login_from_b() { on harb "docker run --rm --network host -e PGCONNECT_TIMEOUT=5 postgres:16.15-bookworm psql 'host=$1 user=$DBU password=$DBP dbname=$DBN sslmode=require' -Atqc 'select 1'" 2>/dev/null | grep -qx 1; }
+check "XPAM's own containers log in (control for the next check)" "on hara \"docker run --rm --network xpam_net -e PGCONNECT_TIMEOUT=5 postgres:16.15-bookworm psql 'host=postgresql user=$DBU password=$DBP dbname=$DBN' -Atqc 'select 1'\" 2>/dev/null | grep -qx 1"
+check 'the other server cannot log in to the database as XPAM (even with the password)' "! login_from_b $A"
+check 'Patroni refuses callers without the cluster certificate' "[[ \$(on harb \"curl -sk -o /dev/null -w %{http_code} --max-time 5 https://$A:8008/cluster\") == 000 ]]"
 check 'xpamctl ha status reports both servers' "[[ \$(on hara 'cd /opt/xpam-installer && bash ./xpamctl.sh ha status') == *xpam-b*sync_standby* ]]"
 probe() { # node mode [arg]: the probe inside that server's core (alerts | messages <text> | status)
   on "$1" "docker cp /src/tests/ha/ha_probe.py xpam_core:/tmp/p.py >/dev/null && docker exec xpam_core python /tmp/p.py $2 '${3:-}' 2>/dev/null | tail -1"
@@ -95,7 +105,7 @@ check 'the standby does not' "! holds_vip harb"
 
 say "witness down"
 docker stop harw >/dev/null
-check 'without the witness XPAM keeps running on A' "sleep 20; on hara \"\$PSQL 'insert into xpam_ha_rehearsal values (\\\$\\\$while-witness-down\\\$\\\$)'\" ; [[ \$(on hara 'curl -s -o /dev/null -w %{http_code} http://$A:8008/primary') == 200 ]]"
+check 'without the witness XPAM keeps running on A' "sleep 20; on hara \"\$PSQL 'insert into xpam_ha_rehearsal values (\\\$\\\$while-witness-down\\\$\\\$)'\" ; [[ \$(on hara 'curl -s -o /dev/null -w %{http_code} --cacert /opt/xpam/config/ha/certs/ca.crt --cert /opt/xpam/config/ha/certs/node.crt --key /opt/xpam/config/ha/certs/node.key https://$A:8008/primary') == 200 ]]"
 check 'the console warns that the witness does not answer' "wait_for \"[[ \\\$(probe hara alerts) == *ha_witness* ]]\" 18"
 docker start harw >/dev/null
 check 'the warning goes away when the witness is back' "wait_for \"[[ \\\$(probe hara alerts) == 'ALERTS []' ]]\" 24"
@@ -103,8 +113,8 @@ check 'the warning goes away when the witness is back' "wait_for \"[[ \\\$(probe
 say "crash of A"
 docker kill hara >/dev/null
 start=$(date +%s)
-wait_for "[[ \$(on harb 'curl -s -o /dev/null -w %{http_code} http://$B:8008/primary') == 200 ]]" 30
-check "B's database takes over by itself ($(( $(date +%s) - start ))s)" "[[ \$(on harb 'curl -s -o /dev/null -w %{http_code} http://$B:8008/primary') == 200 ]]"
+wait_for "[[ \$(on harb 'curl -s -o /dev/null -w %{http_code} --cacert /opt/xpam/config/ha/certs/ca.crt --cert /opt/xpam/config/ha/certs/node.crt --key /opt/xpam/config/ha/certs/node.key https://$B:8008/primary') == 200 ]]" 30
+check "B's database takes over by itself ($(( $(date +%s) - start ))s)" "[[ \$(on harb 'curl -s -o /dev/null -w %{http_code} --cacert /opt/xpam/config/ha/certs/ca.crt --cert /opt/xpam/config/ha/certs/node.crt --key /opt/xpam/config/ha/certs/node.key https://$B:8008/primary') == 200 ]]"
 wait_for "on harb 'docker ps --format \"{{.Names}} {{.Status}}\"' | grep -q '^xpam_core .*(healthy)'" 120
 check "XPAM starts on B by itself ($(( $(date +%s) - start ))s)" "on harb 'docker ps --format \"{{.Names}} {{.Status}}\"' | grep -q '^xpam_core .*(healthy)'"
 check 'B has the data written on A' "on harb \"\$PSQL 'select v from xpam_ha_rehearsal'\" | grep -qx seed"
@@ -115,14 +125,14 @@ check 'the administrators are told that XPAM moved to B' "wait_for \"[[ \\\$(pro
 
 say "A comes back"
 docker start hara >/dev/null
-wait_for "on hara 'curl -s http://$A:8008/patroni' | grep -q '\"role\": \"replica\"'" 60
-check 'A rejoins as standby (never a second primary)' "on hara 'curl -s http://$A:8008/patroni' | grep -q '\"role\": \"replica\"'"
+wait_for "on hara 'curl -s --cacert /opt/xpam/config/ha/certs/ca.crt --cert /opt/xpam/config/ha/certs/node.crt --key /opt/xpam/config/ha/certs/node.key https://$A:8008/patroni' | grep -q '\"role\": \"replica\"'" 60
+check 'A rejoins as standby (never a second primary)' "on hara 'curl -s --cacert /opt/xpam/config/ha/certs/ca.crt --cert /opt/xpam/config/ha/certs/node.crt --key /opt/xpam/config/ha/certs/node.key https://$A:8008/patroni' | grep -q '\"role\": \"replica\"'"
 check 'XPAM services are stopped on A' "wait_for \"! on hara 'docker ps --format {{.Names}}' | grep -qx xpam_core\" 24"
-check 'B stays the primary' "[[ \$(on harb 'curl -s -o /dev/null -w %{http_code} http://$B:8008/primary') == 200 ]]"
+check 'B stays the primary' "[[ \$(on harb 'curl -s -o /dev/null -w %{http_code} --cacert /opt/xpam/config/ha/certs/ca.crt --cert /opt/xpam/config/ha/certs/node.crt --key /opt/xpam/config/ha/certs/node.key https://$B:8008/primary') == 200 ]]"
 check 'A does not take the floating address' "! holds_vip hara"
 
 say "planned switchover back to A"
-wait_for "on harb 'curl -s http://$B:8008/cluster' | grep -q sync_standby" 30
+wait_for "on harb 'curl -s --cacert /opt/xpam/config/ha/certs/ca.crt --cert /opt/xpam/config/ha/certs/node.crt --key /opt/xpam/config/ha/certs/node.key https://$B:8008/cluster' | grep -q sync_standby" 30
 on harb 'cd /opt/xpam-installer && bash ./xpamctl.sh ha switchover' | tail -1
 wait_for "on hara 'docker ps --format \"{{.Names}} {{.Status}}\"' | grep -q '^xpam_core .*(healthy)'" 120
 check 'after the switchover XPAM runs on A' "on hara 'docker ps --format \"{{.Names}} {{.Status}}\"' | grep -q '^xpam_core .*(healthy)'"
@@ -133,13 +143,13 @@ say "power cut: all three machines at once"
 docker kill hara harb harw >/dev/null
 sleep 5
 docker start harw hara harb >/dev/null
-wait_for "[[ \$(on hara 'curl -s -o /dev/null -w %{http_code} http://$A:8008/primary') == 200 || \$(on harb 'curl -s -o /dev/null -w %{http_code} http://$B:8008/primary') == 200 ]]" 60
+wait_for "[[ \$(on hara 'curl -s -o /dev/null -w %{http_code} --cacert /opt/xpam/config/ha/certs/ca.crt --cert /opt/xpam/config/ha/certs/node.crt --key /opt/xpam/config/ha/certs/node.key https://$A:8008/primary') == 200 || \$(on harb 'curl -s -o /dev/null -w %{http_code} --cacert /opt/xpam/config/ha/certs/ca.crt --cert /opt/xpam/config/ha/certs/node.crt --key /opt/xpam/config/ha/certs/node.key https://$B:8008/primary') == 200 ]]" 60
 PRIMARY=hara; STANDBY=harb; PIP=$A
-if [[ $(on harb "curl -s -o /dev/null -w %{http_code} http://$B:8008/primary") == 200 ]]; then PRIMARY=harb; STANDBY=hara; PIP=$B; fi
+if [[ $(on harb "curl -s -o /dev/null -w %{http_code} --cacert /opt/xpam/config/ha/certs/ca.crt --cert /opt/xpam/config/ha/certs/node.crt --key /opt/xpam/config/ha/certs/node.key https://$B:8008/primary") == 200 ]]; then PRIMARY=harb; STANDBY=hara; PIP=$B; fi
 check "after the power cut one server is primary again ($PRIMARY)" "[[ -n $PRIMARY ]]"
 check 'XPAM runs on the primary only' "wait_for \"on $PRIMARY 'docker ps --format \\\"{{.Names}} {{.Status}}\\\"' | grep -q '^xpam_core .*(healthy)'\" 60 && wait_for \"! on $STANDBY 'docker ps --format {{.Names}}' | grep -qx xpam_core\" 24"
 check 'no data was lost' "[[ \$(on $PRIMARY \"\$PSQL 'select count(*) from xpam_ha_rehearsal'\") == 2 ]]"
-check 'the standby follows again (in sync)' "wait_for \"on $PRIMARY 'curl -s http://$PIP:8008/cluster' | grep -q sync_standby\" 30"
+check 'the standby follows again (in sync)' "wait_for \"on $PRIMARY 'curl -s --cacert /opt/xpam/config/ha/certs/ca.crt --cert /opt/xpam/config/ha/certs/node.crt --key /opt/xpam/config/ha/certs/node.key https://$PIP:8008/cluster' | grep -q sync_standby\" 30"
 check 'the floating address is on the primary' "wait_for 'holds_vip $PRIMARY' 6 && ! holds_vip $STANDBY"
 if [[ "$PRIMARY" == harb ]]; then
   on harb 'cd /opt/xpam-installer && bash ./xpamctl.sh ha switchover' | tail -1
@@ -151,7 +161,7 @@ on harb 'systemctl stop xpam-ha; cd /opt/xpam-installer && bash ./xpamctl.sh dow
 on hara 'cd /opt/xpam-installer && bash ./xpamctl.sh ha join-bundle' >/dev/null
 docker exec hara cat /opt/xpam/config/ha/xpam-ha-join.tgz | docker exec -i harb sh -c 'cat > /root/join2.tgz'
 on harb "cd /opt/xpam-installer && timeout 2400 bash ./xpamctl.sh ha join /root/join2.tgz -y > /root/ha-rejoin.log 2>&1"; tail -2 <(on harb 'cat /root/ha-rejoin.log')
-check 'the rebuilt server is the synchronous standby again' "wait_for \"on hara 'curl -s http://$A:8008/cluster' | grep -q sync_standby\" 30"
+check 'the rebuilt server is the synchronous standby again' "wait_for \"on hara 'curl -s --cacert /opt/xpam/config/ha/certs/ca.crt --cert /opt/xpam/config/ha/certs/node.crt --key /opt/xpam/config/ha/certs/node.key https://$A:8008/cluster' | grep -q sync_standby\" 30"
 check 'it has all the data' "wait_for \"[[ \\\$(on harb \\\"\\\$PSQL 'select count(*) from xpam_ha_rehearsal'\\\") == 2 ]]\" 12"
 check 'the rebuilt server got the floating address setting from the fresh bundle' "on harb 'grep -q ^HA_VIP=172.31.9.100/24 /opt/xpam/config/config.txt'"
 
@@ -161,6 +171,8 @@ on hara 'cd /opt/xpam-installer && timeout 1200 bash ./xpamctl.sh ha disable -y 
 check 'A runs XPAM alone again (no Patroni, no vote)' "wait_for \"on hara 'docker ps --format \\\"{{.Names}} {{.Image}} {{.Status}}\\\"' | grep -q '^xpam_core .*(healthy)'\" 60 && on hara 'docker ps --format {{.Image}}' | grep -q '^postgres:16' && ! on hara 'docker ps --format {{.Names}}' | grep -qx xpam_etcd"
 check 'with all its data' "[[ \$(on hara \"\$PSQL 'select count(*) from xpam_ha_rehearsal'\") == 2 ]]"
 check 'and without the floating address' "! holds_vip hara"
+check 'the single server does not publish its database on the host' "[[ -z \$(on hara 'docker port xpam_postgresql') ]]"
+check 'the firewall service is gone' "! on hara 'systemctl is-enabled xpam-ha-firewall' 2>/dev/null | grep -qx enabled"
 
 echo "RESULT: $PASS/$((PASS+FAIL)) passed"
 [[ $FAIL -eq 0 ]]

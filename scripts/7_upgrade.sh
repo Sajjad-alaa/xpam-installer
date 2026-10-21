@@ -79,10 +79,14 @@ function migrate_database_expose_config() {
     set_config POSTGRESQL_EXPOSE_PORT "${legacy_port}"
   fi
 
-  check_and_set_config "POSTGRESQL_EXPOSE_HOST" "127.0.0.1"
-  check_and_set_config "POSTGRESQL_EXPOSE_PORT" "5432"
-  check_and_set_config "MYSQL_EXPOSE_HOST" "127.0.0.1"
-  check_and_set_config "MYSQL_EXPOSE_PORT" "3306"
+  # XPAM: the database is no longer published on the host by default (only XPAM's containers reach it).
+  # The old default (127.0.0.1:5432 / :3306) is removed; an address or port the administrator chose stays.
+  if [[ "$(get_config POSTGRESQL_EXPOSE_HOST)" == "127.0.0.1" && "$(get_config POSTGRESQL_EXPOSE_PORT)" == "5432" ]]; then
+    set_config POSTGRESQL_EXPOSE_PORT ""
+  fi
+  if [[ "$(get_config MYSQL_EXPOSE_HOST)" == "127.0.0.1" && "$(get_config MYSQL_EXPOSE_PORT)" == "3306" ]]; then
+    set_config MYSQL_EXPOSE_PORT ""
+  fi
 }
 
 function remove_obsolete_containers() {

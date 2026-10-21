@@ -128,7 +128,7 @@ function start() {
   retire_legacy_project || return 1
   retire_combined_web || return 1
   retire_renamed_services || return 1
-  if is_ha_enabled && [[ "$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 "http://$(get_config HA_NODE_IP):8008/primary")" != "200" ]]; then
+  if is_ha_enabled && [[ "$(bash "${SCRIPT_DIR}/ha.sh" role)" != "primary" ]]; then
     # high availability: XPAM's services run on the primary only (the agent starts them when this server becomes primary)
     EXE=$(get_db_compose_cmd)
     ${EXE} up -d || return 1

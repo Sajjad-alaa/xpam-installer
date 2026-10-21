@@ -6,21 +6,23 @@
 set -uo pipefail
 TAG=${1:-v5.1.15}
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-WORK=$(mktemp -d); trap 'cleanup; rm -rf "$WORK"' EXIT
+WORK=$(mktemp -d); [[ "${KEEP:-}" == "1" ]] || trap 'cleanup; rm -rf "$WORK"' EXIT
 NET=xhat; A=172.30.9.11; B=172.30.9.12; W=172.30.9.13
 PASS=0; FAIL=0
 check() { if eval "$2"; then echo "PASS $1"; PASS=$((PASS+1)); else echo "FAIL $1"; FAIL=$((FAIL+1)); fi; }
 r() { head -c 64 /dev/urandom | tr -dc A-Za-z0-9 | head -c "${1:-32}"; }
 cleanup() {
-  docker rm -f hat-a hat-b hat-a-etcd hat-b-etcd hat-w-etcd hat-seed >/dev/null 2>&1
+  docker rm -f hat-a hat-b hat-a-etcd hat-b-etcd hat-w-etcd hat-seed hat-stranger >/dev/null 2>&1
   docker volume rm hat-a-data hat-b-data >/dev/null 2>&1
   docker network rm "$NET" >/dev/null 2>&1
 }
 cleanup
 umask 077
 bash "$HERE/../../ha/certs.sh" "$WORK/certs" $A $B $W
-printf 'DB_USER=xpam\nDB_PASSWORD=%s\nDB_NAME=xpam\nHA_REPL_PASSWORD=%s\nHA_PATRONI_PASSWORD=%s\nHA_WITNESS_IP=%s\nDOCKER_SUBNET=172.30.9.0/24\n' \
-  "$(r 24)" "$(r 24)" "$(r 24)" "$W" > "$WORK/env"
+# DOCKER_SUBNET stands for XPAM's internal container network (not the servers' network): XPAM's own
+# account must be refused from the other server
+printf 'DB_USER=xpam\nDB_PASSWORD=%s\nDB_NAME=xpam\nHA_REPL_PASSWORD=%s\nHA_PATRONI_PASSWORD=%s\nHA_REWIND_PASSWORD=%s\nHA_WITNESS_IP=%s\nDOCKER_SUBNET=10.99.0.0/24\n' \
+  "$(r 24)" "$(r 24)" "$(r 24)" "$(r 24)" "$W" > "$WORK/env"
 . "$WORK/env"
 docker network create --subnet 172.30.9.0/24 "$NET" >/dev/null
 docker volume create hat-a-data >/dev/null; docker volume create hat-b-data >/dev/null
@@ -31,8 +33,15 @@ docker run -d --name hat-seed -v hat-a-data:/var/lib/postgresql/data -e POSTGRES
 for _ in $(seq 60); do docker exec hat-seed psql -U xpam -d xpam -qc 'select 1' >/dev/null 2>&1 && break; sleep 1; done
 sleep 2
 docker exec hat-seed psql -U xpam -d xpam -qc "CREATE TABLE t(v text); INSERT INTO t VALUES ('before-ha');"
-docker exec -e RP="$HA_REPL_PASSWORD" hat-seed sh -c \
-  'psql -U xpam -d xpam -qc "CREATE ROLE replicator WITH REPLICATION LOGIN PASSWORD '"'"'$RP'"'"'"'
+docker exec -e RP="$HA_REPL_PASSWORD" -e WP="$HA_REWIND_PASSWORD" hat-seed sh -c '
+  psql -U xpam -d xpam -q -v rp="$RP" -v wp="$WP" <<SQL
+CREATE ROLE replicator WITH REPLICATION LOGIN PASSWORD :'"'"'rp'"'"';
+CREATE ROLE xpam_rewind WITH LOGIN PASSWORD :'"'"'wp'"'"';
+GRANT EXECUTE ON FUNCTION pg_catalog.pg_ls_dir(text, boolean, boolean) TO xpam_rewind;
+GRANT EXECUTE ON FUNCTION pg_catalog.pg_stat_file(text, boolean) TO xpam_rewind;
+GRANT EXECUTE ON FUNCTION pg_catalog.pg_read_binary_file(text) TO xpam_rewind;
+GRANT EXECUTE ON FUNCTION pg_catalog.pg_read_binary_file(text, bigint, bigint, boolean) TO xpam_rewind;
+SQL'
 docker rm -f hat-seed >/dev/null
 
 etcd_run() { # member-name ip node initial-cluster state: the etcd container owns the simulated server's network
@@ -49,10 +58,11 @@ pg_run() { # a|b ip peer (shares the network of the server's etcd container)
     -e HA_NODE_NAME="xpam-$1" -e HA_NODE_IP="$2" -e HA_PEER_IP="$3" \
     -v "hat-$1-data:/var/lib/postgresql/data" -v "$WORK/certs:/etc/xpam-ha:ro" "xpam/postgresql-ha:$TAG" >/dev/null
 }
-role() { docker exec "hat-$1" curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8008/primary 2>/dev/null; }
+PC="--cacert /run/xpam-ha/ca.crt --cert /run/xpam-ha/node.crt --key /run/xpam-ha/node.key"
+role() { docker exec "hat-$1" sh -c "curl -s -o /dev/null -w '%{http_code}' $PC https://127.0.0.1:8008/primary" 2>/dev/null; }
 sql() { docker exec "hat-$1" psql -U xpam -d xpam -Atqc "$2" 2>/dev/null; }
 wait_for() { for _ in $(seq "${2:-60}"); do eval "$1" && return 0; sleep 2; done; return 1; }
-members() { docker exec "hat-$1" curl -s http://127.0.0.1:8008/cluster 2>/dev/null; }
+members() { docker exec "hat-$1" sh -c "curl -s $PC https://127.0.0.1:8008/cluster" 2>/dev/null; }
 
 # as 'xpamctl ha init' does: the vote starts with the first server and the witness
 AW="xpam-a=https://$A:2380,xpam-witness=https://$W:2380"
@@ -109,13 +119,26 @@ check 'after the split heals, the cut-off server follows the new primary' '[[ $(
 
 # planned switchover (maintenance): back to B through Patroni's REST API (to a synchronous standby)
 wait_for 'members a | grep -q "sync_standby"' 60
-code=$(docker exec -e P="$HA_PATRONI_PASSWORD" hat-a sh -c 'curl -s -o /dev/null -w "%{http_code}" -u "patroni:$P" -XPOST \
-  -H "Content-Type: application/json" -d "{\"leader\":\"xpam-a\",\"candidate\":\"xpam-b\"}" http://127.0.0.1:8008/switchover')
+code=$(docker exec -e P="$HA_PATRONI_PASSWORD" hat-a sh -c "curl -s -o /dev/null -w '%{http_code}' $PC -u \"patroni:\$P\" -XPOST \
+  -H 'Content-Type: application/json' -d '{\"leader\":\"xpam-a\",\"candidate\":\"xpam-b\"}' https://127.0.0.1:8008/switchover")
 wait_for '[[ $(role b) == 200 ]]' 60
 check "planned switchover moves the primary to the other server (HTTP $code)" '[[ $(role b) == 200 && $(role a) != 200 ]]'
-code=$(docker exec hat-a curl -s -o /dev/null -w "%{http_code}" -XPOST -H "Content-Type: application/json" \
-  -d '{"leader":"xpam-b","candidate":"xpam-a"}' http://127.0.0.1:8008/switchover)
+code=$(docker exec hat-a sh -c "curl -s -o /dev/null -w '%{http_code}' $PC -XPOST -H 'Content-Type: application/json' \
+  -d '{\"leader\":\"xpam-b\",\"candidate\":\"xpam-a\"}' https://127.0.0.1:8008/switchover")
 check "switchover without the REST password is refused (HTTP $code)" '[[ $code == 401 ]]'
+
+# ---- nobody else reaches the database
+docker run -d --name hat-stranger --network "$NET" --ip 172.30.9.50 --entrypoint sleep "xpam/postgresql-ha:$TAG" infinity >/dev/null
+try_sql() { # container conninfo -> exit code of a login
+  docker exec -e PGCONNECT_TIMEOUT=5 "$1" psql "$2" -Atqc 'select 1' >/dev/null 2>&1
+}
+check 'a stranger cannot log in as XPAM (even with the password)' "! try_sql hat-stranger 'host=$B user=xpam password=$DB_PASSWORD dbname=xpam sslmode=require'"
+check 'the other server cannot log in as XPAM (only replication)' "! try_sql hat-a 'host=$B user=xpam password=$DB_PASSWORD dbname=xpam sslmode=require'"
+check 'replication without the cluster certificate is refused' "! docker exec -e PGCONNECT_TIMEOUT=5 hat-a psql 'host=$B user=replicator password=$HA_REPL_PASSWORD replication=true sslmode=require' -c IDENTIFY_SYSTEM >/dev/null 2>&1"
+check 'replication with password and certificate works' "docker exec -e PGCONNECT_TIMEOUT=5 hat-a psql 'host=$B user=replicator password=$HA_REPL_PASSWORD replication=true sslmode=verify-ca sslrootcert=/run/xpam-ha/ca.crt sslcert=/run/xpam-ha/node.crt sslkey=/run/xpam-ha/node.key' -c IDENTIFY_SYSTEM >/dev/null 2>&1"
+check 'the rewind account cannot read XPAM data' "! docker exec -e PGCONNECT_TIMEOUT=5 hat-a psql 'host=$B user=xpam_rewind password=$HA_REWIND_PASSWORD dbname=postgres sslmode=verify-ca sslrootcert=/run/xpam-ha/ca.crt sslcert=/run/xpam-ha/node.crt sslkey=/run/xpam-ha/node.key' -Atqc 'select count(*) from pg_authid' >/dev/null 2>&1"
+check "the cluster API refuses callers without the certificate (HTTP $(docker exec hat-stranger sh -c "curl -sk -o /dev/null -w '%{http_code}' --max-time 5 https://$B:8008/cluster" 2>/dev/null))" \
+  "[[ \$(docker exec hat-stranger sh -c \"curl -sk -o /dev/null -w '%{http_code}' --max-time 5 https://$B:8008/cluster\" 2>/dev/null) == 000 ]]"
 
 echo "RESULT: $PASS/$((PASS+FAIL)) passed"
 [[ $FAIL -eq 0 ]]

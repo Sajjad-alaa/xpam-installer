@@ -30,13 +30,24 @@ function local_ip() {
   ip -o -4 addr show | awk '{print $4}' | cut -d/ -f1 | grep -qx "$1"
 }
 
-function patroni() { # path [curl args...] — this server's Patroni REST API
-  local path=$1; shift
-  curl -s --max-time 5 "$@" "http://$(get_config HA_NODE_IP):8008/${path}"
+function pcurl() { # curl with the cluster certificate (Patroni's API requires it)
+  curl --cacert "${HA_DIR}/certs/ca.crt" --cert "${HA_DIR}/certs/node.crt" --key "${HA_DIR}/certs/node.key" "$@"
 }
 
-function patroni_code() {
-  curl -s -o /dev/null -w '%{http_code}' --max-time 5 "http://$(get_config HA_NODE_IP):8008/$1"
+function patroni() { # path [curl args...] — this server's Patroni REST API
+  local path=$1; shift
+  pcurl -s --max-time 5 "$@" "https://$(get_config HA_NODE_IP):8008/${path}"
+}
+
+function patroni_code() { # path [host]
+  pcurl -s -o /dev/null -w '%{http_code}' --max-time 5 "https://${2:-$(get_config HA_NODE_IP)}:8008/$1"
+}
+
+function patroni_write() { # method path json — with the REST password (from the environment, not the command line)
+  HA_P="$(get_config HA_PATRONI_PASSWORD)" HA_C="${HA_DIR}/certs" HA_U="https://$(get_config HA_NODE_IP):8008/$2" \
+    HA_M="$1" HA_D="$3" bash -c 'curl -s -o /dev/null -w "%{http_code}" --max-time 60 --cacert "$HA_C/ca.crt" \
+      --cert "$HA_C/node.crt" --key "$HA_C/node.key" -u "patroni:${HA_P}" -X "$HA_M" \
+      -H "Content-Type: application/json" -d "$HA_D" "$HA_U"'
 }
 
 function wait_until() { # seconds message command...
@@ -87,7 +98,10 @@ function install_agent() {
   line="from=\"${peer}\",restrict,command=\"${PROJECT_DIR}/ha/rsync-only.sh ${volume_dir}/core/data\" $(cat "${HA_DIR}/ssh/id_ed25519.pub")"
   echo "${line}" >> "${authorized}"
   sed "s#/opt/xpam-installer#${PROJECT_DIR}#g" "${PROJECT_DIR}/ha/xpam-ha.service" > /etc/systemd/system/xpam-ha.service
+  sed "s#/opt/xpam-installer#${PROJECT_DIR}#g" "${PROJECT_DIR}/ha/xpam-ha-firewall.service" > /etc/systemd/system/xpam-ha-firewall.service
   systemctl daemon-reload
+  systemctl enable xpam-ha-firewall >/dev/null 2>&1  # (the rules are in place before Docker at every boot)
+  python3 "${PROJECT_DIR}/ha/agent.py" firewall
   systemctl enable --now xpam-ha >/dev/null 2>&1 || systemctl restart xpam-ha
   systemctl restart xpam-ha
 }
@@ -154,6 +168,7 @@ function ha_init() {
   [[ -s "${HA_DIR}/ssh/id_ed25519" ]] || ssh-keygen -q -t ed25519 -N '' -C xpam-ha -f "${HA_DIR}/ssh/id_ed25519"
   [[ -n "$(get_config HA_REPL_PASSWORD)" ]] || set_config HA_REPL_PASSWORD "$(random_str 32)"
   [[ -n "$(get_config HA_PATRONI_PASSWORD)" ]] || set_config HA_PATRONI_PASSWORD "$(random_str 32)"
+  [[ -n "$(get_config HA_REWIND_PASSWORD)" ]] || set_config HA_REWIND_PASSWORD "$(random_str 32)"
   set_config HA_NODE_NAME xpam-a
   set_config HA_PEER_NAME xpam-b
   set_config HA_NODE_IP "${this}"
@@ -164,15 +179,23 @@ function ha_init() {
   set_config HA_ETCD_CLUSTER "xpam-a=https://${this}:2380,xpam-witness=https://${witness}:2380"
   set_config HA_ETCD_STATE new
 
-  # 2. the replication user (password from the environment, never on a command line)
+  # 2. the replication and rewind accounts (passwords from the environment, never on a command line)
   local db_user db_name
   db_user=$(get_config DB_USER); db_name=$(get_config DB_NAME)
-  HA_RP="$(get_config HA_REPL_PASSWORD)" docker exec -i -e HA_RP xpam_postgresql \
+  HA_RP="$(get_config HA_REPL_PASSWORD)" HA_WP="$(get_config HA_REWIND_PASSWORD)" docker exec -i -e HA_RP -e HA_WP xpam_postgresql \
     psql -v ON_ERROR_STOP=1 -U "${db_user}" -d "${db_name}" -q <<'SQL' || { log_error "The replication user could not be created"; return 1; }
 \set rp `printenv HA_RP`
 SELECT format('CREATE ROLE replicator WITH REPLICATION LOGIN PASSWORD %L', :'rp')
   WHERE NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'replicator') \gexec
 SELECT format('ALTER ROLE replicator WITH REPLICATION LOGIN PASSWORD %L', :'rp') \gexec
+\set wp `printenv HA_WP`
+SELECT format('CREATE ROLE xpam_rewind WITH LOGIN PASSWORD %L', :'wp')
+  WHERE NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'xpam_rewind') \gexec
+SELECT format('ALTER ROLE xpam_rewind WITH LOGIN NOSUPERUSER PASSWORD %L', :'wp') \gexec
+GRANT EXECUTE ON FUNCTION pg_catalog.pg_ls_dir(text, boolean, boolean) TO xpam_rewind;
+GRANT EXECUTE ON FUNCTION pg_catalog.pg_stat_file(text, boolean) TO xpam_rewind;
+GRANT EXECUTE ON FUNCTION pg_catalog.pg_read_binary_file(text) TO xpam_rewind;
+GRANT EXECUTE ON FUNCTION pg_catalog.pg_read_binary_file(text, bigint, bigint, boolean) TO xpam_rewind;
 SQL
 
   # 3. bundles: the witness gets only the certificates; the other server gets the configuration
@@ -214,7 +237,7 @@ SQL
   mkdir -p "$(get_config VOLUME_DIR)/etcd"
   $(db_cmd) up -d
   if ! wait_until 300 "waiting for PostgreSQL under Patroni to become primary" \
-      bash -c '[[ $(curl -s -o /dev/null -w "%{http_code}" --max-time 5 "http://'"${this}"':8008/primary") == 200 ]]'; then
+      bash -c '[[ $(curl -s -o /dev/null -w "%{http_code}" --max-time 5 --cacert "'"${HA_DIR}"'/certs/ca.crt" --cert "'"${HA_DIR}"'/certs/node.crt" --key "'"${HA_DIR}"'/certs/node.key" "https://'"${this}"':8008/primary") == 200 ]]'; then
     log_error "PostgreSQL did not become primary: 'docker logs xpam_postgresql'. To go back: set HA_ENABLED=0 in config.txt and xpamctl start"
     return 1
   fi
@@ -312,7 +335,7 @@ function ha_join() {
   echo_yellow "\nCopying the database from the primary"
   $(db_cmd) up -d
   if ! wait_until 7200 "copying (large databases take a while)" \
-      bash -c '[[ $(curl -s -o /dev/null -w "%{http_code}" --max-time 5 "http://'"${this}"':8008/replica") == 200 ]]'; then
+      bash -c '[[ $(curl -s -o /dev/null -w "%{http_code}" --max-time 5 --cacert "'"${HA_DIR}"'/certs/ca.crt" --cert "'"${HA_DIR}"'/certs/node.crt" --key "'"${HA_DIR}"'/certs/node.key" "https://'"${this}"':8008/replica") == 200 ]]'; then
     log_error "The database could not be copied: 'docker logs xpam_postgresql'"; return 1
   fi
   install_agent "${peer}"
@@ -358,9 +381,7 @@ function ha_switchover() {
   candidate=$(patroni cluster | python3 -c 'import json,sys; print(next((m["name"] for m in json.load(sys.stdin)["members"] if m["role"] in ("sync_standby","replica") and m["state"] in ("streaming","running")), ""))')
   [[ -n "${leader}" && -n "${candidate}" ]] || { log_error "No healthy standby to switch to"; return 1; }
   echo "Switching the primary from ${leader} to ${candidate} (XPAM moves to the other server, about a minute)"
-  code=$(HA_P="$(get_config HA_PATRONI_PASSWORD)" bash -c 'curl -s -o /dev/null -w "%{http_code}" --max-time 60 -u "patroni:${HA_P}" \
-    -XPOST -H "Content-Type: application/json" -d "{\"leader\":\"'"${leader}"'\",\"candidate\":\"'"${candidate}"'\"}" \
-    "http://'"$(get_config HA_NODE_IP)"':8008/switchover"')
+  code=$(patroni_write POST switchover "{\"leader\":\"${leader}\",\"candidate\":\"${candidate}\"}")
   [[ "${code}" == "200" ]] || { log_error "Switchover refused (HTTP ${code}): the standby must be in sync ('xpamctl ha status')"; return 1; }
   echo_green "Done: ${candidate} is the primary."
 }
@@ -373,9 +394,7 @@ function ha_failover() {
     return 1
   fi
   local code
-  code=$(HA_P="$(get_config HA_PATRONI_PASSWORD)" bash -c 'curl -s -o /dev/null -w "%{http_code}" --max-time 60 -u "patroni:${HA_P}" \
-    -XPOST -H "Content-Type: application/json" -d "{\"candidate\":\"'"$(get_config HA_NODE_NAME)"'\"}" \
-    "http://'"$(get_config HA_NODE_IP)"':8008/failover"')
+  code=$(patroni_write POST failover "{\"candidate\":\"$(get_config HA_NODE_NAME)\"}")
   [[ "${code}" == "200" ]] || { log_error "Failover refused (HTTP ${code}): 'docker logs xpam_postgresql'"; return 1; }
   echo_green "This server is the primary."
 }
@@ -441,7 +460,7 @@ function ha_disable() {
   is_ha_enabled || { log_error "High availability is not enabled"; return 1; }
   local role peer_role assume=${1:-}
   role=$(ha_role)
-  peer_role=$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 "http://$(get_config HA_PEER_IP):8008/liveness")
+  peer_role=$(patroni_code liveness "$(get_config HA_PEER_IP)")
   if [[ "${role}" == "primary" && "${peer_role}" == "200" ]]; then
     log_error "Run 'xpamctl ha disable' on the other server (the standby) first; then here."
     return 1
@@ -463,13 +482,18 @@ function ha_disable() {
     bash "${BASE_DIR}/5_db_backup.sh" || { log_error "Database backup failed: nothing was changed"; return 1; }
   fi
   systemctl disable --now xpam-ha >/dev/null 2>&1 || true
+  systemctl disable xpam-ha-firewall >/dev/null 2>&1 || true
+  rm -f /etc/systemd/system/xpam-ha-firewall.service /etc/systemd/system/xpam-ha.service
+  systemctl daemon-reload
   [[ -n "$(get_config HA_VIP)" ]] && ha_vip off >/dev/null
   cd "${PROJECT_DIR}" || return 1
   cmd=$(get_docker_compose_cmd_line)
   ${cmd} down
   # firewall rule and the other server's key
-  while iptables -D DOCKER-USER -p tcp -m multiport --dports 5432,8008,2379,2380,6379 -m conntrack \
-      --ctorigdst "$(get_config HA_NODE_IP)" -j XPAM-HA 2>/dev/null; do :; done
+  for ports in 5432,8008,2379,2380,6379,6380 5432,8008,2379,2380,6379; do
+    while iptables -D DOCKER-USER -p tcp -m multiport --dports "${ports}" -m conntrack \
+        --ctorigdst "$(get_config HA_NODE_IP)" -j XPAM-HA 2>/dev/null; do :; done
+  done
   iptables -F XPAM-HA 2>/dev/null; iptables -X XPAM-HA 2>/dev/null
   sed -i '/ xpam-ha$/d' /root/.ssh/authorized_keys 2>/dev/null || true
   if [[ "${role}" == "primary" ]]; then
@@ -500,8 +524,7 @@ function ha_role() {
 function ha_pause() { # on|off — maintenance mode: no automatic failover (upgrades)
   local value=true
   [[ "$1" == "off" ]] && value=null
-  HA_P="$(get_config HA_PATRONI_PASSWORD)" bash -c 'curl -s -o /dev/null -w "%{http_code}" --max-time 15 -u "patroni:${HA_P}" \
-    -XPATCH -H "Content-Type: application/json" -d "{\"pause\": '"${value}"'}" "http://'"$(get_config HA_NODE_IP)"':8008/config"' | grep -q 200
+  [[ "$(patroni_write PATCH config "{\"pause\": ${value}}")" == 200 ]]
 }
 
 function main() {

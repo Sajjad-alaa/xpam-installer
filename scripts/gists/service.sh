@@ -98,15 +98,16 @@ function get_db_info() {
       fi
       ;;
     "file")
+      # (published on the host only when an EXPOSE_PORT is set: by default only XPAM's containers reach it)
       if [[ "${mysql_data_exists}" == "1" ]]; then
-        echo "compose/mysql.yml -f compose/mysql.port.yml"
+        echo "compose/mysql.yml$([[ -n "$(get_config MYSQL_EXPOSE_PORT)" ]] && echo " -f compose/mysql.port.yml")"
       elif [[ "${mariadb_data_exists}" == "1" ]]; then
-        echo "compose/mariadb.yml -f compose/mysql.port.yml"
+        echo "compose/mariadb.yml$([[ -n "$(get_config MYSQL_EXPOSE_PORT)" ]] && echo " -f compose/mysql.port.yml")"
       elif [[ "${postgres_data_exists}" == "1" ]]; then
         if is_ha_enabled; then
           echo "compose/ha-postgresql.yml -f compose/ha-etcd.yml"
         else
-          echo "compose/postgresql.yml -f compose/postgresql.port.yml"
+          echo "compose/postgresql.yml$([[ -n "$(get_config POSTGRESQL_EXPOSE_PORT)" ]] && echo " -f compose/postgresql.port.yml")"
         fi
       fi
       ;;

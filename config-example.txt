@@ -101,14 +101,14 @@ DB_USER=postgres
 DB_PASSWORD=
 DB_NAME=xpam
 
-# Host port bindings for the built-in database. The defaults only listen on
-# localhost. In a two-node HA deployment, set the corresponding EXPOSE_HOST
-# to each node's fixed HA IP. MYSQL_EXPOSE_* also applies to built-in MariaDB.
+# The built-in database is reachable by XPAM's containers only (not published on the host). To reach it
+# from the host anyway (e.g. a reporting tool), set a port here (and keep the host 127.0.0.1).
+# High availability publishes what replication needs by itself (xpamctl ha).
 #
 POSTGRESQL_EXPOSE_HOST=127.0.0.1
-POSTGRESQL_EXPOSE_PORT=5432
+POSTGRESQL_EXPOSE_PORT=
 MYSQL_EXPOSE_HOST=127.0.0.1
-MYSQL_EXPOSE_PORT=3306
+MYSQL_EXPOSE_PORT=
 
 # TLS/SSL to an external MySQL server
 #

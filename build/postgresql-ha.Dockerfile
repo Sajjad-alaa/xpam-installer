@@ -15,5 +15,6 @@ COPY patroni-entrypoint.sh /usr/local/bin/patroni-entrypoint.sh
 RUN chmod 755 /usr/local/bin/patroni-entrypoint.sh
 EXPOSE 5432 8008
 HEALTHCHECK --interval=10s --timeout=5s --start-period=60s --retries=3 \
-    CMD curl -fsS http://127.0.0.1:8008/liveness >/dev/null || exit 1
+    CMD curl -fsS --cacert /run/xpam-ha/ca.crt --cert /run/xpam-ha/node.crt --key /run/xpam-ha/node.key \
+        https://127.0.0.1:8008/liveness >/dev/null || exit 1
 ENTRYPOINT ["/usr/local/bin/patroni-entrypoint.sh"]

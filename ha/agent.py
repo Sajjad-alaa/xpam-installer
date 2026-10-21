@@ -29,7 +29,9 @@ INTERVAL = 3
 STABLE_CHECKS = 2           # a role must be seen this many times in a row before acting
 UNKNOWN_GRACE = 30          # seconds without Patroni before the services are stopped
 SYNC_EVERY = 60
-HA_PORTS = '5432,8008,2379,2380,6379'
+HA_PORTS = '5432,8008,2379,2380,6379,6380'
+PEER_PORTS = '5432,8008,2379,2380,6380'
+WITNESS_PORTS = '2379,2380'
 CHAIN = 'XPAM-HA'
 
 
@@ -58,12 +60,42 @@ def run(cmd, timeout=120, env=None):
         return 127, str(e)
 
 
+def tls_context(conf):
+    """Client TLS with the cluster certificate (Patroni's API and etcd require it)."""
+    import ssl
+    certs = os.path.join(conf.get('CONFIG_DIR', '/opt/xpam/config'), 'ha', 'certs')
+    ctx = ssl.create_default_context(cafile=os.path.join(certs, 'ca.crt'))
+    ctx.load_cert_chain(os.path.join(certs, 'node.crt'), os.path.join(certs, 'node.key'))
+    return ctx
+
+
+def patroni(conf, path, host=None, method='GET', body=None, auth=False, timeout=5):
+    """(status, json) from a Patroni REST API (this server's unless host is given)."""
+    import base64
+    req = urllib.request.Request(f"https://{host or conf['HA_NODE_IP']}:8008/{path}", method=method,
+                                 data=json.dumps(body).encode() if body is not None else None,
+                                 headers={'Content-Type': 'application/json'})
+    if auth:
+        token = base64.b64encode(f"patroni:{conf.get('HA_PATRONI_PASSWORD', '')}".encode()).decode()
+        req.add_header('Authorization', f'Basic {token}')
+    try:
+        with urllib.request.urlopen(req, timeout=timeout, context=tls_context(conf)) as r:
+            raw = r.read()
+            return r.status, (json.loads(raw) if raw.strip().startswith(b'{') else {})
+    except urllib.error.HTTPError as e:
+        raw = e.read()
+        try:
+            return e.code, json.loads(raw)
+        except ValueError:
+            return e.code, {'message': raw.decode('utf-8', 'replace')[:200]}
+    except Exception:
+        return 0, {}
+
+
 def patroni_role(conf):
     """'primary', 'standby' or 'unknown' (from this server's Patroni)."""
-    try:
-        with urllib.request.urlopen(f"http://{conf['HA_NODE_IP']}:8008/patroni", timeout=3) as r:
-            data = json.loads(r.read())
-    except Exception:
+    code, data = patroni(conf, 'patroni', timeout=3)
+    if code != 200:
         return 'unknown'
     role = data.get('role')
     if role in ('primary', 'master') and data.get('state') == 'running':
@@ -103,8 +135,7 @@ def redis_follow(conf, primary):
             log('redis: now the master')
         return 'master'
     if is_master or f'master_host:{primary}' not in info:
-        redis(conf, 'CONFIG', 'SET', 'masterauth', conf.get('REDIS_PASSWORD', ''))
-        redis(conf, 'REPLICAOF', primary, '6379')
+        redis(conf, 'REPLICAOF', primary, '6380')  # (the TLS port: replication is encrypted)
         log(f'redis: following {primary}')
     return 'replica'
 
@@ -122,19 +153,26 @@ def sync_files(conf):
 
 
 def ensure_firewall(conf):
-    """Only the other server and the witness may reach the replication ports of THIS server (published by
-    Docker, which bypasses firewalld: the rule goes into Docker's DOCKER-USER chain). It matches only
-    connections addressed to this server, so the containers' own outgoing connections are never touched."""
+    """Who may reach THIS server's published cluster ports (Docker bypasses firewalld: the rules go into
+    Docker's DOCKER-USER chain, which also exists before Docker starts):
+      the other server  5432 (replication), 8008 (Patroni), 2379/2380 (vote), 6380 (Redis over TLS)
+      the witness       2379/2380 (vote) only
+      anybody else      nothing (also not 6379, Redis without TLS, which is never meant to be published)
+    Only connections addressed to this server are checked; XPAM's own containers always pass."""
+    run(['iptables', '-N', 'DOCKER-USER'], 10)
     run(['iptables', '-N', CHAIN], 10)
     run(['iptables', '-F', CHAIN], 10)
     for rule in (['-i', 'br-+', '-j', 'RETURN'], ['-i', 'docker0', '-j', 'RETURN'],
-                 ['-s', conf['HA_PEER_IP'], '-j', 'RETURN'], ['-s', conf['HA_WITNESS_IP'], '-j', 'RETURN'],
+                 ['-s', conf['HA_PEER_IP'], '-p', 'tcp', '-m', 'multiport', '--dports', PEER_PORTS, '-j', 'RETURN'],
+                 ['-s', conf['HA_WITNESS_IP'], '-p', 'tcp', '-m', 'multiport', '--dports', WITNESS_PORTS, '-j', 'RETURN'],
                  ['-j', 'DROP']):
         run(['iptables', '-A', CHAIN, *rule], 10)
-    # (the first version matched by interface: remove it)
-    old = ['DOCKER-USER', '!', '-i', 'br-+', '-p', 'tcp', '-m', 'multiport', '--dports', HA_PORTS, '-j', CHAIN]
-    while run(['iptables', '-D', *old], 10)[0] == 0:
-        pass
+    for old in (['DOCKER-USER', '!', '-i', 'br-+', '-p', 'tcp', '-m', 'multiport', '--dports', '5432,8008,2379,2380,6379',
+                 '-j', CHAIN],
+                ['DOCKER-USER', '-p', 'tcp', '-m', 'multiport', '--dports', '5432,8008,2379,2380,6379', '-m', 'conntrack',
+                 '--ctorigdst', conf['HA_NODE_IP'], '-j', CHAIN]):
+        while run(['iptables', '-D', *old], 10)[0] == 0:  # (rules of earlier versions)
+            pass
     rule = ['DOCKER-USER', '-p', 'tcp', '-m', 'multiport', '--dports', HA_PORTS, '-m', 'conntrack',
             '--ctorigdst', conf['HA_NODE_IP'], '-j', CHAIN]
     if run(['iptables', '-C', *rule], 10)[0] != 0:
@@ -144,24 +182,16 @@ def ensure_firewall(conf):
 
 
 def peer_alive(conf):
-    """The other server's Patroni answers (no authentication needed for /liveness)."""
-    try:
-        with urllib.request.urlopen(f"http://{conf['HA_PEER_IP']}:8008/liveness", timeout=3):
-            return True
-    except urllib.error.HTTPError:
-        return True  # (answers, even if not healthy)
-    except Exception:
-        return False
+    """The other server's Patroni answers."""
+    code, _data = patroni(conf, 'liveness', host=conf['HA_PEER_IP'], timeout=3)
+    return code != 0
 
 
 def witness_alive(conf):
     """The witness's vote answers its health check (mutual TLS with the cluster certificate)."""
-    import ssl
-    certs = os.path.join(conf.get('CONFIG_DIR', '/opt/xpam/config'), 'ha', 'certs')
     try:
-        ctx = ssl.create_default_context(cafile=os.path.join(certs, 'ca.crt'))
-        ctx.load_cert_chain(os.path.join(certs, 'node.crt'), os.path.join(certs, 'node.key'))
-        with urllib.request.urlopen(f"https://{conf['HA_WITNESS_IP']}:2379/health", timeout=3, context=ctx) as r:
+        with urllib.request.urlopen(f"https://{conf['HA_WITNESS_IP']}:2379/health", timeout=3,
+                                    context=tls_context(conf)) as r:
             return json.loads(r.read()).get('health') in ('true', True)
     except Exception:
         return False
@@ -223,6 +253,36 @@ def previous_role(conf):
         return None
 
 
+def cluster(conf):
+    code, data = patroni(conf, 'cluster', timeout=3)
+    if code != 200:
+        return None
+    return [{'name': m.get('name'), 'host': m.get('host'), 'role': m.get('role'), 'state': m.get('state'),
+             'lag': m.get('lag'), 'timeline': m.get('timeline')} for m in data.get('members', [])]
+
+
+def handle_request(conf, members):
+    """A switchover asked for in the console (the console has no access to the cluster itself)."""
+    path = os.path.join(conf.get('VOLUME_DIR', '/data/xpam'), 'core', 'data', 'ha', 'request.json')
+    try:
+        with open(path) as f:
+            req = json.load(f)
+        os.remove(path)
+    except (OSError, ValueError):
+        return None
+    if req.get('action') != 'switchover' or time.time() - float(req.get('time') or 0) > 120:
+        return {'action': 'switchover', 'ok': False, 'message': 'request expired', 'time': int(time.time())}
+    leader = next((m['name'] for m in members or [] if m['role'] == 'leader'), None)
+    candidate = next((m['name'] for m in members or [] if m['role'] == 'sync_standby' and m['state'] == 'streaming'), None)
+    if leader != conf['HA_NODE_NAME'] or not candidate:
+        return {'action': 'switchover', 'ok': False, 'message': 'no standby in sync', 'time': int(time.time())}
+    code, data = patroni(conf, 'switchover', method='POST', auth=True, timeout=60,
+                         body={'leader': leader, 'candidate': candidate})
+    log(f"switchover to {candidate} asked by {req.get('by', '?')} in the console: HTTP {code}")
+    return {'action': 'switchover', 'ok': code in (200, 202), 'message': str(data.get('message', ''))[:200],
+            'by': req.get('by', ''), 'time': int(time.time())}
+
+
 def write_status(conf, status):
     path = os.path.join(conf.get('VOLUME_DIR', '/data/xpam'), 'core', 'data', 'ha')
     os.makedirs(path, exist_ok=True)
@@ -243,6 +303,7 @@ def main():
     last_stable = previous_role(conf)   # (None on the first start after setup: no notice then)
     notify_pending = False
     reach = {'peer_reachable': None, 'witness_reachable': None}
+    last_request = None
     unknown_since = None
     last_sync, sync = 0, {'ok': None, 'time': None, 'error': ''}
     log(f"agent started on {conf['HA_NODE_NAME']} ({conf['HA_NODE_IP']}), peer {conf['HA_PEER_IP']}, "
@@ -297,6 +358,11 @@ def main():
                     log(f'role: {role}')
                     acted = role
 
+            members = cluster(conf)
+            if role == 'primary':
+                result = handle_request(conf, members)
+                if result:
+                    last_request = result
             if now - last_probe >= 30:  # (not every loop: the other machines log each connection)
                 reach = {'peer_reachable': peer_alive(conf), 'witness_reachable': witness_alive(conf)}
                 last_probe = now
@@ -304,7 +370,7 @@ def main():
                 'node': conf['HA_NODE_NAME'], 'node_ip': conf['HA_NODE_IP'], 'peer_ip': conf['HA_PEER_IP'],
                 'witness_ip': conf['HA_WITNESS_IP'], 'role': role, 'app_running': app_running(),
                 **reach, 'file_sync': sync, 'updated': int(now),
-                'floating_ip': conf.get('HA_VIP', ''),
+                'floating_ip': conf.get('HA_VIP', ''), 'members': members, 'request': last_request,
             })
         except Exception as e:  # never die: the service manager would restart us anyway
             log('error:', repr(e))
@@ -312,4 +378,9 @@ def main():
 
 
 if __name__ == '__main__':
+    if sys.argv[1:] == ['firewall']:  # (xpam-ha-firewall.service: before Docker publishes any port)
+        c = read_config()
+        if c.get('HA_ENABLED') == '1':
+            ensure_firewall(c)
+        sys.exit(0)
     sys.exit(main())

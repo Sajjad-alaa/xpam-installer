@@ -1,5 +1,19 @@
 services:
-  # XPAM high availability: the standby's Redis follows the primary's (the agent sets REPLICAOF)
+  # XPAM high availability: the standby's Redis follows the primary's over TLS (port 6380, client
+  # certificate of the cluster CA required). The plain port 6379 stays inside Docker (XPAM's containers).
   redis:
+    command:
+      - sh
+      - -c
+      - >-
+        umask 077 &&
+        rm -rf /tmp/redis-auth.conf /tmp/xpam-tls && mkdir -p /tmp/xpam-tls &&
+        cp /etc/xpam-ha/ca.crt /etc/xpam-ha/node.crt /etc/xpam-ha/node.key /tmp/xpam-tls/ &&
+        chown -R redis:redis /tmp/xpam-tls &&
+        printf 'include /etc/redis.conf\nrequirepass "%s"\nmasterauth "%s"\ntls-port 6380\ntls-cert-file /tmp/xpam-tls/node.crt\ntls-key-file /tmp/xpam-tls/node.key\ntls-ca-cert-file /tmp/xpam-tls/ca.crt\ntls-auth-clients yes\ntls-replication yes\n' "$$REDIS_PASSWORD" "$$REDIS_PASSWORD" > /tmp/redis-auth.conf &&
+        chown redis:redis /tmp/redis-auth.conf &&
+        exec docker-entrypoint.sh redis-server /tmp/redis-auth.conf
     ports:
-      - "${HA_NODE_IP}:6379:6379"
+      - "${HA_NODE_IP}:6380:6380"
+    volumes:
+      - ${CONFIG_DIR}/ha/certs:/etc/xpam-ha:ro

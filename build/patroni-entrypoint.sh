@@ -4,7 +4,7 @@
 set -euo pipefail
 
 : "${HA_NODE_NAME:?}" "${HA_NODE_IP:?}" "${HA_PEER_IP:?}" "${HA_WITNESS_IP:?}"
-: "${DB_USER:?}" "${DB_PASSWORD:?}" "${HA_REPL_PASSWORD:?}" "${HA_PATRONI_PASSWORD:?}"
+: "${DB_USER:?}" "${DB_PASSWORD:?}" "${HA_REPL_PASSWORD:?}" "${HA_PATRONI_PASSWORD:?}" "${HA_REWIND_PASSWORD:?}"
 
 RUN=/run/xpam-ha
 DATA=/var/lib/postgresql/data
@@ -22,6 +22,7 @@ ip, peer, witness = e['HA_NODE_IP'], e['HA_PEER_IP'], e['HA_WITNESS_IP']
 run = '/run/xpam-ha'
 subnet = e.get('DOCKER_SUBNET') or '192.168.250.0/24'
 user = e['DB_USER']
+tls = {'sslmode': 'verify-ca', 'sslcert': f'{run}/node.crt', 'sslkey': f'{run}/node.key', 'sslrootcert': f'{run}/ca.crt'}
 params = {
     'wal_level': 'replica', 'hot_standby': 'on', 'wal_log_hints': 'on', 'max_wal_senders': 10,
     'max_replication_slots': 10, 'wal_keep_size': '1GB', 'max_connections': int(e.get('HA_PG_MAX_CONNECTIONS') or 500),
@@ -31,10 +32,15 @@ params = {
 config = {
     'scope': 'xpam', 'namespace': '/xpam/', 'name': e['HA_NODE_NAME'],
     'log': {'level': 'INFO'},
+    # the REST API: TLS, every call needs a client certificate of the cluster CA (also the status pages);
+    # changes need the password too. Patroni's own calls to the other server use the ctl certificate.
     'restapi': {
         'listen': '0.0.0.0:8008', 'connect_address': f'{ip}:8008',
+        'certfile': f'{run}/node.crt', 'keyfile': f'{run}/node.key', 'cafile': f'{run}/ca.crt',
+        'verify_client': 'required',
         'authentication': {'username': 'patroni', 'password': e['HA_PATRONI_PASSWORD']},
     },
+    'ctl': {'certfile': f'{run}/node.crt', 'keyfile': f'{run}/node.key', 'cacert': f'{run}/ca.crt'},
     'etcd3': {
         'hosts': [f'{h}:2379' for h in (ip, peer, witness)], 'protocol': 'https',
         'cacert': f'{run}/ca.crt', 'cert': f'{run}/node.crt', 'key': f'{run}/node.key',
@@ -56,20 +62,21 @@ config = {
         'listen': '0.0.0.0:5432', 'connect_address': f'{ip}:5432',
         'data_dir': '/var/lib/postgresql/data', 'bin_dir': '/usr/lib/postgresql/16/bin',
         'pgpass': f'{run}/pgpass', 'parameters': params,
+        # the other server connects only as replicator (replication) and xpam_rewind (the four functions
+        # pg_rewind reads), each with a password AND a client certificate of the cluster CA; XPAM's own
+        # account (a superuser) is reachable from XPAM's containers only
         'authentication': {
             'superuser': {'username': user, 'password': e['DB_PASSWORD']},
-            'replication': {'username': 'replicator', 'password': e['HA_REPL_PASSWORD']},
-            'rewind': {'username': user, 'password': e['DB_PASSWORD']},
+            'replication': {'username': 'replicator', 'password': e['HA_REPL_PASSWORD'], **tls},
+            'rewind': {'username': 'xpam_rewind', 'password': e['HA_REWIND_PASSWORD'], **tls},
         },
         'pg_hba': [
             'local all all trust',
             'host all all 127.0.0.1/32 scram-sha-256',
-            f'host all all {subnet} scram-sha-256',
-            f'host replication replicator {subnet} scram-sha-256',
-            'host replication replicator 127.0.0.1/32 scram-sha-256',
-            f'hostssl replication replicator {peer}/32 scram-sha-256',
-            f'hostssl replication replicator {ip}/32 scram-sha-256',
-            f'hostssl all {user} {peer}/32 scram-sha-256',
+            f'host all {user} {subnet} scram-sha-256',
+            'host replication replicator 127.0.0.1/32 scram-sha-256',  # (Patroni reads its own position)
+            f'hostssl replication replicator {peer}/32 scram-sha-256 clientcert=verify-ca',
+            f'hostssl postgres xpam_rewind {peer}/32 scram-sha-256 clientcert=verify-ca',
         ],
         'create_replica_methods': ['basebackup'],
         'basebackup': [{'checkpoint': 'fast'}],
@@ -86,7 +93,8 @@ chown postgres:postgres "$RUN/patroni.yml"
 # A server without data never starts a cluster of its own (that would split XPAM into two databases):
 # it waits for the primary and copies it. Only the converted single server (with data) can lead first.
 if [[ ! -s "$DATA/PG_VERSION" ]]; then
-  until curl -fsS -o /dev/null --max-time 3 "http://${HA_PEER_IP}:8008/primary"; do
+  until curl -fsS -o /dev/null --max-time 3 --cacert "$RUN/ca.crt" --cert "$RUN/node.crt" --key "$RUN/node.key" \
+      "https://${HA_PEER_IP}:8008/primary"; do
     echo "No data yet: waiting for the primary on ${HA_PEER_IP} to copy it..."
     sleep 5
   done

@@ -1,0 +1,13 @@
+[Unit]
+Description=XPAM high availability firewall (before Docker publishes the cluster ports)
+Before=docker.service
+DefaultDependencies=no
+After=network-pre.target local-fs.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 /opt/xpam-installer/ha/agent.py firewall
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target docker.service

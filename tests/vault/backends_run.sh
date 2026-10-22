@@ -93,11 +93,25 @@ ROOT=$(python3 -c 'import json,sys; print(json.loads(sys.argv[1])["root_token"])
 docker exec $VE tvvault vault operator unseal "$KEY" >/dev/null; sleep 4
 V() { docker exec -i $VE -e VAULT_TOKEN="$ROOT" tvvault vault "$@"; }
 V secrets enable -path=xpam -version=2 kv >/dev/null
+V secrets enable -path=xpam-transit transit >/dev/null
+V write -f xpam-transit/keys/data type=aes256-gcm96 derived=true exportable=false auto_rotate_period=168h >/dev/null
+printf 'X-Vault-Token: %s\n' "$ROOT" > "$W/root.hdr"; chmod 644 "$W/root.hdr"   # (test only: rotating by hand)
 V policy write xpam - >/dev/null <<'EOF'
 path "xpam/data/orgs/*"     { capabilities = ["create", "read", "update", "patch", "delete"] }
 path "xpam/metadata/orgs/*" { capabilities = ["create", "read", "update", "patch", "delete", "list"] }
 path "xpam/data/accounts/*"     { capabilities = ["create", "read", "update", "patch", "delete"] }
 path "xpam/metadata/accounts/*" { capabilities = ["create", "read", "update", "patch", "delete", "list"] }
+path "xpam-transit/encrypt/data" { capabilities = ["update"] }
+path "xpam-transit/decrypt/data" { capabilities = ["update"] }
+path "xpam-transit/rewrap/data"  { capabilities = ["update"] }
+path "xpam-transit/keys/data"    { capabilities = ["read"] }
+path "xpam-transit/keys/data/config" {
+  capabilities = ["update"]
+  allowed_parameters = {
+    "min_decryption_version" = []
+    "auto_rotate_period"     = []
+  }
+}
 path "auth/token/lookup-self" { capabilities = ["read"] }
 path "auth/token/renew-self"  { capabilities = ["update"] }
 path "auth/token/revoke-self" { capabilities = ["update"] }
@@ -167,6 +181,25 @@ docker run --rm --name tvcore --network $NET --ip $CORE_IP --env-file "$W/core.e
   -e VAULT_HCP_CLIENT_KEY_FILE=/vc/client.key -e XPAM_TEST_CONNECTIONS="$CONNS" \
   -v "$HERE/routing_test.py:/t/routing_test.py:ro" -v "$W/vc:/vc:ro" \
   --entrypoint /opt/py3/bin/python "xpam/core:$TAG" /t/routing_test.py 2>&1 | grep -E '^(PASS|FAIL|RESULT)|Error|Traceback'
+
+say "data keys: Vault Transit and the local keyring"
+for mode in transit local; do
+  extra=()
+  [[ $mode == transit ]] && extra=(-e XPAM_DATA_KEY=transit -e VAULT_TRANSIT_MOUNT=xpam-transit -e VAULT_HCP_HOST=https://tvvault:8200
+    -e VAULT_HCP_AUTH=cert -e VAULT_HCP_CERT_ROLE=xpam-test -e VAULT_HCP_CA_FILE=/vc/ca.crt
+    -e VAULT_HCP_CLIENT_CERT_FILE=/vc/client.crt -e VAULT_HCP_CLIENT_KEY_FILE=/vc/client.key -e XPAM_TEST_VAULT_ROOT_HDR=/w/root.hdr)
+  if [[ $mode == local ]]; then
+    # (its own database: values of the transit stage cannot be opened without Vault)
+    docker exec tvpg createdb -U postgres jumpserver_local 2>/dev/null
+    docker run --rm --network $NET --env-file "$W/core.env" -e DB_NAME=jumpserver_local --entrypoint sh "xpam/core:$TAG" \
+      -c 'cd /opt/jumpserver/apps && python manage.py migrate >/dev/null 2>&1'
+    extra=(-e XPAM_DATA_KEY=local -e DB_NAME=jumpserver_local)
+  fi
+  docker rm -f tvcore >/dev/null 2>&1
+  docker run --rm --name tvcore --network $NET --ip $CORE_IP --env-file "$W/core.env" "${extra[@]}" \
+    -v "$HERE/datakey_test.py:/t/datakey_test.py:ro" -v "$W/vc:/vc:ro" -v "$W:/w:ro" \
+    --entrypoint /opt/py3/bin/python "xpam/core:$TAG" /t/datakey_test.py $mode 2>&1 | grep -E '^(PASS|FAIL|RESULT)|Error|Traceback'
+done
 
 say "what the vendors saw"
 docker exec tvmock python3 -c "import urllib.request,json; print('delinea', json.load(urllib.request.urlopen('http://localhost:8301/_state'))['calls'], 'calls;', 'google', json.load(urllib.request.urlopen('http://localhost:8302/_state'))['calls'], 'calls')" 2>/dev/null

@@ -110,6 +110,8 @@ function setup_vault_after_install() {
       ;;
     *)
       echo_warn "XPAM's secrets stay on this server (config.txt). Later: xpamctl vault local, or xpamctl vault connect <bundle>"
+      # at least versioned data keys, rotated without downtime (the keyring is protected by SECRET_KEY)
+      bash "${BASE_DIR}/vault.sh" data-key local >/dev/null 2>&1 || true
       ;;
   esac
 }

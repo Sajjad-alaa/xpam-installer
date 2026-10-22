@@ -358,6 +358,19 @@ path "$1/data/accounts/*"     { capabilities = ["create", "read", "update", "pat
 path "$1/metadata/accounts/*" { capabilities = ["create", "read", "update", "patch", "delete", "list"] }
 # its startup secrets: read and write (rotation); never delete or destroy their history
 path "$1-startup/data/config" { capabilities = ["create", "read", "update"] }
+# its data key (Transit): encrypt, decrypt, re-wrap; see the key's versions; set when old versions stop
+# opening anything and how often it rotates — never export, trim or delete it
+path "$1-transit/encrypt/data" { capabilities = ["update"] }
+path "$1-transit/decrypt/data" { capabilities = ["update"] }
+path "$1-transit/rewrap/data"  { capabilities = ["update"] }
+path "$1-transit/keys/data"    { capabilities = ["read"] }
+path "$1-transit/keys/data/config" {
+  capabilities = ["update"]
+  allowed_parameters = {
+    "min_decryption_version" = []
+    "auto_rotate_period"     = []
+  }
+}
 # its own token only
 path "auth/token/lookup-self" { capabilities = ["read"] }
 path "auth/token/renew-self"  { capabilities = ["update"] }
@@ -392,6 +405,8 @@ path "auth/cert/certs/xpam-*" {
   }
 }
 path "sys/leases/revoke-prefix/auth/cert/login" { capabilities = ["update", "sudo"] }
+# the data key's versions and rotation (never encrypt or decrypt with it)
+path "$1-transit/keys/data" { capabilities = ["read"] }
 path "auth/token/lookup-self" { capabilities = ["read"] }
 path "auth/token/renew-self"  { capabilities = ["update"] }
 path "auth/token/revoke-self" { capabilities = ["update"] }
@@ -437,6 +452,7 @@ VAULT_ROLE=xpam-$(dashed "${ip}")
 VAULT_CLUSTER=${CLUSTER}
 VAULT_ACCOUNT_MOUNT=${CLUSTER}
 VAULT_STARTUP_PATH=${CLUSTER}-startup/data/config
+VAULT_TRANSIT_MOUNT=${CLUSTER}-transit
 EOF
   mkdir -p "${BASE}/out"
   encrypt_dir "${d}" "${BASE}/out/xpam-vault-${ip}.enc"
@@ -610,6 +626,13 @@ EOF
   code=$(api_code POST "sys/mounts/${CLUSTER}-startup" -H @"${hdr}" \
     --data '{"type":"kv","options":{"version":"2"},"description":"XPAM startup secrets"}')
   [[ "${code}" == 204 ]] || die "startup store: $(cat "${SCRATCH}/out")"
+  # the data key: never leaves Vault, a derived key per value, rotated every 7 days (old versions still open
+  # values until XPAM has re-wrapped them)
+  code=$(api_code POST "sys/mounts/${CLUSTER}-transit" -H @"${hdr}" --data '{"type":"transit","description":"XPAM data key"}')
+  [[ "${code}" == 204 ]] || die "transit: $(cat "${SCRATCH}/out")"
+  code=$(api_code POST "${CLUSTER}-transit/keys/data" -H @"${hdr}" \
+    --data '{"type":"aes256-gcm96","derived":true,"exportable":false,"allow_plaintext_backup":false,"auto_rotate_period":"168h"}')
+  [[ "${code}" == 200 || "${code}" == 204 ]] || die "data key: $(cat "${SCRATCH}/out")"
   api_code POST "${CLUSTER}/config" -H @"${hdr}" --data '{"max_versions":20}' >/dev/null
   api_code POST "${CLUSTER}-startup/config" -H @"${hdr}" --data '{"max_versions":50}' >/dev/null
 

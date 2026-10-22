@@ -8,6 +8,8 @@
 #   xpamctl vault add-connection <name> <type> <settings.json | --bundle file>   a further vault (several vaults:
 #                                                    storage rules per organization / asset group, mirrors)
 #   xpamctl vault list-connections | remove-connection <name>
+#   xpamctl vault rotation daily|weekly|monthly|off  how often the data key rotates (no downtime)
+#   xpamctl vault data-key local|legacy              without Vault: a versioned keyring (rotated) or SECRET_KEY
 #   xpamctl vault status                             connection, login, where each secret is
 #   xpamctl vault verify                             prove it: TLS 1.3, certificates, least privilege, no secret left
 #   xpamctl vault fetch [--wait]                     read the secrets from Vault into memory (boot service)
@@ -256,10 +258,7 @@ cmd_connect() {
   [[ -f "${d}/vault.env" && -f "${d}/client.key" ]] || { log_error "Wrong bundle passphrase (or not an XPAM bundle of the Vault kit)"; return 1; }
   if [[ "${moving}" == 1 ]]; then
     echo_yellow "0. Moving from $(venv VAULT_ADDRS): account secrets back into the database first"
-    core_exec <<'PY' >/dev/null || { log_error "Reading the account secrets from the current Vault failed: nothing changed"; return 1; }
-from accounts.tasks.vault import restore_secret_from_vault
-restore_secret_from_vault()
-PY
+    to_legacy_data_key >/dev/null || { log_error "Reading the secrets from the current Vault failed: nothing changed"; return 1; }
     cp "${RUN}/all.env" "${SCRATCH}/current.env"; source_file="${SCRATCH}/current.env"
     rm -rf "${VDIR}.previous"; mv "${VDIR}" "${VDIR}.previous"
   fi
@@ -358,6 +357,10 @@ for model in (Account, AccountTemplate, PersonalAssetCredential):
 print(n)
 EOF
 )
+  if [[ "$(get_config XPAM_DATA_KEY)" == transit ]]; then
+    reencrypt_with_current_key >/dev/null && echo_check "every encrypted value now uses the data key in Vault (Transit)" \
+      || echo_warn "re-encryption with the Vault data key will finish in the background (daily task)"
+  fi
   if [[ "${left}" == 0 ]]; then echo_check "the database keeps no account secret"; else
     echo_warn "account secrets still in the database: ${left:-unknown} (xpamctl vault status; the console: System settings → Vault → Sync)"
   fi
@@ -392,9 +395,33 @@ set_vault_config() { # XPAM's account storage in Vault with this server's login,
   set_config VAULT_HCP_CLIENT_CERT_FILE "${VCLIENT_IN_CONTAINER}/client.crt"
   set_config VAULT_HCP_CLIENT_KEY_FILE "${VCLIENT_IN_CONTAINER}/client.key"
   set_config VAULT_LOCKED true
+  # the data key in Vault Transit (bundles of the kit since 5.1.17): it never leaves Vault
+  if [[ -n "$(venv VAULT_TRANSIT_MOUNT)" ]]; then
+    set_config XPAM_DATA_KEY transit
+    set_config VAULT_TRANSIT_MOUNT "$(venv VAULT_TRANSIT_MOUNT)"
+    set_config VAULT_TRANSIT_KEY data
+  fi
   local key
   for key in ${XPAM_VAULT_SECRET_KEYS}; do blank_config "${key}"; done
   set_config XPAM_SECRETS_FROM_VAULT 1
+}
+
+to_legacy_data_key() { # every value back under SECRET_KEY (before leaving or changing Vault), account secrets included
+  core_exec <<'PY'
+from django.conf import settings
+settings.XPAM_DATA_KEY = 'legacy'
+from accounts.tasks.vault import restore_secret_from_vault
+restore_secret_from_vault()
+from settings.tasks.datakey import _reencrypt_database
+print('re-encrypted', _reencrypt_database(None))
+PY
+}
+
+reencrypt_with_current_key() { # after XPAM restarted with its data key: every value to it, now
+  core_exec <<'PY'
+from settings.tasks.datakey import rotate_data_keys
+print(rotate_data_keys())
+PY
 }
 
 cmd_attach() { # dir (ca.crt, client.crt, client.key, vault.env) — 'ha join': the secrets are already in Vault
@@ -471,6 +498,36 @@ PY
   echo_check "${name}: usable in System settings → Vault → Storage rules (and as a mirror)"
   [[ "${src}" != "--bundle" ]] && echo "  Delete the settings file: shred -u ${src}"
   return 0
+}
+
+cmd_rotation() { # daily|weekly|monthly|off — how often the data key rotates (no downtime)
+  local period=$1 hours
+  case "${period}" in
+    daily) hours=24h ;; weekly) hours=168h ;; monthly) hours=720h ;; off) hours=0 ;;
+    *) echo "usage: xpamctl vault rotation daily|weekly|monthly|off"; return 2 ;;
+  esac
+  set_config XPAM_DATA_KEY_ROTATION "${period}"
+  if [[ "$(get_config XPAM_DATA_KEY)" == transit ]]; then
+    XV_P="${hours}" docker exec -i -e XV_P xpam_core bash -c 'cd /opt/jumpserver/apps && python manage.py shell 2>/dev/null' <<'PY' \
+      || { log_error "Vault did not accept the rotation period"; return 1; }
+import os
+from common.db import datakey
+datakey.transit.set_config(auto_rotate_period=os.environ['XV_P'])
+print(datakey.transit.info().get('auto_rotate_period'))
+PY
+  fi
+  echo_check "data key rotation: ${period} (re-encryption runs every night; XPAM keeps running)"
+}
+
+cmd_data_key() { # local|legacy — without Vault: a versioned keyring in the database, rotated on schedule
+  local p=$1
+  [[ "${p}" == local || "${p}" == legacy ]] || { echo "usage: xpamctl vault data-key local|legacy"; return 2; }
+  secrets_from_vault && { log_error "Connected to Vault: the data key is in Vault (Transit)"; return 1; }
+  set_config XPAM_DATA_KEY "${p}"
+  (cd "${PROJECT_DIR}" && bash ./xpamctl.sh restart >/dev/null 2>&1)
+  local i
+  for i in $(seq 1 60); do docker ps --format '{{.Names}} {{.Status}}' | grep -q '^xpam_core .*(healthy)' && break; sleep 5; done
+  reencrypt_with_current_key
 }
 
 cmd_status() {
@@ -576,11 +633,8 @@ cmd_disconnect() {
     log_error "Vault cannot be read. To recover from the recovery copy: openssl enc -d -aes-256-cbc -pbkdf2 -iter 600000 -in ${VDIR}/escrow.enc"
     return 1
   fi
-  echo_yellow "1. Account secrets back into the database"
-  core_exec <<'EOF' >/dev/null
-from accounts.tasks.vault import restore_secret_from_vault
-restore_secret_from_vault()
-EOF
+  echo_yellow "1. Account secrets back into the database, everything under SECRET_KEY again"
+  to_legacy_data_key >/dev/null || { log_error "The secrets could not be read from Vault: nothing changed"; return 1; }
   echo_yellow "2. Secrets back into config.txt"
   local line key value
   set_config XPAM_SECRETS_FROM_VAULT 0
@@ -590,6 +644,7 @@ EOF
   done < "${RUN}/all.env"
   set_config VAULT_ENABLED false
   set_config VAULT_LOCKED false
+  set_config XPAM_DATA_KEY legacy
   set_config VAULT_HCP_AUTH token
   systemctl disable --now xpam-secrets.service >/dev/null 2>&1 || true
   rm -f /etc/systemd/system/xpam-secrets.service /etc/tmpfiles.d/xpam-secrets.conf
@@ -619,6 +674,8 @@ case "${1:-}" in
   verify) cmd_verify ;;
   attach) cmd_attach "${2:-}" ;;
   local) cmd_local ;;
+  rotation) cmd_rotation "${2:-}" ;;
+  data-key) cmd_data_key "${2:-}" ;;
   add-connection) cmd_add_connection "${2:-}" "${3:-}" "${4:-}" "${5:-}" ;;
   list-connections) core_manage xpam_vault_connection list ;;
   remove-connection) core_manage xpam_vault_connection remove --name "${2:-}" ;;

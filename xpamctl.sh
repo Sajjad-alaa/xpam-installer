@@ -84,7 +84,7 @@ function usage() {
   echo "  backup_no_audit   $(gettext 'Backup database without audit data')"
   echo "  backup_audit      $(gettext 'Backup audits tables')"
   echo "  restore_db [file]        $(gettext 'Data recovery through database backup file')"
-  echo "  rotate-secret-key [-y]   Replace SECRET_KEY and re-encrypt all stored secrets (short downtime)"
+  echo "  rotate-secret-key [-y] [--schedule weekly|monthly|off]   Replace SECRET_KEY (with a data key: nobody signed out)"
   echo "  ha init|join|status|switchover|failover   High availability: two servers and a witness (see docs)"
   echo "  vault connect|status|disconnect           Secrets in HashiCorp Vault (the XPAM Vault kit, see docs)"
   echo "  fetch-applet-files       Put the Windows publishing host installers on this server (checksum checked)"
@@ -391,7 +391,7 @@ function main() {
     bash "${SCRIPT_DIR}/vault.sh" "${@:2}"
     ;;
   rotate-secret-key)
-    bash "${SCRIPT_DIR}/rotate_secret_key.sh" "${target}"
+    bash "${SCRIPT_DIR}/rotate_secret_key.sh" "${@:2}"
     ;;
   restore_db)
     bash "${SCRIPT_DIR}/6_db_restore.sh" "$target"

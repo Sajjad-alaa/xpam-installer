@@ -12,7 +12,7 @@ TAG=${1:-v5.1.17}
 NET=xvt; V=172.31.6.11; X=172.31.6.21
 PASS=0; FAIL=0
 check() { if eval "$2"; then echo "PASS $1"; PASS=$((PASS+1)); else echo "FAIL $1"; FAIL=$((FAIL+1)); fi; }
-on() { local n=$1; shift; docker exec "$n" bash -lc "$*"; }
+on() { local n=$1; shift; docker exec -i "$n" bash -lc "$*"; }  # (-i: scripts can be piped in)
 wait_for() { for _ in $(seq "${2:-60}"); do eval "$1" && return 0; sleep 5; done; return 1; }
 say() { echo "== $(date +%T) $*"; }
 cleanup() {
@@ -93,6 +93,13 @@ check 'local: XPAM runs with its secrets from the local Vault' "wait_for \"on xv
 check 'local: xpamctl vault verify passes (TLS 1.3, certificates, least privilege, nothing on disk)' "on xvtx 'cd /opt/xpam-installer && bash ./xpamctl.sh vault verify' > /tmp/xvt-verify-local.log 2>&1"
 grep -E "FAIL|passed" /tmp/xvt-verify-local.log | head -8
 docker restart xvtx >/dev/null
+DK="import json
+try:
+    from settings.tasks.datakey import data_key_status
+    print('dk', json.dumps(data_key_status()))
+except Exception as e:
+    print('dk error', type(e).__name__, e)"
+check 'local: the data key is in the local Vault (Transit); every value uses it' "printf '%s\n' \"\$DK\" | on xvtx \"$CORE_SHELL\" | grep '^dk ' | grep -q '\"provider\": \"transit\"' && ! printf '%s\n' \"\$DK\" | on xvtx \"$CORE_SHELL\" | grep '^dk ' | grep -q '\"legacy\"'"
 check 'local: after a reboot the local Vault unseals itself and XPAM starts' "wait_for \"on xvtx 'docker ps --format \\\"{{.Names}} {{.Status}}\\\"' 2>/dev/null | grep -q '^xpam_core .*(healthy)'\" 72"
 
 say "Vault (the kit, one server)"
@@ -115,7 +122,8 @@ check 'XPAM runs with its secrets from Vault' "wait_for \"on xvtx 'docker ps --f
 check 'the SSH/RDP service runs with its secrets from Vault' "wait_for \"on xvtx 'docker ps --format \\\"{{.Names}} {{.Status}}\\\"' | grep -q '^xpam_secureconnection .*(healthy)'\" 40"
 check 'the database keeps only the marker' "[[ \$(printf '%s\nprint(a._secret == VAULT_SAVED_SECRET_MARK)\n' \"\$ACC\" | on xvtx \"$CORE_SHELL\" | tail -1) == True ]]"
 check 'XPAM still reads the password (docker exec too: the secrets file is read by every process)' "[[ \$(printf '%s\nprint(a.secret)\n' \"\$ACC\" | on xvtx \"$CORE_SHELL\" | tail -1) == $CANARY ]]"
-check 'status: nothing left in config.txt, no account secret in the database' "on xvtx 'cd /opt/xpam-installer && bash ./xpamctl.sh vault status' | grep -q 'in config.txt   none' && on xvtx 'cd /opt/xpam-installer && bash ./xpamctl.sh vault status' | grep -q 'in the database: 0'"
+STATUS_OUT=$(on xvtx 'cd /opt/xpam-installer && bash ./xpamctl.sh vault status' 2>&1)
+check 'status: nothing left in config.txt, no account secret in the database' "grep -q 'in config.txt   none' <<<\"\$STATUS_OUT\" && grep -q 'in the database: 0' <<<\"\$STATUS_OUT\""
 CONSOLE="from django.test import Client; from users.models import User
 c = Client(HTTP_HOST='localhost'); c.force_login(User.objects.get(username='admin'))
 evil = '{\"VAULT_HCP_HOST\": \"https://evil:8200\"}'
@@ -127,6 +135,7 @@ CODES=$(printf '%s\n' "$CONSOLE" | on xvtx "$CORE_SHELL" | grep '^console ' | ta
 check 'console: the vault settings cannot be changed' "grep -q 'hcp=403' <<<'$CODES'"
 check 'console: secrets cannot be restored into the database' "grep -q 'restore=403' <<<'$CODES'"
 check 'console: Test checks the configured Vault (not the address given)' "grep -q 'test=200' <<<'$CODES'"
+check 'the data key moved too: every value now uses the Vault server Transit key' "on xvtx 'grep -q \"^VAULT_TRANSIT_MOUNT=xpam-transit\" /opt/xpam/config/config.txt' && printf '%s\n' \"\$DK\" | on xvtx \"$CORE_SHELL\" | grep '^dk ' | grep -q '\"provider\": \"transit\"' && ! printf '%s\n' \"\$DK\" | on xvtx \"$CORE_SHELL\" | grep '^dk ' | grep -q '\"legacy\"'"
 check 'xpamctl vault verify passes against the Vault server' "on xvtx 'cd /opt/xpam-installer && bash ./xpamctl.sh vault verify' > /tmp/xvt-verify.log 2>&1"
 grep -E "FAIL|passed" /tmp/xvt-verify.log | head -8
 
@@ -148,14 +157,25 @@ on xvtv 'docker start xpam_vault >/dev/null'; sleep 5
 docker exec xvtv head -3 /root/shares | docker exec -i xvtv bash /src/vault/xpam-vault.sh unseal >/dev/null
 check 'once Vault is back (unsealed), XPAM starts by itself' "wait_for \"on xvtx 'docker ps --format \\\"{{.Names}} {{.Status}}\\\"' 2>/dev/null | grep -q '^xpam_core .*(healthy)'\" 60"
 
-say "SECRET_KEY rotation"
+say "SECRET_KEY rotation (with the data key: nobody signed out)"
+SESS_NEW="from django.test import Client; from django.conf import settings; from users.models import User
+c = Client(HTTP_HOST='localhost'); c.force_login(User.objects.get(username='admin'))
+print('session', c.cookies[settings.SESSION_COOKIE_NAME].value)"
+SESSION=$(printf '%s\n' "$SESS_NEW" | on xvtx "$CORE_SHELL" | grep '^session ' | tail -1 | cut -d' ' -f2)
+SESS_CHECK="from django.test import Client; from django.conf import settings
+c = Client(HTTP_HOST='localhost'); c.cookies[settings.SESSION_COOKIE_NAME] = '$SESSION'
+print('profile', c.get('/api/v1/users/profile/').status_code)"
+check 'before the rotation: a signed-in session works' "[[ -n '$SESSION' ]] && printf '%s\\n' \"\$SESS_CHECK\" | on xvtx \"$CORE_SHELL\" | grep '^profile 200' >/dev/null"
 on xvtx 'cd /opt/xpam-installer && timeout 1200 bash ./xpamctl.sh rotate-secret-key -y > /root/rotate.log 2>&1'
 check 'the new key is in Vault (not in config.txt)' "! on xvtx 'grep -qx \"SECRET_KEY=$SECRET_BEFORE\" /run/xpam/secrets/all.env' && ! on xvtx 'grep -E \"^SECRET_KEY=.\" /opt/xpam/config/config.txt'"
 check 'the password is still readable after the rotation' "wait_for \"on xvtx 'docker ps --format \\\"{{.Names}} {{.Status}}\\\"' | grep -q '^xpam_core .*(healthy)'\" 40 && [[ \$(printf '%s\nprint(a.secret)\n' \"\$ACC\" | on xvtx \"$CORE_SHELL\" | tail -1) == $CANARY ]]"
+check 'the same session is still signed in after the rotation' "printf '%s\\n' \"\$SESS_CHECK\" | on xvtx \"$CORE_SHELL\" | grep '^profile 200' >/dev/null"
+check 'the previous key is kept as a fallback (in Vault)' "on xvtx 'grep -qx \"SECRET_KEY_PREVIOUS=$SECRET_BEFORE\" /run/xpam/secrets/all.env'"
 check 'and it is back in Vault only' "[[ \$(printf '%s\nprint(a._secret == VAULT_SAVED_SECRET_MARK)\n' \"\$ACC\" | on xvtx \"$CORE_SHELL\" | tail -1) == True ]]"
 
 say "disconnect"
 on xvtx "cd /opt/xpam-installer && timeout 1200 bash ./xpamctl.sh vault disconnect -y > /root/disconnect.log 2>&1"
+check 'disconnect: every value under SECRET_KEY again (no Vault needed to read anything)' "on xvtx 'grep -q \"^XPAM_DATA_KEY=legacy\" /opt/xpam/config/config.txt'"
 check 'disconnect: the secrets are back in config.txt' "on xvtx 'grep -qE \"^SECRET_KEY=.\" /opt/xpam/config/config.txt'"
 check 'XPAM runs without Vault' "wait_for \"on xvtx 'docker ps --format \\\"{{.Names}} {{.Status}}\\\"' | grep -q '^xpam_core .*(healthy)'\" 40"
 check 'the password is back in the database and readable' "[[ \$(printf '%s\nprint(a._secret != VAULT_SAVED_SECRET_MARK and a.secret)\n' \"\$ACC\" | on xvtx \"$CORE_SHELL\" | tail -1) == $CANARY ]]"

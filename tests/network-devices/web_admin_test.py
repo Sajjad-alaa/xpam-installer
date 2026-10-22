@@ -1,7 +1,7 @@
 """Isolated stack (core container + throwaway DB + emulator + browser service on one network): FortiGate / PAN-OS web admin in the Remote browser (core token -> browser service ->
 emulator login page), with the stored account, a wrong password, certificate checking and a JIT account.
 The browser request is built exactly like Lion builds it (pkg/lion/session/xpambrowser.go)."""
-import json, os, ssl, sys, time, traceback, urllib.request
+import json, os, secrets, ssl, sys, time, traceback, urllib.request
 from urllib.parse import urlsplit
 sys.path.insert(0, '/opt/jumpserver/apps'); os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'jumpserver.settings')
 import django; django.setup()
@@ -149,7 +149,7 @@ for name, ssh_port, gui_port in CASES:
         hit = browse_and_wait(body, gui_port, 'admin')
         check(f'{name}: Remote browser signs in to the web admin with the stored account', hit, hit)
 
-        miss = browse_and_wait(lion_body(token_data(asset, 'admin'), password='Wrong-pw_9.z'), gui_port, 'admin', 30)
+        miss = browse_and_wait(lion_body(token_data(asset, 'admin'), password=secrets.token_urlsafe(12)), gui_port, 'admin', 30)
         check(f'{name}: a wrong password does not sign in', not miss, miss)
 
         pp = PlatformProtocol.objects.get(platform__name=name, name='http')

@@ -52,7 +52,8 @@ if [[ -s "${VAULT_FS_TAR:-}" ]]; then
 fi
 on xvcx "cd /opt/xpam-installer && timeout 1500 bash ./xpamctl.sh vault local > /root/local.log 2>&1"
 check 'local Vault connected' "on xvcx 'grep -q \"secrets are in Vault\" /root/local.log'"
-printf '%s' '{"VAULT_DELINEA_URL": "https://ss.example.com/SecretServer", "VAULT_DELINEA_USERNAME": "xpam-app", "VAULT_DELINEA_PASSWORD": "not-shown", "VAULT_DELINEA_FOLDER_ID": "7", "VAULT_DELINEA_TEMPLATE_ID": "6003"}' \
+FAKE_DLN=$(head -c 24 /dev/urandom | od -An -tx1 | tr -d ' \n')  # (a made-up vendor password: the console must never show it)
+printf '{"VAULT_DELINEA_URL": "https://ss.example.com/SecretServer", "VAULT_DELINEA_USERNAME": "xpam-app", "VAULT_DELINEA_PASSWORD": "%s", "VAULT_DELINEA_FOLDER_ID": "7", "VAULT_DELINEA_TEMPLATE_ID": "6003"}' "$FAKE_DLN" \
   | on xvcx "docker exec -i xpam_core bash -c 'cd /opt/jumpserver/apps && python manage.py xpam_vault_connection add --name delinea-prod --type delinea'" >/dev/null 2>&1
 printf '%s\n' "from orgs.utils import set_current_org; from orgs.models import Organization; set_current_org(Organization.default())
 from accounts.models import VaultConnection, VaultStorageRule
@@ -122,7 +123,7 @@ BODY=$(grep '^BODY ' "$PW/result.txt" | cut -d' ' -f2-)
 grep '^ERROR' "$PW/result.txt"
 txt() { python3 -c 'import json,sys; print(json.loads(sys.argv[1]).get(sys.argv[2], ""))' "$BODY" "$1" 2>/dev/null; }
 check 'Account storage shows the data key (Vault Transit) and the lock' "txt account-storage | grep -q 'HashiCorp Vault Transit' && txt account-storage | grep -q 'managed on the XPAM server'"
-check 'Vault connections lists the connection (managed), never its password' "txt vault-connections | grep -q delinea-prod && ! txt vault-connections | grep -q not-shown"
+check 'Vault connections lists the connection (managed), never its password' "txt vault-connections | grep -q delinea-prod && ! txt vault-connections | grep -q \$FAKE_DLN"
 check 'Vault storage rules lists the rule with its organization' "txt vault-storage-rules | grep -q 'network devices' && txt vault-storage-rules | grep -q DEFAULT"
 check 'Vault storage rules: Create is enabled and the form asks for the organization' "[[ \$(txt rule-create-enabled) == true ]] && txt vault-storage-rule-create | grep -q Organization"
 check 'High availability page is there' "txt high-availability | grep -qi 'high availability'"

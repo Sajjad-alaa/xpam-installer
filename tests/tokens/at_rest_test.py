@@ -9,6 +9,7 @@ Run inside a core container connected to a THROWAWAY database (never the live on
     python /t/at_rest_test.py
 """
 import os
+import secrets
 import sys
 from datetime import timedelta
 from types import SimpleNamespace
@@ -46,16 +47,17 @@ org_id = Organization.DEFAULT_ID
 
 # 1. a token created now is stored encrypted and reads back as created
 token = ConnectionToken(user=user, account='@INPUT', protocol='ssh', connect_method='ssh', org_id=org_id)
-token.value = 'Ab3dEf6hIj9kLm0p'
+TOKEN_VALUE = secrets.token_urlsafe(12)  # (made up for this run)
+token.value = TOKEN_VALUE
 token.save()
 stored = raw("SELECT value FROM authentication_connectiontoken WHERE id = %s", [token.id])[0][0]
 check('a new connection token value is stored encrypted', stored != token.value and len(stored) > 64, stored[:20])
-check('it reads back as the original value', ConnectionToken.objects.get(id=token.id).value == 'Ab3dEf6hIj9kLm0p')
+check('it reads back as the original value', ConnectionToken.objects.get(id=token.id).value == TOKEN_VALUE)
 
 # 2. roll back: the value is plain again (as before the upgrade); then add OAuth tokens the old way
 call_command('migrate', 'authentication', '0010', verbosity=0)
 stored = raw("SELECT value FROM authentication_connectiontoken WHERE id = %s", [token.id])[0][0]
-check('rollback leaves the value plain (as before the upgrade)', stored == 'Ab3dEf6hIj9kLm0p', stored[:20])
+check('rollback leaves the value plain (as before the upgrade)', stored == TOKEN_VALUE, stored[:20])
 
 from oauth2_provider.models import get_access_token_model, get_refresh_token_model  # noqa: E402
 from authentication.backends.oauth2_provider.utils import get_or_create_jumpserver_client_application  # noqa: E402
@@ -76,9 +78,9 @@ check('before the upgrade an OAuth token is stored in plain',
 # 3. upgrade
 call_command('migrate', 'authentication', verbosity=0)
 stored = raw("SELECT value FROM authentication_connectiontoken WHERE id = %s", [token.id])[0][0]
-check('the upgrade encrypts existing connection token values', stored != 'Ab3dEf6hIj9kLm0p' and len(stored) > 64)
+check('the upgrade encrypts existing connection token values', stored != TOKEN_VALUE and len(stored) > 64)
 check('an existing token still reads back (still usable)',
-      ConnectionToken.objects.get(id=token.id).value == 'Ab3dEf6hIj9kLm0p')
+      ConnectionToken.objects.get(id=token.id).value == TOKEN_VALUE)
 check('no plain connection token value left in the table',
       not raw("SELECT 1 FROM authentication_connectiontoken WHERE value <> '' AND length(value) <= 64"))
 
@@ -87,7 +89,7 @@ from authentication.serializers import ConnectionTokenSecretSerializer  # noqa: 
 
 field = ConnectionTokenSecretSerializer().fields['value']  # the full token has no asset here: the field only
 value = field.to_representation(field.get_attribute(ConnectionToken.objects.get(id=token.id)))
-check("the components' secret API returns the usable value", value == 'Ab3dEf6hIj9kLm0p')
+check("the components' secret API returns the usable value", value == TOKEN_VALUE)
 
 rows = raw("SELECT token, token_checksum FROM oauth2_provider_accesstoken WHERE id = %s", [at.id])
 check('the upgrade blanks old plain OAuth access tokens (hash kept)', rows[0][0] == '' and len(rows[0][1]) == 64)

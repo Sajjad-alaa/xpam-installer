@@ -398,7 +398,9 @@ services on every server use the primary's database and the main Redis (chosen b
 always over TLS with the cluster's own certificate; recordings and files made on any server are copied to the
 others every minute.
 
-`xpamctl ha init` without options asks which you want. The rest of this section describes active-passive with
+`xpamctl ha init` without options asks which you want. To change it later (or the number of servers), go back to
+one server (`xpamctl ha disable` on every standby, then on the primary) and run `xpamctl ha init` again; a cluster
+set up with 5.1.16 needs this too before it can become active-active (new cluster certificates). The rest of this section describes active-passive with
 two servers and a witness; the steps are the same for more servers (one join bundle per server).
 
 Two XPAM servers run as **primary** and **standby**. The standby has a live copy of the database

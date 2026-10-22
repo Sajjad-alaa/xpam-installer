@@ -327,9 +327,13 @@ template, choose **who** and **which servers**, choose **Instant**, **An approve
 webhook), Slack (incoming webhook) or Telegram (bot token + chat ID); approvers open the request with
 the button, sign in and approve. Users of a rule with *Ask for MFA* cannot switch their MFA off.
 
-**Approvals (5.1.5).** A rule can name its own approvers (*Who approves?* in the wizard, *Approvers*
-in the full form); otherwise Tickets → Flow setup decides. Requests for assets of several rules are
-approved by each rule's approvers in turn. Approvers see waiting requests on the workspace **Access**
+**Approvals (5.1.5, 5.1.19).** *Approved by* in the rule decides who approves what the rule does not
+approve by itself: **An approval flow** (one of Tickets → Flow setup, shown with who approves at each
+level; empty: the organization's flow) or **Specific people**. Requests for assets of several rules are
+approved by each rule's approvers in turn. Before sending, the request form (Workspace and console) says
+whether it is **approved at once** or **needs approval**, why (for example "168 h asked; the rule
+approves up to 2 h by itself", "no reason given") and who approves at each level. A request that waits
+carries the same note, and the approver's inbox shows *Not approved automatically: …*. Approvers see waiting requests on the workspace **Access**
 page (with reason and warnings) and approve or reject there, from the e-mail, or from Teams/Slack/
 Telegram. **Approval settings** sets reminders, escalation to the administrators and when unanswered
 requests close. Nobody can approve their own request.

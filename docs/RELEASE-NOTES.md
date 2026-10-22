@@ -1,5 +1,27 @@
 # XPAM release notes
 
+## 5.1.19 — just-in-time approval you can see; a copy of account passwords in the database (optional)
+
+- **Who approves, in the rule:** *Approved by* is **An approval flow** (pick one of Tickets → Flow setup; the
+  form shows who approves at each level, with a link to edit the flows) or **Specific people**. A
+  self-service request uses the rule's flow. Rules that named approvers keep them.
+- **Before sending:** the Workspace and the console's request form show whether the request is
+  **approved at once** or **needs approval**, why not at once ("168 h asked; the rule approves up to 2 h by
+  itself", "no reason given", "it asks for existing accounts") and who approves at each level. The
+  Workspace no longer guesses: the server decides, as it will when the request is sent.
+- **On the request:** a request that waits says why it wasn't approved at once and who approves it; the
+  approver's inbox shows it as *Not approved automatically*. Requests from the console's form follow the
+  same rules as the Workspace's.
+- **Fix:** in the Workspace request panel, the protocol and action buttons didn't change the choice.
+- **`--keep-db-copy`:** `xpamctl vault local --keep-db-copy` and `xpamctl vault connect <bundle> --keep-db-copy`
+  keep account passwords and keys in Vault **and** a copy in the database, encrypted with the local data
+  key. XPAM reads Vault and falls back to the copy when Vault doesn't answer. `xpamctl vault keep-db-copy on|off`
+  switches it on an installation already connected to Vault (`off` removes the copies and brings the data key
+  back to Vault Transit). The installer asks for it after choosing Vault (`XPAM_VAULT_KEEP_DB_COPY=1` for
+  automation). XPAM's own secrets stay in Vault only. See `docs/VAULT.md`, section 2c.
+- **Fix:** when Vault didn't answer as XPAM started, an account's password could come back as the
+  "saved to vault" marker text. It now comes back empty (or from the copy).
+
 ## 5.1.18 — the access on the ticket; what an access allows
 
 - **Access on the ticket:** an approved access request shows the access it gave: active, scheduled, ended early or

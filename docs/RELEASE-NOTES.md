@@ -50,6 +50,12 @@
   `xpamctl ha status` shows each server's version.
 - **Vault in the HA view:** the console and the agent show each Vault server as XPAM reaches it (TLS 1.3,
   its own certificate), with a warning when one is down or sealed.
+- **One licence for a high availability cluster:** the licence names the cluster (XPAM's database) and lists its
+  servers, up to the number licensed (2 by default). It is valid on those servers only, so a failover keeps the
+  licence. A server that isn't listed gets trial limits until its ID is added, and the licence doesn't work
+  for another company's installation. Single-server licences are unchanged. The License and High
+  availability pages and `xpamctl license-ids` show the IDs; the generator takes `--cluster-id`, `--servers`
+  and `--max-servers`.
 - **Protection status at a glance:** the console dashboard, the High availability page and Account storage
   show whether high availability and Vault are on, their state, where XPAM's own secrets and account secrets
   are, and the data key, with the steps to turn each on.

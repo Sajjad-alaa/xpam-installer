@@ -90,9 +90,10 @@ config = {
         'remove_data_directory_on_rewind_failure': True,
         'remove_data_directory_on_diverged_timelines': True,
     },
-    # xpam_version: the XPAM version installed on this server (xpamctl ha upgrade, ha status)
+    # xpam_version: the XPAM version installed on this server (xpamctl ha upgrade, ha status);
+    # xpam_server_id: its ID for the cluster licence (shown in the console; the licence checks the hardware)
     'tags': {'nofailover': False, 'noloadbalance': False, 'clonefrom': False, 'nosync': False,
-             'xpam_version': e.get('XPAM_VERSION', '')},
+             'xpam_version': e.get('XPAM_VERSION', ''), 'xpam_server_id': e.get('XPAM_SERVER_ID', '')},
 }
 with open(f'{run}/patroni.yml', 'w') as f:
     json.dump(config, f)  # (JSON is valid YAML)

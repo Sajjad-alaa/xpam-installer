@@ -296,7 +296,9 @@ def cluster(conf):
     if code != 200:
         return None
     return [{'name': m.get('name'), 'host': m.get('host'), 'role': m.get('role'), 'state': m.get('state'),
-             'lag': m.get('lag'), 'timeline': m.get('timeline')} for m in data.get('members', [])]
+             'lag': m.get('lag'), 'timeline': m.get('timeline'),
+             'version': (m.get('tags') or {}).get('xpam_version', ''),
+             'server_id': (m.get('tags') or {}).get('xpam_server_id', '')} for m in data.get('members', [])]
 
 
 def handle_request(conf, members):

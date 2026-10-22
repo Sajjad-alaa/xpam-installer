@@ -481,6 +481,12 @@ removes it.
 **Planned maintenance**: `xpamctl ha switchover` (or "Switch to the other server" in the console)
 moves the primary to the standby in about a minute.
 
+**Licence**: one licence covers the cluster. It names the **cluster ID** (from XPAM's database, the same on
+both servers) and **each server's ID** (its hardware). System settings → License and → High availability
+show them; `xpamctl license-ids` prints them on any server, including the standby. Send all of them to your
+vendor. A server that is not in the licence (for example a replacement server) works with trial limits only
+until the vendor issues a licence that lists it, so request it before you add or replace a server.
+
 **Upgrading** (rolling): get the new installer on both servers, then run `xpamctl ha upgrade`:
 
 1. on the **standby**: it checks the cluster (other server in sync, witness, Vault) and upgrades this

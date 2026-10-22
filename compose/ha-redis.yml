@@ -1,6 +1,9 @@
 services:
-  # XPAM high availability: the standby's Redis follows the primary's over TLS (port 6380, client
+  # XPAM high availability: the other servers' Redis follow the main one over TLS (port 6380, client
   # certificate of the cluster CA required). The plain port 6379 stays inside Docker (XPAM's containers).
+  # Active-passive: the agent makes the primary's Redis the main one. Active-active: the Sentinels choose
+  # it (ha-sentinel.yml). (Redis holds no data of record: cache, sessions, the job queue; a server cut off
+  # from the vote stops XPAM within 30 s.)
   redis:
     command:
       - sh
@@ -10,9 +13,11 @@ services:
         rm -rf /tmp/redis-auth.conf /tmp/xpam-tls && mkdir -p /tmp/xpam-tls &&
         cp /etc/xpam-ha/ca.crt /etc/xpam-ha/node.crt /etc/xpam-ha/node.key /tmp/xpam-tls/ &&
         chown -R redis:redis /tmp/xpam-tls &&
-        printf 'include /etc/redis.conf\nrequirepass "%s"\nmasterauth "%s"\nuser koko on >"%s" resetkeys ~JUMPSERVER:KOKO:* ~JUMPSERVER:LION:* resetchannels &JUMPSERVER:KOKO:* &JUMPSERVER:LION:* &JMS:KOKO:SESSIONS:* -@all +@connection +@read +@write +@pubsub +@keyspace -@dangerous -@admin -scan -keys\ntls-port 6380\ntls-cert-file /tmp/xpam-tls/node.crt\ntls-key-file /tmp/xpam-tls/node.key\ntls-ca-cert-file /tmp/xpam-tls/ca.crt\ntls-auth-clients yes\ntls-replication yes\n' "$$REDIS_PASSWORD" "$$REDIS_PASSWORD" "$${REDIS_KOKO_PASSWORD:-$$(head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n')}" > /tmp/redis-auth.conf &&
+        printf 'include /etc/redis.conf\nrequirepass "%s"\nmasterauth "%s"\nuser koko on >"%s" resetkeys ~JUMPSERVER:KOKO:* ~JUMPSERVER:LION:* resetchannels &JUMPSERVER:KOKO:* &JUMPSERVER:LION:* &JMS:KOKO:SESSIONS:* -@all +@connection +@read +@write +@pubsub +@keyspace -@dangerous -@admin -scan -keys\ntls-port 6380\ntls-cert-file /tmp/xpam-tls/node.crt\ntls-key-file /tmp/xpam-tls/node.key\ntls-ca-cert-file /tmp/xpam-tls/ca.crt\ntls-auth-clients yes\ntls-replication yes\nreplica-announce-ip %s\nreplica-announce-port 6380\n' "$$REDIS_PASSWORD" "$$REDIS_PASSWORD" "$${REDIS_KOKO_PASSWORD:-$$(head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n')}" "$$HA_NODE_IP" > /tmp/redis-auth.conf &&
         chown redis:redis /tmp/redis-auth.conf &&
         exec docker-entrypoint.sh redis-server /tmp/redis-auth.conf
+    environment:
+      HA_NODE_IP: ${HA_NODE_IP}
     ports:
       - "${HA_NODE_IP}:6380:6380"
     volumes:

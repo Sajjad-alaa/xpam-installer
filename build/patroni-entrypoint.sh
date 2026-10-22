@@ -3,7 +3,8 @@
 # (config.txt) and the certificates mounted at /etc/xpam-ha; nothing secret is written to the image.
 set -euo pipefail
 
-: "${HA_NODE_NAME:?}" "${HA_NODE_IP:?}" "${HA_PEER_IP:?}" "${HA_WITNESS_IP:?}"
+: "${HA_NODE_NAME:?}" "${HA_NODE_IP:?}"
+[[ -n "${HA_SERVERS:-}${HA_PEER_IP:-}" ]] || { echo "HA_SERVERS (or HA_PEER_IP) is required" >&2; exit 1; }
 : "${DB_USER:?}" "${DB_PASSWORD:?}" "${HA_REPL_PASSWORD:?}" "${HA_PATRONI_PASSWORD:?}" "${HA_REWIND_PASSWORD:?}"
 
 RUN=/run/xpam-ha
@@ -19,7 +20,11 @@ umask 077
 /opt/patroni/bin/python - <<'PY'
 import json, os
 e = os.environ
-ip, peer, witness = e['HA_NODE_IP'], e['HA_PEER_IP'], e['HA_WITNESS_IP']
+ip, witness = e['HA_NODE_IP'], e.get('HA_WITNESS_IP', '')
+# every XPAM server (HA_SERVERS; two-server clusters of earlier versions: HA_PEER_IP) and the others
+servers = [s for s in (e.get('HA_SERVERS') or f"{ip},{e.get('HA_PEER_IP', '')}").split(',') if s]
+peers = [s for s in servers if s != ip]
+active_active = e.get('HA_TOPOLOGY') == 'active-active'
 run = '/run/xpam-ha'
 subnet = e.get('DOCKER_SUBNET') or '192.168.250.0/24'
 user = e['DB_USER']
@@ -46,7 +51,7 @@ config = {
     # the vote: mutual TLS, and the account xpam-node (the only one allowed to read and write XPAM's
     # records; the witness's certificate has no account)
     'etcd3': {
-        'hosts': [f'{h}:2379' for h in (ip, peer, witness)], 'protocol': 'https',
+        'hosts': [f'{h}:2379' for h in servers + ([witness] if witness else [])], 'protocol': 'https',
         'cacert': f'{run}/ca.crt', 'cert': f'{run}/{client}.crt', 'key': f'{run}/{client}.key',
         **({'username': 'xpam-node', 'password': e['HA_ETCD_PASSWORD']} if e.get('HA_ETCD_PASSWORD') else {}),
     },
@@ -69,9 +74,10 @@ config = {
         'listen': '0.0.0.0:5432', 'connect_address': f'{ip}:5432',
         'data_dir': '/var/lib/postgresql/data', 'bin_dir': '/usr/lib/postgresql/16/bin',
         'pgpass': f'{run}/pgpass', 'parameters': params,
-        # the other server connects only as replicator (replication) and xpam_rewind (the four functions
+        # the other servers connect only as replicator (replication) and xpam_rewind (the four functions
         # pg_rewind reads), each with a password AND a client certificate of the cluster CA; XPAM's own
-        # account (a superuser) is reachable from XPAM's containers only
+        # account (a superuser) is reachable from XPAM's containers only — in active-active also from the
+        # other servers' containers, likewise with its password and a cluster certificate
         'authentication': {
             'superuser': {'username': user, 'password': e['DB_PASSWORD']},
             'replication': {'username': 'replicator', 'password': e['HA_REPL_PASSWORD'], **tls},
@@ -82,9 +88,10 @@ config = {
             'host all all 127.0.0.1/32 scram-sha-256',
             f'host all {user} {subnet} scram-sha-256',
             'host replication replicator 127.0.0.1/32 scram-sha-256',  # (Patroni reads its own position)
-            f'hostssl replication replicator {peer}/32 scram-sha-256 clientcert=verify-ca',
-            f'hostssl postgres xpam_rewind {peer}/32 scram-sha-256 clientcert=verify-ca',
-        ],
+        ] + [line for p in peers for line in (
+            f'hostssl replication replicator {p}/32 scram-sha-256 clientcert=verify-ca',
+            f'hostssl postgres xpam_rewind {p}/32 scram-sha-256 clientcert=verify-ca',
+        ) + ((f'hostssl all {user} {p}/32 scram-sha-256 clientcert=verify-ca',) if active_active else ())],
         'create_replica_methods': ['basebackup'],
         'basebackup': [{'checkpoint': 'fast'}],
         'remove_data_directory_on_rewind_failure': True,

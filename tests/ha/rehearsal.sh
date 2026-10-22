@@ -97,8 +97,8 @@ say "ha init on A (waits for the witness)"
 VB_ARGS=""; [[ "${VAULT:-}" == 1 ]] && VB_ARGS="--vault-bundle /root/vb.enc"
 on hara "cd /opt/xpam-installer && export $PASSENV && nohup bash ./xpamctl.sh ha init $A $B $W $VB_ARGS -y > /root/ha-init.log 2>&1 &"
 wait_for "on hara 'test -s /opt/xpam/config/ha/xpam-ha-witness.enc'" 60
-check 'init prepared the witness and join bundles' "on hara 'test -s /opt/xpam/config/ha/xpam-ha-join.enc'"
-check 'the bundles are encrypted (not readable without the passphrase)' "! on hara 'gzip -t /opt/xpam/config/ha/xpam-ha-join.enc' 2>/dev/null && ! on hara 'grep -qa SECRET_KEY /opt/xpam/config/ha/xpam-ha-join.enc'"
+check 'init prepared the witness and join bundles' "on hara 'test -s /opt/xpam/config/ha/xpam-ha-join-$B.enc'"
+check 'the bundles are encrypted (not readable without the passphrase)' "! on hara 'gzip -t /opt/xpam/config/ha/xpam-ha-join-$B.enc' 2>/dev/null && ! on hara 'grep -qa SECRET_KEY /opt/xpam/config/ha/xpam-ha-join-$B.enc'"
 check 'the CA key is stored only encrypted' "on hara 'test -s /opt/xpam/config/ha/certs/ca.key.enc && ! test -e /opt/xpam/config/ha/certs/ca.key'"
 check 'the witness bundle holds no XPAM secrets' "! on hara \"export $PASSENV; openssl enc -d -aes-256-cbc -pbkdf2 -iter 600000 -pass env:XPAM_HA_BUNDLE_PASSPHRASE -in /opt/xpam/config/ha/xpam-ha-witness.enc 2>/dev/null | tar xzO 2>/dev/null\" | grep -qE 'SECRET_KEY|PASSWORD|PRIVATE KEY.*ca'"
 
@@ -117,12 +117,12 @@ check 'the cluster ports accept only the other server (and the vote the witness)
 check 'the firewall is installed before Docker at boot' "on hara 'systemctl is-enabled xpam-ha-firewall' | grep -qx enabled"
 
 say "ha join on B"
-docker exec hara cat /opt/xpam/config/ha/xpam-ha-join.enc | docker exec -i harb sh -c 'cat > /root/join.enc'
+docker exec hara cat /opt/xpam/config/ha/xpam-ha-join-$B.enc | docker exec -i harb sh -c 'cat > /root/join.enc'
 check 'join refuses a wrong bundle passphrase' "! on harb 'cd /opt/xpam-installer && XPAM_HA_BUNDLE_PASSPHRASE=wrong timeout 120 bash ./xpamctl.sh ha join /root/join.enc -y' >/dev/null 2>&1"
 on harb "cd /opt/xpam-installer && export $PASSENV && timeout 2400 bash ./xpamctl.sh ha join /root/join.enc -y > /root/ha-join.log 2>&1"; tail -3 <(on harb 'cat /root/ha-join.log')
 if [[ "${VAULT:-}" == 1 ]]; then
   check "B logged in to Vault with its own certificate during the join (no secret in its config.txt)" "on harb 'test -s /run/xpam/secrets/all.env && grep -q ^VAULT_HCP_CERT_ROLE=xpam-${B//./-} /opt/xpam/config/config.txt' && ! on harb 'grep -qE \"^(SECRET_KEY|DB_PASSWORD|HA_REPL_PASSWORD)=.\" /opt/xpam/config/config.txt'"
-  check 'the HA join bundle carried no XPAM secret' "! on hara \"export $PASSENV; openssl enc -d -aes-256-cbc -pbkdf2 -iter 600000 -pass env:XPAM_HA_BUNDLE_PASSPHRASE -in /opt/xpam/config/ha/xpam-ha-join.enc | tar xzO ./config.txt 2>/dev/null\" | grep -qE '^(SECRET_KEY|DB_PASSWORD|HA_REPL_PASSWORD)=.'"
+  check 'the HA join bundle carried no XPAM secret' "! on hara \"export $PASSENV; openssl enc -d -aes-256-cbc -pbkdf2 -iter 600000 -pass env:XPAM_HA_BUNDLE_PASSPHRASE -in /opt/xpam/config/ha/xpam-ha-join-$B.enc | tar xzO ./config.txt 2>/dev/null\" | grep -qE '^(SECRET_KEY|DB_PASSWORD|HA_REPL_PASSWORD)=.'"
 fi
 check 'B is the standby, streaming in sync' "wait_for \"on hara 'curl -s --cacert /opt/xpam/config/ha/certs/ca.crt --cert /opt/xpam/config/ha/certs/node.crt --key /opt/xpam/config/ha/certs/node.key https://$A:8008/cluster' | grep -q sync_standby\" 30"
 check 'XPAM services are stopped on the standby' "wait_for \"! on harb 'docker ps --format {{.Names}}' | grep -qx xpam_core\" 12"
@@ -194,7 +194,7 @@ say "replacing every certificate (XPAM keeps running)"
 wait_for "on hara 'curl -s --cacert /opt/xpam/config/ha/certs/ca.crt --cert /opt/xpam/config/ha/certs/node.crt --key /opt/xpam/config/ha/certs/node.key https://$A:8008/cluster' | grep -q sync_standby" 30
 core_started=$(on hara "docker inspect -f '{{.State.StartedAt}}' xpam_core"); pg_started=$(on hara "docker inspect -f '{{.State.StartedAt}}' xpam_postgresql")
 on hara "cd /opt/xpam-installer && export $PASSENV && bash ./xpamctl.sh ha rotate-certs > /root/ha-rotate.log 2>&1"; tail -1 <(on hara 'cat /root/ha-rotate.log')
-docker exec hara cat /opt/xpam/config/ha/xpam-ha-join.enc | docker exec -i harb sh -c 'cat > /root/rotate.enc'
+docker exec hara cat /opt/xpam/config/ha/xpam-ha-join-$B.enc | docker exec -i harb sh -c 'cat > /root/rotate.enc'
 on harb "cd /opt/xpam-installer && export $PASSENV && bash ./xpamctl.sh ha apply-certs /root/rotate.enc" | tail -1
 docker exec hara cat /opt/xpam/config/ha/xpam-ha-witness.enc | docker exec -i -e XPAM_HA_BUNDLE_PASSPHRASE harw sh -c 'rm -rf /root/w2 && mkdir -p /root/w2 && openssl enc -d -aes-256-cbc -pbkdf2 -iter 600000 -pass env:XPAM_HA_BUNDLE_PASSPHRASE | tar xzf - -C /root/w2 && /root/w2/witness.sh' | tail -1
 check 'rotate-certs --finish: every machine on the new certificates' "wait_for \"on hara 'cd /opt/xpam-installer && bash ./xpamctl.sh ha rotate-certs --finish' 2>&1 | grep -q Done\" 12"
@@ -222,7 +222,7 @@ fi
 say "the second server is rebuilt (disk lost) and joins again"
 on harb 'systemctl stop xpam-ha; cd /opt/xpam-installer && bash ./xpamctl.sh down >/dev/null 2>&1; rm -rf /data/xpam/postgresql/data /data/xpam/etcd; sed -i "s/^HA_ENABLED=.*/HA_ENABLED=0/" /opt/xpam/config/config.txt'
 on hara "cd /opt/xpam-installer && export $PASSENV && bash ./xpamctl.sh ha join-bundle" >/dev/null
-docker exec hara cat /opt/xpam/config/ha/xpam-ha-join.enc | docker exec -i harb sh -c 'cat > /root/join2.enc'
+docker exec hara cat /opt/xpam/config/ha/xpam-ha-join-$B.enc | docker exec -i harb sh -c 'cat > /root/join2.enc'
 on harb "cd /opt/xpam-installer && export $PASSENV && timeout 2400 bash ./xpamctl.sh ha join /root/join2.enc -y > /root/ha-rejoin.log 2>&1"; tail -2 <(on harb 'cat /root/ha-rejoin.log')
 check 'the rebuilt server is the synchronous standby again' "wait_for \"on hara 'curl -s --cacert /opt/xpam/config/ha/certs/ca.crt --cert /opt/xpam/config/ha/certs/node.crt --key /opt/xpam/config/ha/certs/node.key https://$A:8008/cluster' | grep -q sync_standby\" 30"
 check 'it has all the data' "wait_for \"[[ \\\$(on harb \\\"\\\$PSQL 'select count(*) from xpam_ha_rehearsal'\\\") == 3 ]]\" 12"
@@ -236,7 +236,7 @@ for n in hara harb; do
 done
 wait_for "on hara 'curl -s --cacert /opt/xpam/config/ha/certs/ca.crt --cert /opt/xpam/config/ha/certs/node.crt --key /opt/xpam/config/ha/certs/node.key https://$A:8008/cluster' | grep -q sync_standby" 30
 on hara 'cd /opt/xpam-installer && bash ./xpamctl.sh ha upgrade -y > /root/ha-upgrade-a-first.log 2>&1'
-check 'ha upgrade on the primary first is refused (the standby goes first)' "on hara 'grep -q \"Upgrade the standby first\" /root/ha-upgrade-a-first.log' || { on hara 'cat /root/ha-upgrade-a-first.log'; false; }"
+check 'ha upgrade on the primary first is refused (the standby goes first)' "on hara 'grep -q \"Upgrade the other servers first\" /root/ha-upgrade-a-first.log' || { on hara 'cat /root/ha-upgrade-a-first.log'; false; }"
 # XPAM's availability, seen from the witness every second (either server answering is "up")
 docker exec -d harw bash -c "rm -f /root/up.log; while true; do if curl -fsk --max-time 2 -o /dev/null https://$A/api/health/ || curl -fsk --max-time 2 -o /dev/null https://$B/api/health/; then echo \"\$(date +%s) up\"; else echo \"\$(date +%s) down\"; fi >> /root/up.log; sleep 1; done"
 on harb "cd /opt/xpam-installer && export $PASSENV && timeout 1800 bash ./xpamctl.sh ha upgrade -y > /root/ha-upgrade-b.log 2>&1"; tail -2 <(on harb 'cat /root/ha-upgrade-b.log')

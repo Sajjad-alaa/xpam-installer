@@ -30,7 +30,7 @@ docker run -d --name xpam_etcd_witness --restart always \
   --peer-client-cert-auth --peer-trusted-ca-file=/certs/ca.crt --peer-cert-file=/certs/node.crt \
   --peer-key-file=/certs/node.key --heartbeat-interval=250 --election-timeout=2500 --auto-compaction-retention=1 >/dev/null
 
-# only the two XPAM servers may reach the vote (Docker-published ports bypass firewalld: DOCKER-USER)
+# only the XPAM servers may reach the vote (Docker-published ports bypass firewalld: DOCKER-USER)
 cat > /opt/xpam-witness/firewall.sh <<FW
 #!/bin/sh
 # only connections addressed to the witness are checked (its own outgoing connections are not)

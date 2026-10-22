@@ -1,0 +1,19 @@
+# XPAM high availability, active-active: XPAM runs on every server at once. Its containers use the cluster's
+# database and Redis wherever they are: libpq connects to the server whose PostgreSQL accepts writes (the
+# primary, found again after a failover) and the Sentinels name the main Redis. Every connection to another
+# server is TLS with XPAM's own cluster certificate (app.crt: database and Redis logins only) and its
+# password. No secret here: the passwords come from Vault (or config.txt) as on a single server.
+services:
+  worker:
+    environment:
+      DB_HOST: ${HA_SERVERS}
+      DB_USE_SSL: "true"
+      DB_SSL_MODE: verify-ca
+      DB_TARGET_SESSION_ATTRS: read-write
+      REDIS_SENTINEL_HOSTS: ${HA_SENTINEL_HOSTS}
+      REDIS_SENTINEL_USE_REDIS_PASSWORD: "true"
+      REDIS_USE_SSL: "true"
+      REDIS_SSL_REQUIRED: required
+      REDIS_SSL_CA: /opt/jumpserver/data/certs/ha/ca.crt
+      REDIS_SSL_CERT: /opt/jumpserver/data/certs/ha/app.crt
+      REDIS_SSL_KEY: /opt/jumpserver/data/certs/ha/app.key

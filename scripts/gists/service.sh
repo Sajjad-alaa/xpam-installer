@@ -166,6 +166,17 @@ function add_vault_overlays() {
   echo "${out}"
 }
 
+# XPAM high availability, active-active: XPAM's containers on every server use the cluster's database and Redis
+function add_ha_active_overlays() {
+  local cmd=$1 out=$1 f
+  if is_ha_enabled && [[ "$(get_config HA_TOPOLOGY)" == "active-active" ]]; then
+    for f in $(grep -oE 'compose/[a-z0-9.-]+\.yml' <<<"${cmd}"); do
+      [[ -f "${PROJECT_DIR}/compose/ha-active/${f#compose/}" ]] && out+=" -f compose/ha-active/${f#compose/}"
+    done
+  fi
+  echo "${out}"
+}
+
 function get_docker_compose_cmd_line() {
   ignore_db=${1-}
   use_ipv6=$(get_config USE_IPV6)
@@ -204,7 +215,7 @@ function get_docker_compose_cmd_line() {
     cmd+=" -f compose/cap_addon.yml"
   fi
 
-  add_vault_overlays "${cmd}"
+  add_vault_overlays "$(add_ha_active_overlays "${cmd}")"
 }
 
 function get_video_worker_cmd_line() {
@@ -363,6 +374,8 @@ function get_db_compose_yml() {
       cmd+=" -f compose/redis.yml"
       if is_ha_enabled; then
         cmd+=" -f compose/ha-redis.yml"
+        # (active-active: the Sentinels choose the main Redis)
+        [[ "$(get_config HA_TOPOLOGY)" == "active-active" ]] && cmd+=" -f compose/ha-sentinel.yml"
       elif [[ -n "${redis_expose_port}" ]]; then
         cmd+=" -f compose/redis.port.yml"
       fi

@@ -2,17 +2,23 @@
 """
 XPAM high availability agent (runs on each server, as the systemd service xpam-ha).
 
-Patroni decides which server's PostgreSQL is the primary (with the other server and the witness voting
-in etcd). This agent makes the rest of XPAM follow that decision on its own server:
+Patroni decides which server's PostgreSQL is the primary (with the other servers, and a witness when the
+number of servers is even, voting in etcd). This agent makes the rest of XPAM follow that decision on its
+own server. Active-passive (HA_TOPOLOGY, the default):
 
-  primary  XPAM's services run, Redis is the master, recordings and files are copied to the other
-           server every minute (rsync over SSH)
+  primary  XPAM's services run, Redis is the main one, recordings and files are copied to the other
+           servers every minute (rsync over SSH)
   standby  XPAM's services are stopped (the load balancer sees the server as down), Redis follows the
            primary's
   unknown  (Patroni unreachable for a while) XPAM's services are stopped: the database is not usable
 
-It also keeps the firewall rule that lets only the other server and the witness reach the replication
-ports, and writes a status file the console shows (System settings -> High availability).
+Active-active: XPAM's services run on every server that is a healthy member of the cluster (primary or
+standby) and has the leader's XPAM version (a rolling upgrade: the new version starts once the database has
+it); its containers use the primary's database and the main Redis chosen by the Sentinels; every server
+copies its new recordings and files to the others.
+
+It also keeps the firewall rule that lets only the other servers and the witness reach the cluster ports,
+and writes a status file the console shows (System settings -> High availability).
 Only the Python standard library is used (the host's python3).
 """
 import json
@@ -30,8 +36,12 @@ INTERVAL = 2
 STABLE_CHECKS = 2           # a role must be seen this many times in a row before acting (2 s apart)
 UNKNOWN_GRACE = 30          # seconds without Patroni before the services are stopped
 SYNC_EVERY = 60
-HA_PORTS = '5432,8008,2379,2380,6379,6380'
+HA_PORTS = '5432,8008,2379,2380,6379,6380,26380'
 PEER_PORTS = '5432,8008,2379,2380,6380'
+SENTINEL_PORT = '26380'
+# (active-active: what every server copies to the others — not each server's own logs, task folders,
+# built static files or start marker)
+AA_SYNC_EXCLUDES = ['logs/', 'ha/', 'celery/', 'ansible/', 'static/', 'certs/', '.xpam-prepared', 'version.txt']
 WITNESS_PORTS = '2379,2380'
 CHAIN = 'XPAM-HA'
 
@@ -58,6 +68,20 @@ def read_config():
     except OSError:
         pass
     return conf
+
+
+def servers(conf):
+    """ every XPAM server of the cluster (two-server clusters of earlier versions: this one and HA_PEER_IP) """
+    listed = [s for s in conf.get('HA_SERVERS', '').split(',') if s]
+    return listed or [s for s in (conf.get('HA_NODE_IP', ''), conf.get('HA_PEER_IP', '')) if s]
+
+
+def peers(conf):
+    return [s for s in servers(conf) if s != conf['HA_NODE_IP']]
+
+
+def active_active(conf):
+    return conf.get('HA_TOPOLOGY') == 'active-active'
 
 
 def run(cmd, timeout=120, env=None):
@@ -151,15 +175,22 @@ def redis_follow(conf, primary):
 
 
 def sync_files(conf):
-    """Copy recordings and files to the other server. (ok, message)"""
+    """Copy recordings and files to the other servers. (ok, message)"""
     volume = (conf.get('VOLUME_DIR') or '/data/xpam')
     src = os.path.join(volume, 'core', 'data') + '/'
     key = os.path.join((conf.get('CONFIG_DIR') or '/opt/xpam/config'), 'ha', 'ssh', 'id_ed25519')
     known = os.path.join((conf.get('CONFIG_DIR') or '/opt/xpam/config'), 'ha', 'ssh', 'known_hosts')
     ssh = f'ssh -i {key} -o UserKnownHostsFile={known} -o StrictHostKeyChecking=accept-new -o BatchMode=yes -o ConnectTimeout=10'
-    code, out = run(['rsync', '-a', '--partial', '--timeout=120', '--exclude=logs/', '--exclude=ha/',
-                     '-e', ssh, src, f"root@{conf['HA_PEER_IP']}:{src}"], 3600)
-    return code == 0, (out[-300:] if code else '')
+    if active_active(conf):
+        opts = ['--update'] + [f'--exclude={x}' for x in AA_SYNC_EXCLUDES]
+    else:
+        opts = ['--exclude=logs/', '--exclude=ha/']
+    errors = []
+    for peer in peers(conf):
+        code, out = run(['rsync', '-a', '--partial', '--timeout=120', *opts, '-e', ssh, src, f"root@{peer}:{src}"], 3600)
+        if code:
+            errors.append(f'{peer}: {out[-200:]}')
+    return not errors, '; '.join(errors)[-300:]
 
 
 def ensure_firewall(conf):
@@ -172,10 +203,13 @@ def ensure_firewall(conf):
     run(['iptables', '-N', 'DOCKER-USER'], 10)
     run(['iptables', '-N', CHAIN], 10)
     run(['iptables', '-F', CHAIN], 10)
-    for rule in (['-i', 'br-+', '-j', 'RETURN'], ['-i', 'docker0', '-j', 'RETURN'],
-                 ['-s', conf['HA_PEER_IP'], '-p', 'tcp', '-m', 'multiport', '--dports', PEER_PORTS, '-j', 'RETURN'],
-                 ['-s', conf['HA_WITNESS_IP'], '-p', 'tcp', '-m', 'multiport', '--dports', WITNESS_PORTS, '-j', 'RETURN'],
-                 ['-j', 'DROP']):
+    peer_ports = PEER_PORTS + (f',{SENTINEL_PORT}' if active_active(conf) else '')
+    rules = [['-i', 'br-+', '-j', 'RETURN'], ['-i', 'docker0', '-j', 'RETURN']]
+    rules += [['-s', p, '-p', 'tcp', '-m', 'multiport', '--dports', peer_ports, '-j', 'RETURN'] for p in peers(conf)]
+    if conf.get('HA_WITNESS_IP'):
+        rules.append(['-s', conf['HA_WITNESS_IP'], '-p', 'tcp', '-m', 'multiport', '--dports', WITNESS_PORTS, '-j', 'RETURN'])
+    rules.append(['-j', 'DROP'])
+    for rule in rules:
         run(['iptables', '-A', CHAIN, *rule], 10)
     for old in (['DOCKER-USER', '!', '-i', 'br-+', '-p', 'tcp', '-m', 'multiport', '--dports', '5432,8008,2379,2380,6379',
                  '-j', CHAIN],
@@ -191,14 +225,15 @@ def ensure_firewall(conf):
             log('firewall rule could not be added:', out)
 
 
-def peer_alive(conf):
-    """The other server's Patroni answers."""
-    code, _data = patroni(conf, 'liveness', host=conf['HA_PEER_IP'], timeout=3)
-    return code != 0
+def peers_alive(conf):
+    """Each other server's Patroni answers: {ip: True/False}."""
+    return {p: patroni(conf, 'liveness', host=p, timeout=3)[0] != 0 for p in peers(conf)}
 
 
 def witness_alive(conf):
-    """The witness's vote answers its health check (mutual TLS with the cluster certificate)."""
+    """The witness's vote answers its health check (mutual TLS with the cluster certificate); None: no witness."""
+    if not conf.get('HA_WITNESS_IP'):
+        return None
     try:
         with urllib.request.urlopen(f"https://{conf['HA_WITNESS_IP']}:2379/health", timeout=3,
                                     context=tls_context(conf)) as r:
@@ -277,7 +312,7 @@ def notify_primary(conf, peer_ok):
     """Tell the administrators (site message, e-mail) that XPAM moved to this server."""
     code, out = run(['docker', 'exec', '-w', '/opt/jumpserver/apps', 'xpam_core', 'python', 'manage.py',
                      'xpam_ha_event', '--node', conf['HA_NODE_NAME'], '--ip', conf['HA_NODE_IP'],
-                     '--peer', conf['HA_PEER_IP'], '--peer-reachable', '1' if peer_ok else '0'], 180)
+                     '--peer', ','.join(peers(conf)), '--peer-reachable', '1' if peer_ok else '0'], 180)
     if code:
         log('administrators could not be notified yet:', out[-200:])
     return code == 0
@@ -299,6 +334,43 @@ def cluster(conf):
              'lag': m.get('lag'), 'timeline': m.get('timeline'),
              'version': (m.get('tags') or {}).get('xpam_version', ''),
              'server_id': (m.get('tags') or {}).get('xpam_server_id', '')} for m in data.get('members', [])]
+
+
+def sentinel_master(conf):
+    """ active-active: the main Redis as the Sentinels see it (this server's Sentinel), or None """
+    env = dict(os.environ, REDISCLI_AUTH=conf.get('REDIS_PASSWORD', ''))
+    code, out = run(['docker', 'exec', '-e', 'REDISCLI_AUTH', 'xpam_sentinel', 'redis-cli', '--tls', '-p', '26380',
+                     '--cacert', '/tmp/xpam-tls/ca.crt', '--cert', '/tmp/xpam-tls/node.crt',
+                     '--key', '/tmp/xpam-tls/node.key', 'SENTINEL', 'get-master-addr-by-name', 'xpam'], 15, env=env)
+    lines = out.split() if code == 0 else []
+    return lines[0] if lines else None
+
+
+def redis_follow_sentinels(conf):
+    """ active-active: the Sentinels move the main Redis; a Redis they do not know yet (a server that joined or
+    came back empty) is pointed at the main one once, then they keep it """
+    master = sentinel_master(conf)
+    if not master:
+        return 'no sentinel'
+    if master == conf['HA_NODE_IP']:
+        return 'master'
+    code, info = redis(conf, 'INFO', 'replication')
+    if code:
+        return 'unreachable'
+    if 'role:master' in info or f'master_host:{master}' not in info:
+        redis(conf, 'REPLICAOF', master, '6380')
+        log(f'redis: following {master} (named by the Sentinels)')
+    return 'replica'
+
+
+def same_version_as_leader(conf, members):
+    """ active-active: this server runs the leader's XPAM version (during a rolling upgrade the servers of the
+    other version wait, so that one version only uses the database) """
+    mine = next((m for m in members or [] if m['name'] == conf['HA_NODE_NAME']), None)
+    leader = next((m for m in members or [] if m['role'] in ('leader', 'standby_leader')), None)
+    if not mine or not leader or not leader.get('version') or not mine.get('version'):
+        return True  # (versions unknown: earlier versions did not report them)
+    return mine['version'] == leader['version']
 
 
 def handle_request(conf, members):
@@ -342,12 +414,12 @@ def main():
     last_fw = last_probe = 0
     last_stable = previous_role(conf)   # (None on the first start after setup: no notice then)
     notify_pending = False
-    reach = {'peer_reachable': None, 'witness_reachable': None}
+    reach = {'peer_reachable': None, 'witness_reachable': None, 'peers': {}}
     last_request = None
     unknown_since = None
     last_sync, sync = 0, {'ok': None, 'time': None, 'error': ''}
-    log(f"agent started on {conf['HA_NODE_NAME']} ({conf['HA_NODE_IP']}), peer {conf['HA_PEER_IP']}, "
-        f"witness {conf['HA_WITNESS_IP']}")
+    log(f"agent started on {conf['HA_NODE_NAME']} ({conf['HA_NODE_IP']}), {conf.get('HA_TOPOLOGY') or 'active-passive'}, "
+        f"other servers {','.join(peers(conf))}, witness {conf.get('HA_WITNESS_IP') or 'none'}")
     while True:
         try:
             conf = read_config()
@@ -363,7 +435,34 @@ def main():
             if now - last_fw >= 60:
                 ensure_firewall(conf)  # (Docker or a reboot may have recreated its chain)
                 last_fw = now
-            if count >= STABLE_CHECKS:
+            members = cluster(conf)
+            if count >= STABLE_CHECKS and active_active(conf):
+                if role in ('primary', 'standby'):
+                    last_stable = role
+                    floating_ip(conf, role == 'primary')
+                    redis_follow_sentinels(conf)
+                    if same_version_as_leader(conf, members):
+                        if not app_running():
+                            log(f'{role}: starting XPAM (active-active)')
+                            app('start')
+                    elif app_running():
+                        log("the leader runs another XPAM version: stopping XPAM until this server has it")
+                        app('stop')
+                    if now - last_sync >= SYNC_EVERY:
+                        ok, err = sync_files(conf)
+                        last_sync = now
+                        sync = {'ok': ok, 'time': int(now), 'error': err}
+                        if not ok:
+                            log('file copy to the other servers failed:', err)
+                elif role == 'unknown' and unknown_since and now - unknown_since >= UNKNOWN_GRACE:
+                    floating_ip(conf, False)
+                    if app_running():
+                        log(f'Patroni unreachable for {UNKNOWN_GRACE}s: stopping XPAM')
+                        app('stop')
+                if role != acted:
+                    log(f'role: {role}')
+                    acted = role
+            elif count >= STABLE_CHECKS:
                 if role == 'primary' and last_stable not in (None, 'primary'):
                     notify_pending = True  # failover or switchover to this server
                 if role in ('primary', 'standby'):
@@ -381,14 +480,16 @@ def main():
                         last_sync = now
                         sync = {'ok': ok, 'time': int(now), 'error': err}
                         if not ok:
-                            log('file copy to the other server failed:', err)
+                            log('file copy to the other servers failed:', err)
                 elif role == 'standby':
                     floating_ip(conf, False)
                     notify_pending = False
                     if app_running():
                         log('standby: stopping XPAM')
                         app('stop')
-                    redis_follow(conf, conf['HA_PEER_IP'])
+                    leader = next((m for m in members or [] if m['role'] in ('leader', 'standby_leader')), None)
+                    if leader and leader.get('host'):
+                        redis_follow(conf, leader['host'])
                 elif role == 'unknown' and unknown_since and now - unknown_since >= UNKNOWN_GRACE:
                     floating_ip(conf, False)
                     if app_running():
@@ -398,18 +499,19 @@ def main():
                     log(f'role: {role}')
                     acted = role
 
-            members = cluster(conf)
             if role == 'primary':
                 result = handle_request(conf, members)
                 if result:
                     last_request = result
             if now - last_probe >= 30:  # (not every loop: the other machines log each connection)
-                reach = {'peer_reachable': peer_alive(conf), 'witness_reachable': witness_alive(conf),
-                         'vault': vault_health(conf)}
+                alive = peers_alive(conf)
+                reach = {'peer_reachable': all(alive.values()) if alive else None, 'peers': alive,
+                         'witness_reachable': witness_alive(conf), 'vault': vault_health(conf)}
                 last_probe = now
             write_status(conf, {
-                'node': conf['HA_NODE_NAME'], 'node_ip': conf['HA_NODE_IP'], 'peer_ip': conf['HA_PEER_IP'],
-                'witness_ip': conf['HA_WITNESS_IP'], 'role': role, 'app_running': app_running(),
+                'node': conf['HA_NODE_NAME'], 'node_ip': conf['HA_NODE_IP'], 'peer_ip': ','.join(peers(conf)),
+                'servers': servers(conf), 'topology': conf.get('HA_TOPOLOGY') or 'active-passive',
+                'witness_ip': conf.get('HA_WITNESS_IP', ''), 'role': role, 'app_running': app_running(),
                 **reach, 'file_sync': sync, 'updated': int(now),
                 'floating_ip': conf.get('HA_VIP', ''), 'members': members, 'request': last_request,
             })

@@ -1,0 +1,38 @@
+services:
+  # XPAM high availability, active-active: Redis Sentinel on every server. A majority of the Sentinels picks
+  # the main Redis and moves it when its server fails; XPAM's containers on every server ask them where it is.
+  # Only TLS (26380, client certificate of the cluster CA), to the Sentinels and to Redis (6380). Its state is
+  # kept in its own file (the Sentinels rewrite it); the passwords are written into it at every start.
+  sentinel:
+    image: redis:7.4.10-bookworm
+    pull_policy: never
+    container_name: xpam_sentinel
+    restart: always
+    command:
+      - sh
+      - -c
+      - >-
+        umask 077 &&
+        rm -rf /tmp/xpam-tls && mkdir -p /tmp/xpam-tls /data/sentinel &&
+        cp /etc/xpam-ha/ca.crt /etc/xpam-ha/node.crt /etc/xpam-ha/node.key /tmp/xpam-tls/ &&
+        f=/data/sentinel/sentinel.conf &&
+        if [ ! -s "$$f" ]; then
+          printf 'port 0\ntls-port 26380\ntls-cert-file /tmp/xpam-tls/node.crt\ntls-key-file /tmp/xpam-tls/node.key\ntls-ca-cert-file /tmp/xpam-tls/ca.crt\ntls-auth-clients yes\ntls-replication yes\nsentinel resolve-hostnames no\nsentinel announce-ip %s\nsentinel announce-port 26380\nsentinel monitor xpam %s 6380 %s\nsentinel down-after-milliseconds xpam 5000\nsentinel failover-timeout xpam 30000\nsentinel parallel-syncs xpam 1\n' "$$HA_NODE_IP" "$$HA_REDIS_MASTER" "$$HA_SENTINEL_QUORUM" > "$$f";
+        fi &&
+        sed -i '/^requirepass /d; /^sentinel auth-pass /d; /^sentinel sentinel-pass /d' "$$f" &&
+        printf 'requirepass "%s"\nsentinel sentinel-pass "%s"\nsentinel auth-pass xpam "%s"\n' "$$REDIS_PASSWORD" "$$REDIS_PASSWORD" "$$REDIS_PASSWORD" >> "$$f" &&
+        chown -R redis:redis /tmp/xpam-tls /data/sentinel &&
+        exec docker-entrypoint.sh redis-sentinel "$$f"
+    environment:
+      TZ: ${TZ:-UTC}
+      REDIS_PASSWORD: $REDIS_PASSWORD
+      HA_NODE_IP: ${HA_NODE_IP}
+      HA_REDIS_MASTER: ${HA_REDIS_MASTER}
+      HA_SENTINEL_QUORUM: ${HA_SENTINEL_QUORUM:-2}
+    ports:
+      - "${HA_NODE_IP}:26380:26380"
+    volumes:
+      - ${VOLUME_DIR}/redis/sentinel:/data/sentinel
+      - ${CONFIG_DIR}/ha/certs:/etc/xpam-ha:ro
+    networks:
+      - net

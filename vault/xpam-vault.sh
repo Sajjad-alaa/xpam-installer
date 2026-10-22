@@ -15,7 +15,8 @@
 #   --siem HOST:PORT          also stream the audit log to a SIEM (TCP)
 #   --pgp-keys F1,F2,...      encrypt each unseal key share to its holder (base64 of `gpg --export`)
 #   --seal-config FILE        an auto-unseal "seal" stanza (Transit / cloud KMS / HSM) instead of key shares
-#   --colocated               on XPAM's own three machines (high availability: both servers and the witness):
+#   --colocated               on XPAM's own machines, 3 or 5 (high availability: e.g. two servers and the witness,
+#                             or the servers of an active-active cluster):
 #                             each node unseals itself at boot; convenient, but root on an XPAM server is root
 #                             on a Vault node (separate servers are stronger)
 #   --local                   on the XPAM server itself (one address for --nodes and --xpam): XPAM's containers
@@ -523,7 +524,10 @@ cmd_init() {
   elif [[ "${COLOCATED}" == 1 ]]; then
     # on XPAM's own machines (high availability: A, B and the witness): XPAM's containers connect from the
     # Docker subnet; each node unseals itself at boot (systemd-creds) — no separation from XPAM's root
-    [[ "$(echo "${nodes//,/ }" | wc -w)" -eq 3 ]] || die "--colocated: three nodes (the two XPAM servers and the witness)"
+    case "$(echo "${nodes//,/ }" | wc -w)" in
+      3|5) ;;
+      *) die "--colocated: 3 or 5 nodes (XPAM's machines: e.g. two servers and the witness, or three servers)" ;;
+    esac
     extra="127.0.0.1/32${XPAM_DOCKER_SUBNET:+,${XPAM_DOCKER_SUBNET}}"
     [[ -n "${XPAM_DOCKER_SUBNET:-}" ]] || extra="127.0.0.1/32,192.168.250.0/24"
     command -v systemd-creds >/dev/null || die "--colocated needs systemd-creds (systemd 250+)"

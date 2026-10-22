@@ -1,5 +1,17 @@
 # XPAM release notes
 
+## 5.1.18 — the access on the ticket; what an access allows
+
+- **Access on the ticket:** an approved access request shows the access it gave: active, scheduled, ended early or
+  expired, with the time left, assets, protocols, actions, its just-in-time accounts and the sessions opened with it.
+  The requester can **end** or **extend** it there. An approver of the request or an administrator can
+  **revoke** it: the access ends at once, its just-in-time accounts are removed from the assets, its live sessions
+  end, and the reason is noted on the request. Ticket lists have an **Access** column.
+- **What an access allows:** a just-in-time rule sets the **allowed protocols** (for example SSH and HTTP only) and
+  the **allowed actions** (upload, download, clipboard, delete, share). A request, in the Workspace or the
+  console, picks among them, and the approver sees exactly what they approve. The granted access enforces them:
+  connecting with another protocol is refused. ACLs stay the outer limit for everyone: a deny ACL still wins.
+
 ## 5.1.17 — external vaults, hardened
 
 - **XPAM Vault kit** (`vault/xpam-vault.sh`): a hardened HashiCorp Vault cluster on three servers of its

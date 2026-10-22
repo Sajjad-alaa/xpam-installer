@@ -36,20 +36,21 @@ check 'XPAM runs (console and workspace)' "wait_for \"on xacx 'docker ps --forma
 say "a rule (SSH only, connect + download), an approved request with an active access"
 printf '%s\n' "import xpack.utils
 xpack.utils.has_ticket_license = lambda: True
+from django.conf import settings; settings.ALLOWED_HOSTS = list(settings.ALLOWED_HOSTS) + ['testserver']
+from rest_framework.test import APIClient
 from orgs.models import Organization; from orgs.utils import set_current_org; org = Organization.default(); set_current_org(org)
 from users.models import User; admin = User.objects.get(username='admin'); User.objects.filter(id=admin.id).update(is_first_login=False)
-from assets.models import Host, Platform, Node
-host = Host.objects.filter(name='web-01').first() or Host.objects.create(name='web-01', address='10.0.0.5', platform=Platform.objects.get(name='Linux'), org_id=org.id)
-host.nodes.set([Node.org_root()]); host.protocols.all().delete()
-host.protocols.create(name='ssh', port=22); host.protocols.create(name='sftp', port=22)
-from accounts.models import JITPolicy
-p = JITPolicy.objects.create(name='Developers: SSH only', org_id=org.id, scope='all', priority=5, self_service=True, jit_only=True, require_reason=False, auto_approve=True, auto_approve_max_hours=4, max_hours=4, protocols=['ssh'], actions=1|4)
-p.users = {'type': 'ids', 'ids': [str(admin.id)]}; p.assets = {'type': 'ids', 'ids': [str(host.id)]}; p.save()
+from assets.models import Platform, Node
+A = APIClient(); A.force_authenticate(admin); H = {'HTTP_X_JMS_ORG': str(org.id)}
+r = A.post('/api/v1/assets/hosts/', {'name': 'web-01', 'address': '10.0.0.5', 'platform': Platform.objects.get(name='Linux').id, 'nodes': [str(Node.org_root().id)], 'protocols': [{'name': 'ssh', 'port': 22}, {'name': 'sftp', 'port': 22}]}, format='json', **H)
+set_current_org(org); host_id = r.data['id']
+r = A.post('/api/v1/accounts/jit-policies/', {'name': 'Developers: SSH only', 'scope': 'all', 'priority': 5, 'self_service': True, 'jit_only': True, 'require_reason': False, 'auto_approve': True, 'auto_approve_max_hours': 4, 'max_hours': 4, 'users': {'type': 'ids', 'ids': [str(admin.id)]}, 'assets': {'type': 'ids', 'ids': [host_id]}, 'protocols': ['ssh'], 'actions': ['download']}, format='json', **H)
+set_current_org(org); p_id = r.data['id']
 from accounts.jit import selfservice
 class R: user = admin
-t = selfservice.submit(R(), [host.id], 2, reason='deploy hotfix 2.4.1')
+t = selfservice.submit(R(), [host_id], 2, reason='deploy hotfix 2.4.1')
 print('ticket', t.id, t.state)
-print('rule', p.id)" | on xacx "$CORE_SHELL" | grep -E '^(ticket|rule) ' > "$PW/ids.txt"
+print('rule', p_id)" | on xacx "$CORE_SHELL" | grep -E '^(ticket|rule) ' > "$PW/ids.txt"
 cat "$PW/ids.txt"
 TICKET=$(awk '/^ticket/ {print $2}' "$PW/ids.txt"); RULE=$(awk '/^rule/ {print $2}' "$PW/ids.txt")
 check 'the request was approved by the rule' "grep -q 'approved' $PW/ids.txt"
@@ -75,18 +76,21 @@ const { chromium } = require('playwright');
   const out = {};
   const shot = async (name) => { await page.waitForTimeout(3000); await page.screenshot({ path: `/out/${name}.png`, fullPage: true }); out[name] = await page.innerText('body'); };
   await page.goto(`${base}/web/#/tickets/my-tickets`, { waitUntil: 'networkidle' });
+  // (the list opens with pending requests: the approved one is under Agreed)
+  await page.getByText('Agreed', { exact: true }).first().click({ timeout: 5000 }).catch(() => {});
+  await page.getByText('Access to web-01').first().waitFor({ timeout: 15000 }).catch(() => {});
   await shot('ticket-list');
   await page.goto(`${base}/web/#/tickets/tickets/request-host-perm/${process.env.TICKET}`, { waitUntil: 'networkidle' });
   await page.waitForTimeout(2000);
   const tab = page.getByText('Access', { exact: true }).first();
-  if (await tab.count()) { await tab.click(); }
+  if (await tab.count()) { await tab.click({ timeout: 5000 }).catch(() => {}); }
   await shot('ticket-access');
   await page.goto(`${base}/web/#/pam/automations/jit-accounts/${process.env.RULE}/update`, { waitUntil: 'networkidle' });
   await shot('rule-form');
   await page.goto(`${base}/workspace/access`, { waitUntil: 'networkidle' });
   await page.waitForTimeout(3000);
-  const card = page.getByText('web-01').first();
-  if (await card.count()) { await card.click(); }
+  const card = page.getByText('web-01').last();
+  await card.click({ timeout: 5000 }).catch(() => {});
   await shot('workspace-access');
   console.log('BODY ' + JSON.stringify(out));
   await browser.close();

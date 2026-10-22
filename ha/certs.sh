@@ -27,8 +27,12 @@ fi
 [[ -n "${servers}" ]] || { echo "certs.sh: --servers is required" >&2; exit 2; }
 umask 077
 mkdir -p "$out"
+# (a CA marked as one — key usage keyCertSign/cRLSign: Python 3.13+ verifies strictly, e.g. XPAM's containers in
+# active-active connecting to the other servers' database and Redis)
 openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:P-256 -nodes -days 3650 \
-  -subj "/CN=XPAM HA CA $(date +%Y%m%d%H%M%S)" -keyout "$out/ca.key" -out "$out/ca.crt" 2>/dev/null
+  -subj "/CN=XPAM HA CA $(date +%Y%m%d%H%M%S)" -addext "basicConstraints=critical,CA:TRUE" \
+  -addext "keyUsage=critical,keyCertSign,cRLSign" -addext "subjectKeyIdentifier=hash" \
+  -keyout "$out/ca.key" -out "$out/ca.crt" 2>/dev/null
 issue() { # name cn san
   openssl req -newkey ec -pkeyopt ec_paramgen_curve:P-256 -nodes -subj "/CN=$2" \
     -keyout "$out/$1.key" -out "$out/$1.csr" 2>/dev/null

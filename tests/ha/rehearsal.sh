@@ -248,8 +248,10 @@ OUTAGE=$(on harw 'cat /root/up.log' | awk '$2=="down"{if(!s)s=$1; e=$1} $2=="up"
 check "both servers are on $NEXT; B is the primary and A the synchronous standby" "on hara 'grep -qx CURRENT_VERSION=$NEXT /opt/xpam/config/config.txt' && wait_for \"[[ \\\$(on harb 'cd /opt/xpam-installer && bash ./xpamctl.sh ha status') == *xpam-a*sync_standby*$NEXT*xpam-b*leader*$NEXT* || \\\$(on harb 'cd /opt/xpam-installer && bash ./xpamctl.sh ha status') == *xpam-b*leader*$NEXT*xpam-a*sync_standby*$NEXT* ]]\" 24"
 check 'XPAM runs on B after the upgrade, with all the data' "on harb 'docker ps --format \"{{.Names}} {{.Status}}\"' | grep -q '^xpam_core .*(healthy)' && [[ \$(on harb \"\$PSQL 'select count(*) from xpam_ha_rehearsal'\") == 3 ]]"
 check "the rolling upgrade interrupted XPAM once, briefly (longest outage ${OUTAGE}s, at most 180s)" "[[ $OUTAGE -le 180 ]]"
-on harb 'cd /opt/xpam-installer && bash ./xpamctl.sh ha switchover' | tail -1
-wait_for "on hara 'docker ps --format \"{{.Names}} {{.Status}}\"' | grep -q '^xpam_core .*(healthy)'" 120
+if [[ $(on harb "curl -s -o /dev/null -w %{http_code} --cacert /opt/xpam/config/ha/certs/ca.crt --cert /opt/xpam/config/ha/certs/node.crt --key /opt/xpam/config/ha/certs/node.key https://$B:8008/primary") == 200 ]]; then
+  on harb 'cd /opt/xpam-installer && bash ./xpamctl.sh ha switchover' | tail -1   # (back to A for the next stage)
+  wait_for "on hara 'docker ps --format \"{{.Names}} {{.Status}}\"' | grep -q '^xpam_core .*(healthy)'" 120
+fi
 
 say "back to one server"
 on harb 'cd /opt/xpam-installer && bash ./xpamctl.sh ha disable -y' | tail -1

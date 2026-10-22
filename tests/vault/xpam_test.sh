@@ -55,7 +55,7 @@ on xvtv 'command -v docker >/dev/null && systemctl start docker && exit 0; for i
   mkdir -p /etc/docker; echo "{\"features\":{\"containerd-snapshotter\":false}}" > /etc/docker/daemon.json
   systemctl enable --now docker >/dev/null 2>&1
   for i in 1 2 3 4 5; do timeout 300 docker pull -q hashicorp/vault:2.1.2 >/dev/null 2>&1 && break; sleep 5; done' &
-on xvtx 'for i in $(seq 20); do dnf -y -q install git tar iptables-nft procps-ng iproute python3 openssl >/dev/null 2>&1 && rpm -q git >/dev/null && break; sleep 10; done; git config --global --add safe.directory "*"' &
+on xvtx 'command -v git >/dev/null || for i in $(seq 20); do dnf -y -q install git tar iptables-nft procps-ng iproute python3 openssl >/dev/null 2>&1 && rpm -q git >/dev/null && break; sleep 10; done; git config --global --add safe.directory "*"' &
 wait
 
 load_vault xvtv

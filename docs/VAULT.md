@@ -264,6 +264,8 @@ A connection added this way is *managed*: the console shows and tests it but can
 database, encrypted with `SECRET_KEY`. The console never shows their passwords or keys.
 
 **Storage rules** (System settings → Vault storage rules, per organization):
+- The page lists every organization's rules. A new rule asks for its **organization** first; its asset
+  groups are that organization's. A rule cannot move to another organization.
 - Match on **asset groups**, **platforms** and a **username pattern** (e.g. `svc_*`).
 - Choose the **vault** (empty means the configured one) and, optionally, a **mirror**.
 - The first matching rule by priority wins. A rule without conditions is the organization's default.

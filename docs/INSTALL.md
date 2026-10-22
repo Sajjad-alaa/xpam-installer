@@ -419,10 +419,14 @@ database on the host at all (set `POSTGRESQL_EXPOSE_PORT` in `config.txt` to all
 **Set it up**
 
 1. Install the same XPAM version on the second server (`xpamctl install`), nothing else.
-2. On the current XPAM server (it becomes the primary):
+   XPAM's secrets must be in Vault (`xpamctl vault connect`, see [VAULT.md](VAULT.md)): both servers read
+   them from there, so no secret travels in the HA bundles. The Vault cluster can run on separate servers
+   or on these three machines (`xpam-vault.sh init --colocated`).
+2. On the current XPAM server (it becomes the primary), with the second server's Vault bundle
+   (`xpam-vault-<second-server-ip>.enc` from `xpam-vault.sh init`):
 
    ```bash
-   xpamctl ha init <this-server-ip> <second-server-ip> <witness-ip>
+   xpamctl ha init <this-server-ip> <second-server-ip> <witness-ip> --vault-bundle xpam-vault-<second-server-ip>.enc
    ```
 
    It shows two passphrases once — keep them in your password safe:
@@ -476,9 +480,16 @@ removes it.
 **Planned maintenance**: `xpamctl ha switchover` (or "Switch to the other server" in the console)
 moves the primary to the standby in about a minute.
 
-**Upgrading**: upgrade the **standby first**, then the primary, with the usual `xpamctl upgrade` on
-each. On the standby it only updates the images; on the primary it pauses automatic failover, migrates
-the database and starts XPAM.
+**Upgrading** (rolling): get the new installer on both servers, then run `xpamctl ha upgrade`:
+
+1. on the **standby**: it checks the cluster (other server in sync, witness, Vault) and upgrades this
+   server; XPAM keeps running on the primary;
+2. on the **primary**: it hands XPAM over to the upgraded standby (one short interruption while XPAM
+   starts there and updates the database), then upgrades itself as the new standby.
+
+Run on the primary first, it refuses and says which server to start with. `xpamctl ha status` shows each
+server's XPAM version. Afterwards the second server is the primary (`xpamctl ha switchover` moves XPAM
+back). Once the database is updated, going back to the old version means restoring the backup.
 
 Other commands: `xpamctl ha role` (this server's role), `xpamctl ha pause on|off` (maintenance mode:
 no automatic failover).

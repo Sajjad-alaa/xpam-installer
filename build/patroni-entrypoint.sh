@@ -90,7 +90,9 @@ config = {
         'remove_data_directory_on_rewind_failure': True,
         'remove_data_directory_on_diverged_timelines': True,
     },
-    'tags': {'nofailover': False, 'noloadbalance': False, 'clonefrom': False, 'nosync': False},
+    # xpam_version: the XPAM version installed on this server (xpamctl ha upgrade, ha status)
+    'tags': {'nofailover': False, 'noloadbalance': False, 'clonefrom': False, 'nosync': False,
+             'xpam_version': e.get('XPAM_VERSION', '')},
 }
 with open(f'{run}/patroni.yml', 'w') as f:
     json.dump(config, f)  # (JSON is valid YAML)

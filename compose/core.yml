@@ -21,6 +21,7 @@ services:
       timeout: 5s
       retries: 3
       start_period: 90s
+      start_interval: 2s  # (health known within ~2 s of a start: failover, restarts)
     networks:
       - net
     extra_hosts:

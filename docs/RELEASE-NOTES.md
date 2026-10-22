@@ -41,6 +41,16 @@
 - **Encryption you can check:** XPAM refuses anything below TLS 1.3 to Vault and trusts only the kit's
   CA. `xpamctl vault verify` checks the protocol, certificates and expiry, that TLS 1.2 and missing
   client certificates are refused, least privilege, and that nothing is left on disk.
+- **Faster failover:** Patroni notices a failed primary sooner (TTL 20 s), the agent checks every 2 seconds,
+  and XPAM's core starts in about 10 seconds when the build and database are unchanged (instead of
+  redoing static files and migrations on every start).
+- **Rolling upgrade:** `xpamctl ha upgrade` on the standby, then on the primary. It checks the cluster
+  first and hands XPAM to the upgraded standby, so there is one short interruption.
+  `xpamctl ha status` shows each server's version.
+- **Vault in the HA view:** the console and the agent show each Vault server as XPAM reaches it (TLS 1.3,
+  its own certificate), with a warning when one is down or sealed.
+- **Vault storage rules** in System settings list every organization's rules; a new rule asks for its
+  organization.
 
 ## 5.1.16 — high availability
 

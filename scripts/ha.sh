@@ -9,6 +9,9 @@
 #   (witness)  decrypt xpam-ha-witness.enc and run witness.sh   on the witness (Docker only)
 #   xpamctl ha status                                           roles, replication, files, witness
 #   xpamctl ha switchover                                       planned: the other server becomes primary
+#   xpamctl ha upgrade [-y]                                     rolling upgrade, with this installer's version:
+#                                                               the standby first, then on the primary (it hands
+#                                                               XPAM to the upgraded standby, then upgrades itself)
 #   xpamctl ha failover --force                                 emergency: make THIS server primary
 #   xpamctl ha vip <ip/prefix>|off                              floating address held by the primary (both servers)
 #   xpamctl ha witness-bundle                                   replace the witness (same address)
@@ -490,7 +493,9 @@ except ValueError:
     print("  Patroni is not answering on this server"); sys.exit()
 for m in d.get("members", []):
     lag = m.get("lag", "")
-    print("  %-8s %-15s %-13s %-10s lag %s" % (m["name"], m.get("host", ""), m["role"], m["state"], lag if lag != "" else "-"))'
+    version = (m.get("tags") or {}).get("xpam_version") or "-"
+    print("  %-8s %-15s %-13s %-10s lag %-6s XPAM %s" % (m["name"], m.get("host", ""), m["role"], m["state"],
+                                                       lag if lag != "" else "-", version))'
   status="$(get_config VOLUME_DIR)/core/data/ha/status.json"
   if [[ -f "${status}" ]]; then
     echo_yellow "This server"
@@ -517,6 +522,105 @@ function ha_switchover() {
   code=$(patroni_write POST switchover "{\"leader\":\"${leader}\",\"candidate\":\"${candidate}\"}")
   [[ "${code}" == "200" ]] || { log_error "Switchover refused (HTTP ${code}): the standby must be in sync ('xpamctl ha status')"; return 1; }
   echo_green "Done: ${candidate} is the primary."
+}
+
+function peer_member() { # the other server, from Patroni: name host role state lag version
+  patroni cluster | python3 -c '
+import json, sys
+me = sys.argv[1]
+for m in json.load(sys.stdin).get("members", []):
+    if m["name"] != me:
+        lag = m.get("lag", "")
+        print(m["name"], m.get("host", "-"), m["role"], m["state"], lag if lag != "" else "-",
+              (m.get("tags") or {}).get("xpam_version") or "-")' "$(get_config HA_NODE_NAME)"
+}
+
+function agent_status() { # field — from this server's agent (status.json)
+  python3 - "$(get_config VOLUME_DIR)/core/data/ha/status.json" "$1" <<'PY' 2>/dev/null
+import json, sys
+s = json.load(open(sys.argv[1]))
+v = s.get(sys.argv[2])
+if sys.argv[2] == 'vault':
+    nodes = (v or {}).get('nodes') or []
+    v = 'none' if not nodes else ('ok' if all(n.get('state') == 'ok' for n in nodes) else
+                                  ', '.join(f"{n['addr']} {n['state']}" for n in nodes if n.get('state') != 'ok'))
+print('yes' if v is True else 'no' if v is False else v)
+PY
+}
+
+function xpam_answers() { # host — XPAM's web answers there (the new primary after the switchover)
+  curl -fsk --max-time 5 -o /dev/null "https://${1}:$(get_config HTTPS_PORT 443)/api/health/"
+}
+
+function ha_upgrade() { # [-y] — rolling upgrade to this installer's version
+  is_ha_enabled || { log_error "High availability is not enabled (plain 'xpamctl upgrade')"; return 1; }
+  local assume=${1:-} target current role peer_name peer_host peer_role peer_state peer_lag peer_version
+  local witness vault confirm="n"
+  target=${VERSION}
+  current=$(get_config CURRENT_VERSION)
+  role=$(ha_role)
+  read -r peer_name peer_host peer_role peer_state peer_lag peer_version < <(peer_member)
+  witness=$(agent_status witness_reachable)
+  vault=$(agent_status vault)
+  echo_yellow "Rolling upgrade to ${target}"
+  echo "  this server:  ${role}, XPAM ${current:--}"
+  echo "  other server: ${peer_host:-not in the cluster} ${peer_role:+(${peer_role}, ${peer_state}, lag ${peer_lag}, XPAM ${peer_version})}"
+  echo "  witness reachable: ${witness:-unknown}    Vault: ${vault:-unknown}"
+  [[ "${role}" != "unknown" ]] || { log_error "Patroni does not answer on this server ('docker logs xpam_postgresql')"; return 1; }
+  [[ -n "${peer_name}" && "${peer_state}" =~ ^(running|streaming)$ ]] || {
+    log_error "The other server is not running in the cluster: fix it first ('xpamctl ha status')"; return 1; }
+  [[ "${witness}" == "yes" ]] || { log_error "The witness is not reachable: without it a failover cannot happen safely"; return 1; }
+  [[ "${vault}" == "ok" || "${vault}" == "none" || -z "${vault}" ]] || {
+    log_error "A Vault server is not healthy (${vault}): XPAM must read its secrets when it starts"; return 1; }
+
+  if [[ "${role}" == "standby" ]]; then
+    if [[ "${current}" == "${target}" ]]; then
+      echo_green "This server is on ${target}."
+    else
+      echo
+      echo "Upgrades this server (the standby) to ${target}. XPAM keeps running on the primary (${peer_host})."
+      if [[ "${assume}" != "-y" ]]; then
+        read_from_input confirm "Continue?" "y/n" "${confirm}"
+        [[ "${confirm}" == "y" ]] || return 1
+      fi
+      AUTO_INSTALL=$([[ "${assume}" == "-y" ]] && echo 1 || echo "${AUTO_INSTALL:-0}") \
+        bash "${BASE_DIR}/7_upgrade.sh" || { log_error "The upgrade of the standby failed"; return 1; }
+    fi
+    [[ "${peer_version}" == "${target}" ]] || echo_yellow "Next, on the primary (${peer_host}): xpamctl ha upgrade"
+    return 0
+  fi
+
+  # the primary
+  if [[ "${current}" == "${target}" ]]; then
+    [[ "${peer_version}" == "${target}" ]] && echo_green "Both servers are on ${target}." \
+      || echo_yellow "This server is on ${target}; now on the standby (${peer_host}): xpamctl ha upgrade"
+    return 0
+  fi
+  if [[ "${peer_version}" != "${target}" ]]; then
+    log_error "Upgrade the standby first — on ${peer_host}: xpamctl ha upgrade (XPAM keeps running here meanwhile)"
+    return 1
+  fi
+  [[ "${peer_role}" == "sync_standby" || "${peer_lag}" == "0" ]] || {
+    log_error "The standby is not in sync (${peer_role}, lag ${peer_lag}): wait, then run this again"; return 1; }
+  echo
+  echo "The standby (${peer_host}) is on ${target}. Next:"
+  echo "  1. XPAM moves to ${peer_host}: a short interruption while it starts and updates the database"
+  echo "  2. this server becomes the standby and is upgraded to ${target}"
+  echo "After step 1 the database has ${target}'s changes: going back to the old version means restoring the backup."
+  if [[ "${assume}" != "-y" ]]; then
+    read_from_input confirm "Continue?" "y/n" "${confirm}"
+    [[ "${confirm}" == "y" ]] || return 1
+  fi
+  ha_switchover || return 1
+  wait_until 180 "waiting for this server to become the standby" test "$(ha_role)" == standby || {
+    log_error "This server is still not the standby: check 'xpamctl ha status' before upgrading it"; return 1; }
+  wait_until 900 "waiting for XPAM to answer on ${peer_host} (it updates the database)" xpam_answers "${peer_host}" || {
+    log_error "XPAM does not answer on ${peer_host}: check it there ('docker logs xpam_core'); this server was not upgraded"
+    return 1; }
+  echo_green "XPAM ${target} runs on ${peer_host}. Upgrading this server (now the standby)."
+  AUTO_INSTALL=$([[ "${assume}" == "-y" ]] && echo 1 || echo "${AUTO_INSTALL:-0}") \
+    bash "${BASE_DIR}/7_upgrade.sh" || { log_error "The upgrade of this server failed (XPAM runs on ${peer_host})"; return 1; }
+  echo_green "Both servers are on ${target}; ${peer_host} is the primary ('xpamctl ha switchover' moves XPAM back)."
 }
 
 function ha_failover() {
@@ -735,6 +839,7 @@ function main() {
           ha_join "$@" ;;
     status) ha_status ;;
     switchover) ha_switchover ;;
+    upgrade) ha_upgrade "$@" ;;
     failover) ha_failover "$@" ;;
     role) ha_role ;;
     vip) [[ $# -ge 1 ]] || { echo "usage: xpamctl ha vip <ip/prefix>|off"; return 2; }
@@ -748,7 +853,7 @@ function main() {
     pause) ha_pause "${1:-on}" ;;
     app-start) app_start ;;
     app-stop) app_stop ;;
-    *) echo "usage: xpamctl ha init|join|status|switchover|failover|vip|join-bundle|witness-bundle|rotate-certs|apply-certs|disable|role|pause"; return 2 ;;
+    *) echo "usage: xpamctl ha init|join|status|switchover|upgrade|failover|vip|join-bundle|witness-bundle|rotate-certs|apply-certs|disable|role|pause"; return 2 ;;
   esac
 }
 

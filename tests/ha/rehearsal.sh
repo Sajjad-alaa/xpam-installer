@@ -53,12 +53,12 @@ node() { # name ip memory
     --network "$NET" --ip "$2" -v "$1-docker:/var/lib/docker" -v /opt/xpam-installer:/src:ro \
     "$NODE_IMAGE" >/dev/null
 }
-node hara $A 1500m; node harb $B 1500m; node harw $W 400m
+node hara $A 1500m; node harb $B 1500m; node harw $W $([[ "${VAULT:-}" == 1 ]] && echo 700m || echo 400m)  # (Vault on the witness too)
 sleep 8
 for n in hara harb harw; do
-  on $n 'for i in $(seq 20); do dnf -y -q install git tar rsync openssh-server openssh-clients iptables-nft procps-ng iproute python3 openssl >/dev/null 2>&1 && rpm -q git rsync openssh-server >/dev/null && break; sleep 10; done; systemctl enable --now sshd >/dev/null 2>&1; git config --global --add safe.directory "*"' &
+  on $n 'command -v git rsync sshd ssh >/dev/null || for i in $(seq 20); do dnf -y -q install git tar rsync openssh-server openssh-clients iptables-nft procps-ng iproute python3 openssl >/dev/null 2>&1 && rpm -q git rsync openssh-server >/dev/null && break; sleep 10; done; systemctl enable --now sshd >/dev/null 2>&1; git config --global --add safe.directory "*"' &
 done; wait
-check 'the simulated servers have their packages' "on hara 'rpm -q git rsync' >/dev/null && on harb 'rpm -q git rsync' >/dev/null && on harw 'rpm -q rsync' >/dev/null"
+check 'the simulated servers have their packages' "on hara 'command -v git rsync' >/dev/null && on harb 'command -v git rsync' >/dev/null && on harw 'command -v rsync' >/dev/null"
 
 say "XPAM on A and B (reduced: core + gateway)"
 install() { # node
@@ -227,6 +227,29 @@ on harb "cd /opt/xpam-installer && export $PASSENV && timeout 2400 bash ./xpamct
 check 'the rebuilt server is the synchronous standby again' "wait_for \"on hara 'curl -s --cacert /opt/xpam/config/ha/certs/ca.crt --cert /opt/xpam/config/ha/certs/node.crt --key /opt/xpam/config/ha/certs/node.key https://$A:8008/cluster' | grep -q sync_standby\" 30"
 check 'it has all the data' "wait_for \"[[ \\\$(on harb \\\"\\\$PSQL 'select count(*) from xpam_ha_rehearsal'\\\") == 3 ]]\" 12"
 check 'the rebuilt server got the floating address setting from the fresh bundle' "on harb 'grep -q ^HA_VIP=172.31.9.100/24 /opt/xpam/config/config.txt'"
+
+say "rolling upgrade (xpamctl ha upgrade): the standby first, then the primary hands XPAM over"
+# a "next release": the same images tagged v5.1.18 and the installer's static.env saying v5.1.18
+NEXT=v5.1.18
+for n in hara harb; do
+  on $n "for i in core gateway postgresql-ha; do docker tag xpam/\$i:$TAG xpam/\$i:$NEXT; done; sed -i 's/^export VERSION=.*/export VERSION=$NEXT/; s/^export XPAM_DEFAULT_VERSION=.*/export XPAM_DEFAULT_VERSION=$NEXT/' /opt/xpam-installer/static.env"
+done
+wait_for "on hara 'curl -s --cacert /opt/xpam/config/ha/certs/ca.crt --cert /opt/xpam/config/ha/certs/node.crt --key /opt/xpam/config/ha/certs/node.key https://$A:8008/cluster' | grep -q sync_standby" 30
+check 'ha upgrade on the primary first is refused (the standby goes first)' "on hara 'cd /opt/xpam-installer && bash ./xpamctl.sh ha upgrade -y' 2>&1 | grep -q 'Upgrade the standby first'"
+# XPAM's availability, seen from the witness every second (either server answering is "up")
+docker exec -d harw bash -c "rm -f /root/up.log; while true; do if curl -fsk --max-time 2 -o /dev/null https://$A/api/health/ || curl -fsk --max-time 2 -o /dev/null https://$B/api/health/; then echo \"\$(date +%s) up\"; else echo \"\$(date +%s) down\"; fi >> /root/up.log; sleep 1; done"
+on harb "cd /opt/xpam-installer && export $PASSENV && timeout 1800 bash ./xpamctl.sh ha upgrade -y > /root/ha-upgrade-b.log 2>&1"; tail -2 <(on harb 'cat /root/ha-upgrade-b.log')
+check "the standby (B) is on $NEXT, and its database too (Patroni tag)" "on harb 'grep -qx CURRENT_VERSION=$NEXT /opt/xpam/config/config.txt' && wait_for \"on hara 'curl -s --cacert /opt/xpam/config/ha/certs/ca.crt --cert /opt/xpam/config/ha/certs/node.crt --key /opt/xpam/config/ha/certs/node.key https://$A:8008/cluster' | grep -q '\\\"xpam_version\\\": \\\"$NEXT\\\"'\" 24"
+check 'XPAM stayed up on A while the standby was upgraded' "! grep -q down <(on harw 'cat /root/up.log')"
+wait_for "on hara 'curl -s --cacert /opt/xpam/config/ha/certs/ca.crt --cert /opt/xpam/config/ha/certs/node.crt --key /opt/xpam/config/ha/certs/node.key https://$A:8008/cluster' | grep -q sync_standby" 60
+on hara "cd /opt/xpam-installer && export $PASSENV && timeout 2400 bash ./xpamctl.sh ha upgrade -y > /root/ha-upgrade-a.log 2>&1"; tail -2 <(on hara 'cat /root/ha-upgrade-a.log')
+sleep 5; docker exec harw pkill -f 'up.log' >/dev/null 2>&1
+OUTAGE=$(on harw 'cat /root/up.log' | awk '$2=="down"{if(!s)s=$1; e=$1} $2=="up"&&s{d=e-s+1; if(d>m)m=d; s=0} END{if(s){d=e-s+1; if(d>m)m=d}; print m+0}')
+check "both servers are on $NEXT; B is the primary and A the synchronous standby" "on hara 'grep -qx CURRENT_VERSION=$NEXT /opt/xpam/config/config.txt' && wait_for \"[[ \\\$(on harb 'cd /opt/xpam-installer && bash ./xpamctl.sh ha status') == *xpam-a*sync_standby*$NEXT*xpam-b*leader*$NEXT* || \\\$(on harb 'cd /opt/xpam-installer && bash ./xpamctl.sh ha status') == *xpam-b*leader*$NEXT*xpam-a*sync_standby*$NEXT* ]]\" 24"
+check 'XPAM runs on B after the upgrade, with all the data' "on harb 'docker ps --format \"{{.Names}} {{.Status}}\"' | grep -q '^xpam_core .*(healthy)' && [[ \$(on harb \"\$PSQL 'select count(*) from xpam_ha_rehearsal'\") == 3 ]]"
+check "the rolling upgrade interrupted XPAM once, briefly (longest outage ${OUTAGE}s, at most 180s)" "[[ $OUTAGE -le 180 ]]"
+on harb 'cd /opt/xpam-installer && bash ./xpamctl.sh ha switchover' | tail -1
+wait_for "on hara 'docker ps --format \"{{.Names}} {{.Status}}\"' | grep -q '^xpam_core .*(healthy)'" 120
 
 say "back to one server"
 on harb 'cd /opt/xpam-installer && bash ./xpamctl.sh ha disable -y' | tail -1

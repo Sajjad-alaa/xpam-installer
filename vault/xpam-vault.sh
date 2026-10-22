@@ -15,6 +15,9 @@
 #   --siem HOST:PORT          also stream the audit log to a SIEM (TCP)
 #   --pgp-keys F1,F2,...      encrypt each unseal key share to its holder (base64 of `gpg --export`)
 #   --seal-config FILE        an auto-unseal "seal" stanza (Transit / cloud KMS / HSM) instead of key shares
+#   --colocated               on XPAM's own three machines (high availability: both servers and the witness):
+#                             each node unseals itself at boot; convenient, but root on an XPAM server is root
+#                             on a Vault node (separate servers are stronger)
 #   --local                   on the XPAM server itself (one address for --nodes and --xpam): XPAM's containers
 #                             may connect (XPAM_DOCKER_SUBNET), unsealed at boot with systemd-creds (TPM2 when
 #                             present). Weaker than separate servers: move later with `xpamctl vault connect`.
@@ -335,7 +338,7 @@ preflight() {
   docker compose version >/dev/null 2>&1 || die "Docker Compose v2 is required"
   command -v openssl >/dev/null && command -v curl >/dev/null && command -v python3 >/dev/null \
     || die "openssl, curl and python3 are required"
-  if [[ "$(awk 'NR>1' /proc/swaps | wc -l)" -gt 0 && "${LOCAL:-0}" == 1 ]]; then
+  if [[ "$(awk 'NR>1' /proc/swaps | wc -l)" -gt 0 && ( "${LOCAL:-0}" == 1 || "${COLOCATED:-0}" == 1 ) ]]; then
     yellow "  warning: swap is on: memory holding secrets could be written to disk (swapoff -a recommended)"
   elif [[ "$(awk 'NR>1' /proc/swaps | wc -l)" -gt 0 && "${XPAM_VAULT_ALLOW_SWAP:-}" != 1 ]]; then
     die "swap is on: Vault keeps secrets in memory, which must never be written to disk (swapoff -a and remove swap from /etc/fstab; XPAM_VAULT_ALLOW_SWAP=1 to override)"
@@ -469,6 +472,8 @@ node_bundle() { # ip — for another Vault server: CA, its certificate, the kit 
   mv "${SCRATCH}/node-${ip}.key" "${d}/certs/node.key"
   sed "s/^NODE_IP=.*/NODE_IP=${ip}/" "${BASE}/kit.env" > "${d}/kit.env"
   [[ -f "${BASE}/seal.hcl" ]] && cp "${BASE}/seal.hcl" "${d}/seal.hcl"
+  # co-located: the node unseals itself at boot with the shares, sealed there by its own systemd-creds
+  [[ "${COLOCATED:-0}" == 1 && -s "${SCRATCH}/shares" ]] && head -n "${KEY_THRESHOLD}" "${SCRATCH}/shares" > "${d}/unseal.shares"
   mkdir -p "${BASE}/out"
   encrypt_dir "${d}" "${BASE}/out/xpam-vault-node-${ip}.enc"
   rm -rf "${d}"
@@ -487,7 +492,7 @@ bundle_passphrase() { # sets XV_BUNDLE_PW (XPAM_VAULT_BUNDLE_PASSPHRASE or a new
 
 cmd_init() {
   local nodes="" xpam="" admin="" siem="" pgp="" seal_file="" extra=""
-  CLUSTER=xpam; LOCAL=0
+  CLUSTER=xpam; LOCAL=0; COLOCATED=0
   while [[ $# -gt 0 ]]; do
     case "$1" in
       --nodes) nodes=$2; shift 2 ;;
@@ -498,6 +503,7 @@ cmd_init() {
       --pgp-keys) pgp=$2; shift 2 ;;
       --seal-config) seal_file=$2; shift 2 ;;
       --local) LOCAL=1; shift ;;
+      --colocated) COLOCATED=1; shift ;;
       *) die "unknown option $1" ;;
     esac
   done
@@ -514,6 +520,13 @@ cmd_init() {
     [[ "${nodes}" == "${xpam}" && "$(echo "${nodes//,/ }" | wc -w)" -eq 1 ]] || die "--local: one address, the same for --nodes and --xpam"
     extra="127.0.0.1/32${XPAM_DOCKER_SUBNET:+,${XPAM_DOCKER_SUBNET}}"
     command -v systemd-creds >/dev/null || die "--local needs systemd-creds (systemd 250+)"
+  elif [[ "${COLOCATED}" == 1 ]]; then
+    # on XPAM's own machines (high availability: A, B and the witness): XPAM's containers connect from the
+    # Docker subnet; each node unseals itself at boot (systemd-creds) — no separation from XPAM's root
+    [[ "$(echo "${nodes//,/ }" | wc -w)" -eq 3 ]] || die "--colocated: three nodes (the two XPAM servers and the witness)"
+    extra="127.0.0.1/32${XPAM_DOCKER_SUBNET:+,${XPAM_DOCKER_SUBNET}}"
+    [[ -n "${XPAM_DOCKER_SUBNET:-}" ]] || extra="127.0.0.1/32,192.168.250.0/24"
+    command -v systemd-creds >/dev/null || die "--colocated needs systemd-creds (systemd 250+)"
   else
     [[ "$(echo "${nodes//,/ }" | wc -w)" -eq 3 ]] || yellow "  warning: 3 Vault servers are recommended (a majority must be up)"
   fi
@@ -561,6 +574,7 @@ XPAM_IPS=${xpam}
 ADMIN_IPS=${admin}
 CLUSTER=${CLUSTER}
 LOCAL=${LOCAL}
+COLOCATED=${COLOCATED}
 XPAM_EXTRA_CIDRS=${extra}
 EOF
   chmod 600 "${BASE}/kit.env"
@@ -600,7 +614,7 @@ EOF
   fi
   local hdr; hdr=$(token_file "${root_token}")
   unset root_token
-  [[ "${LOCAL}" == 1 && -z "${seal_file}" ]] && install_local_unseal
+  [[ ( "${LOCAL}" == 1 || "${COLOCATED}" == 1 ) && -z "${seal_file}" ]] && install_local_unseal
 
   if [[ -n "${pgp}" && -z "${seal_file}" ]]; then
     echo
@@ -753,6 +767,13 @@ cmd_join() {
   [[ -f "${d}/seal.hcl" ]] && cp "${d}/seal.hcl" "${BASE}/seal.hcl"
   echo "  starting Vault on ${NODE_IP} (it joins the cluster once unsealed)"
   install_server
+  if [[ -s "${d}/unseal.shares" ]]; then
+    cp "${d}/unseal.shares" "${SCRATCH}/shares"
+    install_local_unseal
+    rm -f "${SCRATCH}/shares"
+    unseal_interactive < <(systemd-creds decrypt --name=xpam-vault-unseal /etc/xpam-vault/unseal.cred -)
+    return 0
+  fi
   if [[ -f "${BASE}/seal.hcl" ]]; then info "auto-unseal: nothing more to do"; else
     echo "  next: xpam-vault.sh unseal   (${KEY_THRESHOLD} key share holders)"
   fi

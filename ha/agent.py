@@ -207,6 +207,34 @@ def witness_alive(conf):
         return False
 
 
+def vault_health(conf):
+    """ XPAM's secrets are in Vault: each Vault server, as this server reaches it (its client certificate, TLS 1.3) """
+    if conf.get('XPAM_SECRETS_FROM_VAULT') != '1':
+        return None
+    import ssl
+    vdir = os.path.join((conf.get('CONFIG_DIR') or '/opt/xpam/config'), 'vault')
+    try:
+        env = dict(l.strip().split('=', 1) for l in open(os.path.join(vdir, 'vault.env')) if '=' in l)
+        ctx = ssl.create_default_context(cafile=os.path.join(vdir, 'ca.crt'))
+        ctx.minimum_version = ssl.TLSVersion.TLSv1_3
+        ctx.load_cert_chain(os.path.join(vdir, 'client.crt'), os.path.join(vdir, 'client.key'))
+    except Exception as e:
+        return {'nodes': [], 'error': str(e)[:200]}
+    nodes = []
+    for addr in [a for a in env.get('VAULT_ADDRS', '').split(',') if a]:
+        state = 'down'
+        try:
+            with urllib.request.urlopen(f'{addr}/v1/sys/health?standbyok=true&perfstandbyok=true',
+                                        timeout=3, context=ctx) as r:
+                state = 'ok' if r.status == 200 else 'sealed'
+        except urllib.error.HTTPError as e:
+            state = {503: 'sealed', 501: 'not initialized'}.get(e.code, f'error {e.code}')
+        except Exception:
+            state = 'down'
+        nodes.append({'addr': addr, 'state': state})
+    return {'nodes': nodes}
+
+
 def iface_of(ip):
     code, out = run(['ip', '-o', '-4', 'addr', 'show'], 10)
     for line in out.splitlines():
@@ -374,7 +402,8 @@ def main():
                 if result:
                     last_request = result
             if now - last_probe >= 30:  # (not every loop: the other machines log each connection)
-                reach = {'peer_reachable': peer_alive(conf), 'witness_reachable': witness_alive(conf)}
+                reach = {'peer_reachable': peer_alive(conf), 'witness_reachable': witness_alive(conf),
+                         'vault': vault_health(conf)}
                 last_probe = now
             write_status(conf, {
                 'node': conf['HA_NODE_NAME'], 'node_ip': conf['HA_NODE_IP'], 'peer_ip': conf['HA_PEER_IP'],

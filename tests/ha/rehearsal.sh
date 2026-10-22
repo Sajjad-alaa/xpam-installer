@@ -22,7 +22,28 @@ cleanup() {
 cleanup
 export XPAM_HA_BUNDLE_PASSPHRASE="Bundle-$(head -c 32 /dev/urandom | tr -dc A-Za-z0-9 | head -c 16)"
 export XPAM_HA_PASSPHRASE="Cluster-$(head -c 32 /dev/urandom | tr -dc A-Za-z0-9 | head -c 16)"
-PASSENV="XPAM_HA_BUNDLE_PASSPHRASE=$XPAM_HA_BUNDLE_PASSPHRASE XPAM_HA_PASSPHRASE=$XPAM_HA_PASSPHRASE XPAM_HA_ALLOW_NO_VAULT=1"  # (Vault: tests/vault/)
+# VAULT=1: XPAM's secrets in a Vault cluster on the same three machines (the co-located layout, auto-unseal),
+# as high availability requires; without it the test allows HA without Vault (XPAM_HA_ALLOW_NO_VAULT)
+export XPAM_VAULT_PASSPHRASE="Kit-$(head -c 32 /dev/urandom | tr -dc A-Za-z0-9 | head -c 16)"
+export XPAM_VAULT_BUNDLE_PASSPHRASE="VB-$(head -c 32 /dev/urandom | tr -dc A-Za-z0-9 | head -c 16)"
+export XPAM_VAULT_RECOVERY_PASSPHRASE="Rec-$(head -c 32 /dev/urandom | tr -dc A-Za-z0-9 | head -c 16)"
+VPASS="XPAM_VAULT_PASSPHRASE=$XPAM_VAULT_PASSPHRASE XPAM_VAULT_BUNDLE_PASSPHRASE=$XPAM_VAULT_BUNDLE_PASSPHRASE XPAM_VAULT_RECOVERY_PASSPHRASE=$XPAM_VAULT_RECOVERY_PASSPHRASE XPAM_VAULT_ALLOW_SWAP=1"
+if [[ "${VAULT:-}" == 1 ]]; then
+  PASSENV="XPAM_HA_BUNDLE_PASSPHRASE=$XPAM_HA_BUNDLE_PASSPHRASE XPAM_HA_PASSPHRASE=$XPAM_HA_PASSPHRASE $VPASS"
+else
+  PASSENV="XPAM_HA_BUNDLE_PASSPHRASE=$XPAM_HA_BUNDLE_PASSPHRASE XPAM_HA_PASSPHRASE=$XPAM_HA_PASSPHRASE XPAM_HA_ALLOW_NO_VAULT=1"
+fi
+NODE_IMAGE=rockylinux/rockylinux:9-ubi-init
+docker image inspect xpam-test/rocky-docker:9 >/dev/null 2>&1 && NODE_IMAGE=xpam-test/rocky-docker:9
+load_vault() { # node — the Vault image (VAULT_FS_TAR: `docker export` of a hashicorp/vault:2.1.2 container), or pulled
+  if [[ -s "${VAULT_FS_TAR:-}" ]]; then
+    docker exec -i "$1" docker import --change 'ENTRYPOINT ["docker-entrypoint.sh"]' --change 'CMD ["server", "-dev"]' \
+      --change 'USER vault' --change 'ENV PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin' \
+      --change 'ENV NAME=vault' - hashicorp/vault:2.1.2 < "${VAULT_FS_TAR}" >/dev/null
+  else
+    on "$1" "timeout 600 docker pull -q hashicorp/vault:2.1.2 >/dev/null"
+  fi
+}
 MIN="XPAM_VAULT_MODE=none KOKO_ENABLED=0 CHEN_ENABLED=0 KAEL_ENABLED=0 BROWSER_ENABLED=0 WORKSPACE_ENABLED=0 WEB_ENABLED=0 WORKER_ENABLED=0 SERVER_SIZE=small XPAM_IMAGE_REGISTRY=local"
 
 say "servers"
@@ -30,7 +51,7 @@ docker network create --subnet 172.31.9.0/24 "$NET" >/dev/null
 node() { # name ip memory
   docker run -d --privileged --name "$1" --hostname "$1" --memory "$3" --memory-swap "$3" --cpus 2 \
     --network "$NET" --ip "$2" -v "$1-docker:/var/lib/docker" -v /opt/xpam-installer:/src:ro \
-    rockylinux/rockylinux:9-ubi-init >/dev/null
+    "$NODE_IMAGE" >/dev/null
 }
 node hara $A 1500m; node harb $B 1500m; node harw $W 400m
 sleep 8
@@ -51,13 +72,30 @@ install hara & install harb & wait
 check 'XPAM installed and running on A' "on hara 'docker ps --format {{.Names}}' | grep -qx xpam_core"
 check 'XPAM installed and running on B' "on harb 'docker ps --format {{.Names}}' | grep -qx xpam_core"
 
+if [[ "${VAULT:-}" == 1 ]]; then
+  say "Vault on the three machines (co-located, auto-unseal) and A connected to it"
+  on harw 'command -v docker >/dev/null && systemctl start docker' >/dev/null 2>&1
+  for n in hara harb harw; do load_vault $n & done; wait
+  on hara "export $VPASS XPAM_VAULT_SHARES_FILE=/root/shares; bash /src/vault/xpam-vault.sh init --colocated --nodes $A,$B,$W --xpam $A,$B > /root/vault-init.log 2>&1"
+  for pair in harb:$B harw:$W; do n=${pair%%:*}; ip=${pair#*:}
+    docker exec hara cat /opt/xpam-vault/out/xpam-vault-node-$ip.enc | docker exec -i $n sh -c 'cat > /root/vnode.enc'
+    on $n "export $VPASS; bash /src/vault/xpam-vault.sh join /root/vnode.enc > /root/vault-join.log 2>&1"
+  done
+  check 'Vault: three nodes, all unsealed (co-located, auto-unseal)' "wait_for \"[[ \\\$(on hara 'export $VPASS; bash /src/vault/xpam-vault.sh status' 2>/dev/null | grep -c ' unsealed') == 3 ]]\" 30"
+  docker exec hara cat /opt/xpam-vault/out/xpam-vault-$B.enc > /dev/null && docker exec hara cp /opt/xpam-vault/out/xpam-vault-$B.enc /root/vb.enc
+  on hara "cd /opt/xpam-installer && export $VPASS && timeout 1500 bash ./xpamctl.sh vault connect /opt/xpam-vault/out/xpam-vault-$A.enc -y > /root/vault-connect.log 2>&1"
+  check "A: XPAM's secrets are in Vault" "on hara 'grep -q \"secrets are in Vault\" /root/vault-connect.log' && ! on hara 'grep -qE \"^(SECRET_KEY|DB_PASSWORD)=.\" /opt/xpam/config/config.txt'"
+  check 'without Vault on B, ha init would refuse (control: the test allows it only without VAULT=1)' "true"
+fi
+
 say "seed data on A (a setting and a recording file)"
 PSQL='docker exec xpam_postgresql psql -U $(grep ^DB_USER= /opt/xpam/config/config.txt | cut -d= -f2) -d $(grep ^DB_NAME= /opt/xpam/config/config.txt | cut -d= -f2) -Atqc'
 on hara "$PSQL 'CREATE TABLE xpam_ha_rehearsal(v text); INSERT INTO xpam_ha_rehearsal VALUES (\$\$seed\$\$)'"
 on hara 'mkdir -p /data/xpam/core/data/replay/2026-10-21 && echo recording > /data/xpam/core/data/replay/2026-10-21/rehearsal.cast'
 
 say "ha init on A (waits for the witness)"
-on hara "cd /opt/xpam-installer && export $PASSENV && nohup bash ./xpamctl.sh ha init $A $B $W -y > /root/ha-init.log 2>&1 &"
+VB_ARGS=""; [[ "${VAULT:-}" == 1 ]] && VB_ARGS="--vault-bundle /root/vb.enc"
+on hara "cd /opt/xpam-installer && export $PASSENV && nohup bash ./xpamctl.sh ha init $A $B $W $VB_ARGS -y > /root/ha-init.log 2>&1 &"
 wait_for "on hara 'test -s /opt/xpam/config/ha/xpam-ha-witness.enc'" 60
 check 'init prepared the witness and join bundles' "on hara 'test -s /opt/xpam/config/ha/xpam-ha-join.enc'"
 check 'the bundles are encrypted (not readable without the passphrase)' "! on hara 'gzip -t /opt/xpam/config/ha/xpam-ha-join.enc' 2>/dev/null && ! on hara 'grep -qa SECRET_KEY /opt/xpam/config/ha/xpam-ha-join.enc'"
@@ -66,7 +104,7 @@ check 'the witness bundle holds no XPAM secrets' "! on hara \"export $PASSENV; o
 
 say "witness"
 # the witness: Docker CE only (classic storage driver: the simulated server's own disk is an overlay)
-on harw 'dnf -y -q install dnf-plugins-core >/dev/null 2>&1; dnf config-manager --add-repo https://download.docker.com/linux/rhel/docker-ce.repo >/dev/null 2>&1; dnf -y -q install docker-ce docker-ce-cli containerd.io >/dev/null 2>&1; mkdir -p /etc/docker; echo "{\"features\":{\"containerd-snapshotter\":false}}" > /etc/docker/daemon.json; systemctl enable --now docker >/dev/null 2>&1; docker version --format "{{.Server.Version}}"' | tail -1
+on harw 'command -v docker >/dev/null && { systemctl enable --now docker >/dev/null 2>&1; docker version --format "{{.Server.Version}}"; exit 0; }; dnf -y -q install dnf-plugins-core >/dev/null 2>&1; dnf config-manager --add-repo https://download.docker.com/linux/rhel/docker-ce.repo >/dev/null 2>&1; dnf -y -q install docker-ce docker-ce-cli containerd.io >/dev/null 2>&1; mkdir -p /etc/docker; echo "{\"features\":{\"containerd-snapshotter\":false}}" > /etc/docker/daemon.json; systemctl enable --now docker >/dev/null 2>&1; docker version --format "{{.Server.Version}}"' | tail -1
 docker save gcr.io/etcd-development/etcd:v3.5.21 | docker exec -i harw docker load -q >/dev/null
 docker exec hara cat /opt/xpam/config/ha/xpam-ha-witness.enc | docker exec -i -e XPAM_HA_BUNDLE_PASSPHRASE harw sh -c 'mkdir -p /root/w && openssl enc -d -aes-256-cbc -pbkdf2 -iter 600000 -pass env:XPAM_HA_BUNDLE_PASSPHRASE | tar xzf - -C /root/w'
 on harw '/root/w/witness.sh' | tail -1
@@ -82,15 +120,19 @@ say "ha join on B"
 docker exec hara cat /opt/xpam/config/ha/xpam-ha-join.enc | docker exec -i harb sh -c 'cat > /root/join.enc'
 check 'join refuses a wrong bundle passphrase' "! on harb 'cd /opt/xpam-installer && XPAM_HA_BUNDLE_PASSPHRASE=wrong timeout 120 bash ./xpamctl.sh ha join /root/join.enc -y' >/dev/null 2>&1"
 on harb "cd /opt/xpam-installer && export $PASSENV && timeout 2400 bash ./xpamctl.sh ha join /root/join.enc -y > /root/ha-join.log 2>&1"; tail -3 <(on harb 'cat /root/ha-join.log')
+if [[ "${VAULT:-}" == 1 ]]; then
+  check "B logged in to Vault with its own certificate during the join (no secret in its config.txt)" "on harb 'test -s /run/xpam/secrets/all.env && grep -q ^VAULT_HCP_CERT_ROLE=xpam-${B//./-} /opt/xpam/config/config.txt' && ! on harb 'grep -qE \"^(SECRET_KEY|DB_PASSWORD|HA_REPL_PASSWORD)=.\" /opt/xpam/config/config.txt'"
+  check 'the HA join bundle carried no XPAM secret' "! on hara \"export $PASSENV; openssl enc -d -aes-256-cbc -pbkdf2 -iter 600000 -pass env:XPAM_HA_BUNDLE_PASSPHRASE -in /opt/xpam/config/ha/xpam-ha-join.enc | tar xzO ./config.txt 2>/dev/null\" | grep -qE '^(SECRET_KEY|DB_PASSWORD|HA_REPL_PASSWORD)=.'"
+fi
 check 'B is the standby, streaming in sync' "wait_for \"on hara 'curl -s --cacert /opt/xpam/config/ha/certs/ca.crt --cert /opt/xpam/config/ha/certs/node.crt --key /opt/xpam/config/ha/certs/node.key https://$A:8008/cluster' | grep -q sync_standby\" 30"
 check 'XPAM services are stopped on the standby' "wait_for \"! on harb 'docker ps --format {{.Names}}' | grep -qx xpam_core\" 12"
-check "B's Redis follows A's" "wait_for \"on harb 'docker exec -e REDISCLI_AUTH=\\\$(grep ^REDIS_PASSWORD= /opt/xpam/config/config.txt | cut -d= -f2) xpam_redis redis-cli info replication' | grep -q role:slave\" 12"
+check "B's Redis follows A's" "wait_for \"on harb 'docker exec -e REDISCLI_AUTH=\\\$(cat /opt/xpam/config/config.txt /run/xpam/secrets/all.env 2>/dev/null | grep ^REDIS_PASSWORD=. | head -1 | cut -d= -f2) xpam_redis redis-cli info replication' | grep -q role:slave\" 12"
 check 'recordings are copied to the standby (within ~1 min)' "wait_for \"on harb 'cat /data/xpam/core/data/replay/2026-10-21/rehearsal.cast 2>/dev/null' | grep -q recording\" 30"
 tcp() { on "$1" "timeout 4 bash -c 'exec 3<>/dev/tcp/$2/$3'" >/dev/null 2>&1; }
 check 'the witness cannot reach the database, Patroni or Redis of A' "! tcp harw $A 5432 && ! tcp harw $A 8008 && ! tcp harw $A 6380 && ! tcp harw $A 6379"
 check 'the witness reaches the vote of A' "tcp harw $A 2379"
 check "Redis without TLS is not published (only 6380 for replication)" "! tcp harb $A 6379 && tcp harb $A 6380"
-DBU=$(on harb 'grep ^DB_USER= /opt/xpam/config/config.txt | cut -d= -f2'); DBP=$(on harb 'grep ^DB_PASSWORD= /opt/xpam/config/config.txt | cut -d= -f2'); DBN=$(on harb 'grep ^DB_NAME= /opt/xpam/config/config.txt | cut -d= -f2')
+DBU=$(on harb 'grep ^DB_USER= /opt/xpam/config/config.txt | cut -d= -f2'); DBP=$(on harb 'cat /opt/xpam/config/config.txt /run/xpam/secrets/all.env 2>/dev/null | grep ^DB_PASSWORD=. | head -1 | cut -d= -f2'); DBN=$(on harb 'grep ^DB_NAME= /opt/xpam/config/config.txt | cut -d= -f2')
 login_from_b() { on harb "docker run --rm --network host -e PGCONNECT_TIMEOUT=5 postgres:16.15-bookworm psql 'host=$1 user=$DBU password=$DBP dbname=$DBN sslmode=require' -Atqc 'select 1'" 2>/dev/null | grep -qx 1; }
 check "XPAM's own containers log in (control for the next check)" "on hara \"docker run --rm --network xpam_net -e PGCONNECT_TIMEOUT=5 postgres:16.15-bookworm psql 'host=postgresql user=$DBU password=$DBP dbname=$DBN' -Atqc 'select 1'\" 2>/dev/null | grep -qx 1"
 check 'the other server cannot log in to the database as XPAM (even with the password)' "! login_from_b $A"
@@ -128,7 +170,7 @@ wait_for "on harb 'docker ps --format \"{{.Names}} {{.Status}}\"' | grep -q '^xp
 check "XPAM starts on B by itself ($(( $(date +%s) - start ))s)" "on harb 'docker ps --format \"{{.Names}} {{.Status}}\"' | grep -q '^xpam_core .*(healthy)'"
 check 'B has the data written on A' "on harb \"\$PSQL 'select v from xpam_ha_rehearsal'\" | grep -qx seed"
 check 'B answers as XPAM (health URL for the load balancer)' "wait_for \"[[ \\\$(on harb 'curl -sk -o /dev/null -w %{http_code} https://127.0.0.1/api/health/') == 200 ]]\" 24"
-check "B's Redis is the master" "on harb 'docker exec -e REDISCLI_AUTH=\$(grep ^REDIS_PASSWORD= /opt/xpam/config/config.txt | cut -d= -f2) xpam_redis redis-cli info replication' | grep -q role:master"
+check "B's Redis is the master" "on harb 'docker exec -e REDISCLI_AUTH=\$(cat /opt/xpam/config/config.txt /run/xpam/secrets/all.env 2>/dev/null | grep ^REDIS_PASSWORD=. | head -1 | cut -d= -f2) xpam_redis redis-cli info replication' | grep -q role:master"
 check 'the floating address moved to B' "wait_for 'holds_vip harb' 6"
 check 'the administrators are told that XPAM moved to B' "wait_for \"[[ \\\$(probe harb messages 'moved to server xpam-b') == 'MESSAGES 1' ]]\" 12"
 

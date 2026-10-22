@@ -99,7 +99,8 @@ try:
     print('dk', json.dumps(data_key_status()))
 except Exception as e:
     print('dk error', type(e).__name__, e)"
-check 'local: the data key is in the local Vault (Transit); every value uses it' "printf '%s\n' \"\$DK\" | on xvtx \"$CORE_SHELL\" | grep '^dk ' | grep -q '\"provider\": \"transit\"' && ! printf '%s\n' \"\$DK\" | on xvtx \"$CORE_SHELL\" | grep '^dk ' | grep -q '\"legacy\"'"
+DK_OUT=$(printf '%s\n' "$DK" | on xvtx "$CORE_SHELL" | grep '^dk ' | tail -1); echo "  $DK_OUT"
+check 'local: the data key is in the local Vault (Transit); every value uses it' "grep -q '\"provider\": \"transit\"' <<<\"\$DK_OUT\" && ! grep -q '\"legacy\"' <<<\"\$DK_OUT\""
 check 'local: after a reboot the local Vault unseals itself and XPAM starts' "wait_for \"on xvtx 'docker ps --format \\\"{{.Names}} {{.Status}}\\\"' 2>/dev/null | grep -q '^xpam_core .*(healthy)'\" 72"
 
 say "Vault (the kit, one server)"
@@ -135,7 +136,8 @@ CODES=$(printf '%s\n' "$CONSOLE" | on xvtx "$CORE_SHELL" | grep '^console ' | ta
 check 'console: the vault settings cannot be changed' "grep -q 'hcp=403' <<<'$CODES'"
 check 'console: secrets cannot be restored into the database' "grep -q 'restore=403' <<<'$CODES'"
 check 'console: Test checks the configured Vault (not the address given)' "grep -q 'test=200' <<<'$CODES'"
-check 'the data key moved too: every value now uses the Vault server Transit key' "on xvtx 'grep -q \"^VAULT_TRANSIT_MOUNT=xpam-transit\" /opt/xpam/config/config.txt' && printf '%s\n' \"\$DK\" | on xvtx \"$CORE_SHELL\" | grep '^dk ' | grep -q '\"provider\": \"transit\"' && ! printf '%s\n' \"\$DK\" | on xvtx \"$CORE_SHELL\" | grep '^dk ' | grep -q '\"legacy\"'"
+DK_OUT=$(printf '%s\n' "$DK" | on xvtx "$CORE_SHELL" | grep '^dk ' | tail -1); echo "  $DK_OUT"
+check 'the data key moved too: every value now uses the Vault server Transit key' "on xvtx 'grep -q \"^VAULT_TRANSIT_MOUNT=xpam-transit\" /opt/xpam/config/config.txt' && grep -q '\"provider\": \"transit\"' <<<\"\$DK_OUT\" && ! grep -q '\"legacy\"' <<<\"\$DK_OUT\""
 check 'xpamctl vault verify passes against the Vault server' "on xvtx 'cd /opt/xpam-installer && bash ./xpamctl.sh vault verify' > /tmp/xvt-verify.log 2>&1"
 grep -E "FAIL|passed" /tmp/xvt-verify.log | head -8
 

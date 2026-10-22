@@ -33,6 +33,9 @@ For automation, set:
 - `XPAM_VAULT_MODE=local`; or
 - `XPAM_VAULT_MODE=none`.
 
+With choice 1 or 2 the installer also asks whether to keep a copy of account passwords in the database
+(section 2c; default no). For automation: `XPAM_VAULT_KEEP_DB_COPY=1`.
+
 On an existing installation:
 - `xpamctl vault local` sets up the local Vault;
 - `xpamctl vault connect <bundle>` connects to Vault servers. When XPAM is already connected, it
@@ -168,7 +171,7 @@ bundles, database backups from before. Move them offline or `shred -u` them.
 
 | Command or situation | What happens |
 |---|---|
-| `xpamctl vault status` | Shows Vault, the login, which secrets are in Vault, whether any is left in `config.txt`, and how many account secrets are left in the database (should be 0) |
+| `xpamctl vault status` | Shows Vault, the login, which secrets are in Vault, whether any is left in `config.txt`, how many account secrets are left in the database (should be 0), and whether a database copy is kept (section 2c) |
 | The server boots | XPAM's containers wait until the secrets are in memory. If Vault can't be reached, XPAM waits; it never starts with empty or new secrets |
 | `xpamctl upgrade`, `backup_db`, `ha ...` | These read the secrets from memory. They refuse to run if the secrets can't be read, so an upgrade never creates a new `SECRET_KEY` |
 | `xpamctl rotate-secret-key` | Re-encrypts everything, including the account secrets in Vault. The new key goes to Vault, which keeps the previous one as an older version |
@@ -247,6 +250,33 @@ The only thing users notice is the containers restarting. To schedule it:
 On an installation without Vault: `xpamctl vault data-key local` (versioned keyring) or `legacy`.
 `xpamctl rotate-secret-key` re-wraps the keyring and leaves Transit values alone, since they don't
 depend on `SECRET_KEY`.
+
+---
+
+## 2c. A copy of account passwords in the database (optional)
+
+By default account passwords and keys are in Vault only: the database keeps a marker. If you'd rather also
+keep a copy in the database, so that XPAM can still give out account passwords while Vault doesn't answer:
+
+```bash
+xpamctl vault local --keep-db-copy                 # a new local Vault, with the copy
+xpamctl vault connect <bundle> --keep-db-copy      # Vault servers of the kit, with the copy
+xpamctl vault keep-db-copy on                      # already connected: turn the copy on
+xpamctl vault keep-db-copy off                     # back to Vault only (the copies are removed)
+```
+
+| | Vault only (default) | With `--keep-db-copy` |
+|---|---|---|
+| Account passwords and keys | In Vault | In Vault **and** in the database (encrypted) |
+| Where XPAM reads them | Vault | Vault; the database copy only when Vault doesn't answer |
+| The data key | Vault Transit (it never leaves Vault) | The local keyring (in the database, protected by `SECRET_KEY`): the copy must be readable without Vault. `keep-db-copy on` switches from Transit and re-encrypts; `off` switches back |
+| XPAM's own secrets (`SECRET_KEY`, passwords, tokens) | In Vault and the recovery copy | The same: in Vault and the recovery copy, never in `config.txt` |
+| A stolen database backup | No account password in it | Holds the copies, encrypted with the local key. Without `SECRET_KEY` (in Vault only) they can't be read |
+
+The copy follows every change of a password, and goes away when a secret is brought back to the database
+(`xpamctl vault disconnect`). While Vault doesn't answer, XPAM keeps running from memory and gives out the
+copies. A **server restart** still needs Vault (or the recovery copy, `escrow.enc`), since `SECRET_KEY` is
+only there.
 
 ---
 

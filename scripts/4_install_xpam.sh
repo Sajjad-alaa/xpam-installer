@@ -75,9 +75,10 @@ function start_after_install() {
 # or a hardened Vault on this server (moved to separate servers later with `xpamctl vault connect`).
 #   XPAM_VAULT_MODE=external (with XPAM_VAULT_BUNDLE=<xpam-vault-IP.enc>) | local | none
 function setup_vault_after_install() {
-  local mode bundle choice
+  local mode bundle choice keep keep_flag=""
   mode=$(get_config_or_env XPAM_VAULT_MODE)
   bundle=$(get_config_or_env XPAM_VAULT_BUNDLE)
+  keep=$(get_config_or_env XPAM_VAULT_KEEP_DB_COPY)
   if [[ -z "${mode}" ]]; then
     if [[ -n "${bundle}" ]]; then
       mode=external
@@ -95,17 +96,24 @@ function setup_vault_after_install() {
         3) mode=none ;;
         *) mode=local ;;
       esac
+      if [[ "${mode}" != none && -z "${keep}" ]]; then
+        echo "  Account passwords go to Vault only. A copy can also stay in the database (encrypted), read when Vault"
+        echo "  does not answer — easier to recover, but the database then holds them too (xpamctl vault keep-db-copy on|off)."
+        keep=n
+        read_from_input keep "Keep a copy of account passwords in the database too?" "y/n" "${keep}"
+      fi
     fi
   fi
+  [[ "${keep}" =~ ^([yY]|[yY]es|1|true)$ ]] && keep_flag=--keep-db-copy
   case "${mode}" in
     external)
       echo_green "\n>>> $(gettext 'Secrets into HashiCorp Vault')"
-      bash "${BASE_DIR}/vault.sh" connect "${bundle}" -y \
+      bash "${BASE_DIR}/vault.sh" connect "${bundle}" -y ${keep_flag} \
         || log_error "Vault was not connected; XPAM runs with its secrets on this server. Retry: xpamctl vault connect <bundle>"
       ;;
     local)
       echo_green "\n>>> $(gettext 'Secrets into a hardened Vault on this server')"
-      bash "${BASE_DIR}/vault.sh" local \
+      bash "${BASE_DIR}/vault.sh" local ${keep_flag} \
         || log_error "The local Vault was not set up; XPAM runs with its secrets on this server. Retry: xpamctl vault local"
       ;;
     *)

@@ -87,7 +87,7 @@ function usage() {
   echo "  rotate-secret-key [-y] [--schedule weekly|monthly|off]   Replace SECRET_KEY (with a data key: nobody signed out)"
   echo "  ha init|join|status|switchover|failover   High availability: two servers and a witness (see docs)"
   echo "  license-ids                                The cluster ID and this server's ID, for a licence"
-  echo "  vault connect|status|disconnect           Secrets in HashiCorp Vault (the XPAM Vault kit, see docs)"
+  echo "  vault connect|local|status|keep-db-copy|disconnect   Secrets in HashiCorp Vault (xpamctl vault help)"
   echo "  fetch-applet-files       Put the Windows publishing host installers on this server (checksum checked)"
   echo "  raw               $(gettext 'Execute the original docker compose command')"
   echo "  tail [service]    $(gettext 'View log')"

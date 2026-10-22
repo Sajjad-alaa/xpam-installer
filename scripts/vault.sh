@@ -2,9 +2,12 @@
 #
 # XPAM and HashiCorp Vault (the XPAM Vault kit, vault/xpam-vault.sh, on separate servers).
 #
-#   xpamctl vault connect <xpam-vault-IP.enc> [-y]   move XPAM's secrets into Vault (this server); when already
-#                                                    connected: move them to that Vault (e.g. local -> servers)
-#   xpamctl vault local                              a hardened Vault on this server (default at install)
+#   xpamctl vault connect <xpam-vault-IP.enc> [-y] [--keep-db-copy]   move XPAM's secrets into Vault (this server);
+#                                                    when already connected: move them to that Vault (e.g. local ->
+#                                                    servers)
+#   xpamctl vault local [--keep-db-copy]             a hardened Vault on this server (default at install)
+#   xpamctl vault keep-db-copy on|off                account passwords in Vault and a copy in the database (read
+#                                                    when Vault does not answer), or in Vault only (the default)
 #   xpamctl vault add-connection <name> <type> <settings.json | --bundle file>   a further vault (several vaults:
 #                                                    storage rules per organization / asset group, mirrors)
 #   xpamctl vault list-connections | remove-connection <name>
@@ -21,7 +24,9 @@
 #     Vault with this server's client certificate and writes them to memory (/run/xpam/secrets, a tmpfs); each
 #     container reads only the ones it uses from there when it starts.
 #   - Account passwords and keys are stored in Vault (encrypted with SECRET_KEY first: Vault's administrators
-#     cannot read them either), the database keeps none.
+#     cannot read them either), the database keeps none — unless --keep-db-copy (VAULT_KEEP_DB_COPY): then the
+#     database keeps a copy too, encrypted with the local data key (not Vault Transit, so the copy can be read
+#     without Vault), and XPAM reads it when Vault does not answer. XPAM's own secrets stay in Vault either way.
 #   - The vault settings are locked in the console (VAULT_LOCKED): only this command changes them.
 #   - A recovery copy of the secrets (escrow.enc) is encrypted with the recovery passphrase shown once: with it
 #     XPAM can be brought back even if Vault is lost.
@@ -345,7 +350,7 @@ EOF
   echo_check "XPAM is running with its secrets from Vault"
 
   echo_yellow "7. Account passwords and keys into Vault"
-  local left
+  local left copies
   left=$(core_exec <<'EOF' | tail -1
 from accounts.tasks.vault import sync_secret_to_vault
 sync_secret_to_vault()
@@ -360,8 +365,15 @@ EOF
   if [[ "$(get_config XPAM_DATA_KEY)" == transit ]]; then
     reencrypt_with_current_key >/dev/null && echo_check "every encrypted value now uses the data key in Vault (Transit)" \
       || echo_warn "re-encryption with the Vault data key will finish in the background (daily task)"
+  elif keep_db_copy; then
+    reencrypt_with_current_key >/dev/null || echo_warn "re-encryption with the local data key will finish in the background (daily task)"
   fi
-  if [[ "${left}" == 0 ]]; then echo_check "the database keeps no account secret"; else
+  if keep_db_copy; then
+    copies=$(update_copies)
+    if [[ "${left}" == 0 ]]; then echo_check "account secrets are in Vault, with a copy in the database (${copies})"; else
+      echo_warn "account secrets not in Vault yet: ${left:-unknown} (they stay in the database; the console: System settings → Vault → Sync)"
+    fi
+  elif [[ "${left}" == 0 ]]; then echo_check "the database keeps no account secret"; else
     echo_warn "account secrets still in the database: ${left:-unknown} (xpamctl vault status; the console: System settings → Vault → Sync)"
   fi
   vault_logout
@@ -395,15 +407,73 @@ set_vault_config() { # XPAM's account storage in Vault with this server's login,
   set_config VAULT_HCP_CLIENT_CERT_FILE "${VCLIENT_IN_CONTAINER}/client.crt"
   set_config VAULT_HCP_CLIENT_KEY_FILE "${VCLIENT_IN_CONTAINER}/client.key"
   set_config VAULT_LOCKED true
-  # the data key in Vault Transit (bundles of the kit since 5.1.17): it never leaves Vault
+  [[ "${KEEP_DB_COPY:-}" == 1 ]] && set_config VAULT_KEEP_DB_COPY true
   if [[ -n "$(venv VAULT_TRANSIT_MOUNT)" ]]; then
-    set_config XPAM_DATA_KEY transit
     set_config VAULT_TRANSIT_MOUNT "$(venv VAULT_TRANSIT_MOUNT)"
     set_config VAULT_TRANSIT_KEY data
+  fi
+  if keep_db_copy; then
+    # the database copy must be readable without Vault: the local data key (a keyring in the database)
+    set_config XPAM_DATA_KEY local
+  elif [[ -n "$(venv VAULT_TRANSIT_MOUNT)" ]]; then
+    # the data key in Vault Transit (bundles of the kit since 5.1.17): it never leaves Vault
+    set_config XPAM_DATA_KEY transit
   fi
   local key
   for key in ${XPAM_VAULT_SECRET_KEYS}; do blank_config "${key}"; done
   set_config XPAM_SECRETS_FROM_VAULT 1
+}
+
+keep_db_copy() { [[ "$(get_config VAULT_KEEP_DB_COPY false)" == true ]]; }
+
+update_copies() { # fills (VAULT_KEEP_DB_COPY) or removes the database copies of account secrets; prints a summary
+  core_exec <<'PY' | tail -1
+from django.conf import settings
+from accounts.tasks.vault import update_secret_copies
+kept, failed = update_secret_copies()
+if not settings.VAULT_KEEP_DB_COPY:
+    print('copies removed')
+else:
+    print(f'{kept} kept' + (f', {failed} could not be read from Vault' if failed else ''))
+PY
+}
+
+wait_core() {
+  local i
+  for i in $(seq 1 90); do docker ps --format '{{.Names}} {{.Status}}' | grep -q '^xpam_core .*(healthy)' && return 0; sleep 5; done
+  return 1
+}
+
+cmd_keep_db_copy() { # on|off — account passwords also in the database (read when Vault does not answer), or not
+  local p=$1
+  [[ "${p}" == on || "${p}" == off ]] || { echo "usage: xpamctl vault keep-db-copy on|off"; return 2; }
+  secrets_from_vault || { log_error "Not connected to Vault: account secrets are in the database already"; return 1; }
+  docker ps --format '{{.Names}}' | grep -qx xpam_core || { log_error "XPAM must be running (xpamctl start)"; return 1; }
+  if [[ "${p}" == on ]]; then
+    set_config VAULT_KEEP_DB_COPY true
+    # (values under Vault Transit stay readable while they are re-encrypted with the local key)
+    [[ "$(get_config XPAM_DATA_KEY)" == transit ]] && echo_yellow "  data key: from Vault Transit to the local keyring (the copy must be readable without Vault)"
+    set_config XPAM_DATA_KEY local
+  else
+    set_config VAULT_KEEP_DB_COPY false
+  fi
+  echo_yellow "  restarting XPAM"
+  (cd "${PROJECT_DIR}" && bash ./xpamctl.sh restart >/dev/null 2>&1)
+  wait_core || { log_error "XPAM did not come back (xpamctl status)"; return 1; }
+  if [[ "${p}" == on ]]; then
+    reencrypt_with_current_key >/dev/null || echo_warn "re-encryption with the local data key will finish in the background (daily task)"
+    echo_check "account secrets: in Vault, with a copy in the database ($(update_copies))"
+  else
+    echo_check "account secrets: in Vault only ($(update_copies))"
+    if [[ -n "$(get_config VAULT_TRANSIT_MOUNT)" && "$(get_config XPAM_DATA_KEY)" != transit ]]; then
+      echo_yellow "  data key: back to Vault Transit"
+      set_config XPAM_DATA_KEY transit
+      (cd "${PROJECT_DIR}" && bash ./xpamctl.sh restart >/dev/null 2>&1)
+      wait_core || { log_error "XPAM did not come back (xpamctl status)"; return 1; }
+      reencrypt_with_current_key >/dev/null && echo_check "every encrypted value uses the data key in Vault (Transit)" \
+        || echo_warn "re-encryption with the Vault data key will finish in the background (daily task)"
+    fi
+  fi
 }
 
 to_legacy_data_key() { # every value back under SECRET_KEY (before leaving or changing Vault), account secrets included
@@ -555,6 +625,8 @@ print(sum(1 for o in Account.objects.only('id', '_secret').iterator() if o._secr
 EOF
 )
   echo "  account secrets in the database: ${n:-unknown}"
+  if keep_db_copy; then echo "  database copy   yes (account secrets in Vault and the database: xpamctl vault keep-db-copy off)"
+  else echo "  database copy   no (xpamctl vault keep-db-copy on)"; fi
 }
 
 cmd_verify() { # proves the connection is encrypted and XPAM's access is what it should be
@@ -644,6 +716,7 @@ cmd_disconnect() {
   done < "${RUN}/all.env"
   set_config VAULT_ENABLED false
   set_config VAULT_LOCKED false
+  set_config VAULT_KEEP_DB_COPY false
   set_config XPAM_DATA_KEY legacy
   set_config VAULT_HCP_AUTH token
   systemctl disable --now xpam-secrets.service >/dev/null 2>&1 || true
@@ -665,6 +738,10 @@ passphrase_from() { # VAR "what": from the environment (automation), else typed 
 }
 
 [[ $(id -u) -eq 0 ]] || { echo "run as root"; exit 1; }
+KEEP_DB_COPY=""
+args=()
+for a in "$@"; do if [[ "${a}" == --keep-db-copy ]]; then KEEP_DB_COPY=1; else args+=("${a}"); fi; done
+set -- "${args[@]}"
 case "${1:-}" in
   connect) cmd_connect "${2:-}" "${3:-}" ;;
   status) cmd_status ;;
@@ -676,8 +753,9 @@ case "${1:-}" in
   local) cmd_local ;;
   rotation) cmd_rotation "${2:-}" ;;
   data-key) cmd_data_key "${2:-}" ;;
+  keep-db-copy) cmd_keep_db_copy "${2:-}" ;;
   add-connection) cmd_add_connection "${2:-}" "${3:-}" "${4:-}" "${5:-}" ;;
   list-connections) core_manage xpam_vault_connection list ;;
   remove-connection) core_manage xpam_vault_connection remove --name "${2:-}" ;;
-  *) sed -n '3,8p' "$0" | sed 's/^# \{0,1\}//'; exit 2 ;;
+  *) sed -n '3,/^# After/p' "$0" | sed '$d' | sed 's/^# \{0,1\}//'; exit 2 ;;
 esac

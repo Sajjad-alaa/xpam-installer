@@ -233,6 +233,17 @@ it, or allow its deletion. If Vault is unreachable, a read fails with an error, 
 The console shows the data key under System settings → Vault: provider, current version, how many
 values are on each version, and the rotation.
 
+**`SECRET_KEY` (the signing key: sessions, signed values) can rotate without signing anyone out too.**
+With a data key, `xpamctl rotate-secret-key`:
+1. backs up the database;
+2. restarts XPAM with a new `SECRET_KEY`, keeping the previous one as `SECRET_KEY_PREVIOUS` (in Vault
+   when connected), so existing sessions and signed links stay valid;
+3. re-wraps the keyring and recomputes the e-mail lookups while XPAM runs.
+
+The only thing users notice is the containers restarting. To schedule it:
+`xpamctl rotate-secret-key --schedule monthly` (a systemd timer; `weekly` or `off`). Without a data key
+(`legacy`), the rotation still re-encrypts everything and signs everyone out, and scheduling is refused.
+
 On an installation without Vault: `xpamctl vault data-key local` (versioned keyring) or `legacy`.
 `xpamctl rotate-secret-key` re-wraps the keyring and leaves Transit values alone, since they don't
 depend on `SECRET_KEY`.

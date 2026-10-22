@@ -35,6 +35,9 @@
   opens it never leaves Vault (a derived key per value). Vault rotates it weekly, and XPAM re-wraps every
   value in place with no downtime and no logouts. Old versions are retired, so old copies and backups
   open nothing. Without Vault, a versioned local keyring rotates the same way.
+- **`SECRET_KEY` rotation keeps everyone signed in** when a data key is in use: the previous key stays
+  valid as a fallback. It can be scheduled weekly or monthly (`rotate-secret-key --schedule`). JIT name
+  shortening no longer depends on `SECRET_KEY`.
 - **Encryption you can check:** XPAM refuses anything below TLS 1.3 to Vault and trusts only the kit's
   CA. `xpamctl vault verify` checks the protocol, certificates and expiry, that TLS 1.2 and missing
   client certificates are refused, least privilege, and that nothing is left on disk.

@@ -58,7 +58,7 @@ function get_xpam_version() {
   local version
 
   version=$(get_config_or_env XPAM_VERSION)
-  echo "${version:-${XPAM_DEFAULT_VERSION:-v5.1.17}}"
+  echo "${version:-${XPAM_DEFAULT_VERSION:-v5.1.18}}"
 }
 
 # Registry holding the XPAM images as <registry>/<name>:<tag>. The default comes from static.env

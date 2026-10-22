@@ -235,7 +235,8 @@ for n in hara harb; do
   on $n "for i in core gateway postgresql-ha; do docker tag xpam/\$i:$TAG xpam/\$i:$NEXT; done; sed -i 's/^export VERSION=.*/export VERSION=$NEXT/; s/^export XPAM_DEFAULT_VERSION=.*/export XPAM_DEFAULT_VERSION=$NEXT/' /opt/xpam-installer/static.env"
 done
 wait_for "on hara 'curl -s --cacert /opt/xpam/config/ha/certs/ca.crt --cert /opt/xpam/config/ha/certs/node.crt --key /opt/xpam/config/ha/certs/node.key https://$A:8008/cluster' | grep -q sync_standby" 30
-check 'ha upgrade on the primary first is refused (the standby goes first)' "on hara 'cd /opt/xpam-installer && bash ./xpamctl.sh ha upgrade -y' 2>&1 | grep -q 'Upgrade the standby first'"
+on hara 'cd /opt/xpam-installer && bash ./xpamctl.sh ha upgrade -y > /root/ha-upgrade-a-first.log 2>&1'
+check 'ha upgrade on the primary first is refused (the standby goes first)' "on hara 'grep -q \"Upgrade the standby first\" /root/ha-upgrade-a-first.log' || { on hara 'cat /root/ha-upgrade-a-first.log'; false; }"
 # XPAM's availability, seen from the witness every second (either server answering is "up")
 docker exec -d harw bash -c "rm -f /root/up.log; while true; do if curl -fsk --max-time 2 -o /dev/null https://$A/api/health/ || curl -fsk --max-time 2 -o /dev/null https://$B/api/health/; then echo \"\$(date +%s) up\"; else echo \"\$(date +%s) down\"; fi >> /root/up.log; sleep 1; done"
 on harb "cd /opt/xpam-installer && export $PASSENV && timeout 1800 bash ./xpamctl.sh ha upgrade -y > /root/ha-upgrade-b.log 2>&1"; tail -2 <(on harb 'cat /root/ha-upgrade-b.log')

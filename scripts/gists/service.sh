@@ -526,14 +526,15 @@ function start_xpam_and_wait() {
   return 0
 }
 
-# Waits until every running XPAM container reports healthy, or the time (seconds) runs out.
+# Waits until every running XPAM container with a health check reports healthy (containers without one,
+# e.g. the vote in high availability, only need to run), or the time (seconds) runs out.
 function wait_xpam_healthy() {
   local timeout=${1:-300} waited=0 pending='' total=0
 
   while ((waited < timeout)); do
     total=$(docker ps --filter "label=com.docker.compose.project=${COMPOSE_PROJECT_NAME}" -q | wc -l)
     pending=$(docker ps --filter "label=com.docker.compose.project=${COMPOSE_PROJECT_NAME}" \
-      --format '{{.Names}} {{.Status}}' | grep -v '(healthy)' | awk '{print $1}' | tr '\n' ' ')
+      --format '{{.Names}} {{.Status}}' | grep -E '\((health: starting|unhealthy)\)|Restarting' | awk '{print $1}' | tr '\n' ' ')
     if [[ "${total}" -gt 0 && -z "${pending// /}" ]]; then
       return 0
     fi

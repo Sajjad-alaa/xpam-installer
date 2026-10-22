@@ -45,10 +45,14 @@
   and XPAM's core starts in about 10 seconds when the build and database are unchanged (instead of
   redoing static files and migrations on every start).
 - **Rolling upgrade:** `xpamctl ha upgrade` on the standby, then on the primary. It checks the cluster
-  first and hands XPAM to the upgraded standby, so there is one short interruption.
+  first and hands XPAM to the upgraded standby, so there is one short interruption (8 seconds in the
+  rehearsal).
   `xpamctl ha status` shows each server's version.
 - **Vault in the HA view:** the console and the agent show each Vault server as XPAM reaches it (TLS 1.3,
   its own certificate), with a warning when one is down or sealed.
+- **Protection status at a glance:** the console dashboard, the High availability page and Account storage
+  show whether high availability and Vault are on, their state, where XPAM's own secrets and account secrets
+  are, and the data key, with the steps to turn each on.
 - **Vault storage rules** in System settings list every organization's rules; a new rule asks for its
   organization.
 

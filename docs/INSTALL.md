@@ -383,8 +383,9 @@ What the target needs:
 
 Two XPAM servers run as **primary** and **standby**. The standby has a live copy of the database
 (synchronous streaming replication, so no committed change is lost) and of the recordings and files
-(copied every minute). If the primary fails, the standby takes over by itself in about 30 seconds of
-database time plus the time XPAM needs to start (one to two minutes). A small third machine, the
+(copied every minute). If the primary fails, the standby takes over by itself: its database in about
+30 seconds, XPAM running there within about a minute (measured in the rehearsal: 31 s and 51 s). A
+planned upgrade (`xpamctl ha upgrade`) interrupts XPAM once for a few seconds. A small third machine, the
 **witness**, votes: a server cut off from the other two can never stay primary (no "split brain").
 
 **What you need**

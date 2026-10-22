@@ -36,6 +36,14 @@ docker save "xpam/core:$TAG" "xpam/gateway:$TAG" "xpam/web:$TAG" postgres:16.15-
 on xvcx "for kv in $MIN; do echo \$kv >> /opt/xpam/config/config.txt; done; cd /opt/xpam-installer && export $MIN AUTO_INSTALL=1 XPAM_SKIP_SELF_UPDATE=1; timeout 1800 bash ./xpamctl.sh install > /root/install2.log 2>&1"
 check 'XPAM with the console runs' "wait_for \"on xvcx 'docker ps --format \\\"{{.Names}} {{.Status}}\\\"' | grep -q '^xpam_web .*(healthy)'\" 60"
 
+say "the status the console shows before Vault (a plain install: both off)"
+prot() { printf '%s\n' "from django.test import Client; from users.models import User; import json
+c = Client(HTTP_HOST='localhost'); c.force_login(User.objects.get(username='admin'))
+d = c.get('/api/v1/settings/protection/').json(); print('prot', json.dumps({'ha': d['ha']['enabled'], 'vault': d['vault']['enabled'], 'secrets': d['vault']['secrets_from_vault'], 'key': d['vault']['data_key']}))" \
+  | on xvcx "$CORE_SHELL" | grep '^prot ' | cut -d' ' -f2-; }
+BEFORE=$(prot); echo "  $BEFORE"
+check 'before Vault the console reports high availability off and Vault off' "[[ \$BEFORE == *'\"ha\": false'*'\"vault\": false'* ]]"
+
 say "local Vault, a connection and a storage rule"
 if [[ -s "${VAULT_FS_TAR:-}" ]]; then
   docker exec -i xvcx docker import --change 'ENTRYPOINT ["docker-entrypoint.sh"]' --change 'CMD ["server", "-dev"]' \
@@ -69,6 +77,9 @@ check 'the rules list shows every organization (from System settings)' "grep -q 
 check 'a rule without an organization is refused' "grep -q '^api no-org 400' <<<\"\$API\""
 check 'a rule is created, changed and deleted in the chosen organization' "grep -q '^api create 201' <<<\"\$API\" && grep -q '^api org 00000000-0000-0000-0000-000000000002' <<<\"\$API\" && grep -q '^api update 200' <<<\"\$API\" && grep -q '^api delete 204' <<<\"\$API\""
 
+AFTER=$(prot); echo "  $AFTER"
+check "with the local Vault the console reports Vault on: XPAM's secrets in Vault, the data key in Transit" "[[ \$AFTER == *'\"vault\": true'*'\"secrets\": true'*'\"key\": \"transit\"'* ]]"
+
 say "a signed-in browser"
 COOKIES=$(printf '%s\n' "from django.test import Client; from django.conf import settings; from users.models import User
 import json
@@ -97,6 +108,8 @@ const { chromium } = require('playwright');
   const create = page.locator('button:visible', { hasText: 'Create' }).first();
   out['rule-create-enabled'] = String(await create.isEnabled());
   if (await create.isEnabled()) { await create.click(); await shot('vault-storage-rule-create'); }
+  await page.goto(`${base}/web/#/console/dashboard`, { waitUntil: 'networkidle' });
+  await shot('dashboard');
   await page.goto(`${base}/web/#/settings/high-availability`, { waitUntil: 'networkidle' });
   await shot('high-availability');
   console.log('BODY ' + JSON.stringify(out));
@@ -113,6 +126,8 @@ check 'Vault connections lists the connection (managed), never its password' "tx
 check 'Vault storage rules lists the rule with its organization' "txt vault-storage-rules | grep -q 'network devices' && txt vault-storage-rules | grep -q DEFAULT"
 check 'Vault storage rules: Create is enabled and the form asks for the organization' "[[ \$(txt rule-create-enabled) == true ]] && txt vault-storage-rule-create | grep -q Organization"
 check 'High availability page is there' "txt high-availability | grep -qi 'high availability'"
+check 'the dashboard shows high availability off (how to turn it on) and Vault on' "txt dashboard | grep -q 'How to turn it on' && txt dashboard | grep -q 'In Vault' && txt dashboard | grep -q 'Vault Transit'"
+check 'the High availability and Account storage pages show the same status' "txt high-availability | grep -q 'In Vault' && txt account-storage | grep -q 'In Vault'"
 ls "$OUT"/*.png 2>/dev/null | sed 's/^/  screenshot: /'
 echo "RESULT: $PASS/$((PASS+FAIL)) passed"
 [[ $FAIL -eq 0 ]]

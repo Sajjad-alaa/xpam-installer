@@ -206,6 +206,39 @@ images. `connect` refuses to run while one of them is running.
 
 ---
 
+## 2b. The data key: what encrypts the secrets, and its rotation
+
+Every encrypted field goes through one *data key*: account passwords and keys, MFA seeds, API secrets,
+secret settings and connection tokens.
+
+| `XPAM_DATA_KEY` | Where the key is | Used with |
+|---|---|---|
+| `transit` | **Inside HashiCorp Vault (Transit). It never leaves Vault.** XPAM's database holds only ciphertext (`xpamt:…vault:v3:…`). To use a password, XPAM asks Vault, which returns it for that connection only. Every value has its own derived key | Choices 1 and 2: set automatically by `connect` / `local` |
+| `local` | A keyring in XPAM's database: random 256-bit data keys, versioned, each wrapped by a key derived from `SECRET_KEY` (HKDF) | Choice 3: set at install |
+| `legacy` | AES-256-GCM keyed by `SECRET_KEY`, as before | Older installations, until changed |
+
+**Rotation without downtime:** `xpamctl vault rotation daily|weekly|monthly|off`, weekly by default.
+- With Transit, Vault makes a new key version on schedule.
+- A nightly task re-encrypts every value to the newest version, in place. With Transit, Vault re-wraps
+  the values itself, without XPAM seeing them.
+- XPAM keeps running and **nobody is signed out**: the data key is separate from the sessions' signing key.
+- Versions older than the last 4 (`XPAM_DATA_KEY_KEEP_VERSIONS`) are retired once nothing uses them. A
+  leaked old key, or a database backup older than about a month, then opens nothing.
+- If a value can't be opened, the task keeps every version and retries the next night.
+
+**What XPAM may do with the Transit key:** encrypt, decrypt, re-wrap, read its versions, set when old
+versions stop working, and set the rotation period. It may **not** export it, trim old versions, delete
+it, or allow its deletion. If Vault is unreachable, a read fails with an error, never an empty password.
+
+The console shows the data key under System settings → Vault: provider, current version, how many
+values are on each version, and the rotation.
+
+On an installation without Vault: `xpamctl vault data-key local` (versioned keyring) or `legacy`.
+`xpamctl rotate-secret-key` re-wraps the keyring and leaves Transit values alone, since they don't
+depend on `SECRET_KEY`.
+
+---
+
 ## 3. Several vaults at once
 
 Besides the configured vault, XPAM can use further **vault connections**, of any supported type.

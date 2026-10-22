@@ -31,6 +31,10 @@
   administrator's choice: XPAM writes to both and reads the mirror if the vault fails. Rule changes move
   secrets. Accounts can **read their password from an existing vault** without XPAM keeping, rotating or
   pushing it.
+- **The data key in Vault (Transit):** with Vault, XPAM's database holds only ciphertext, and the key that
+  opens it never leaves Vault (a derived key per value). Vault rotates it weekly, and XPAM re-wraps every
+  value in place with no downtime and no logouts. Old versions are retired, so old copies and backups
+  open nothing. Without Vault, a versioned local keyring rotates the same way.
 - **Encryption you can check:** XPAM refuses anything below TLS 1.3 to Vault and trusts only the kit's
   CA. `xpamctl vault verify` checks the protocol, certificates and expiry, that TLS 1.2 and missing
   client certificates are refused, least privilege, and that nothing is left on disk.

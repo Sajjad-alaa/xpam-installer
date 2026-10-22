@@ -50,6 +50,12 @@
   `xpamctl ha status` shows each server's version.
 - **Vault in the HA view:** the console and the agent show each Vault server as XPAM reaches it (TLS 1.3,
   its own certificate), with a warning when one is down or sealed.
+- **Active-passive or active-active, 2 to 5 servers:** `xpamctl ha init` asks how the servers work together.
+  Active-passive: one server serves users and 2 to 5 servers keep live copies (a witness with 2 or 4).
+  Active-active: XPAM runs on 3 or 5 servers at once behind a load balancer. The database keeps one writer, and
+  every server's XPAM reaches it and the main Redis (Redis Sentinel) over TLS with the cluster's own
+  certificate. Recordings are copied between all servers, and a rolling upgrade runs one version at a time on
+  the database.
 - **One licence for a high availability cluster:** the licence names the cluster (XPAM's database) and lists its
   servers, up to the number licensed (2 by default). It is valid on those servers only, so a failover keeps the
   licence. A server that isn't listed gets trial limits until its ID is added, and the licence doesn't work

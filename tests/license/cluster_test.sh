@@ -76,7 +76,7 @@ def info():
     return U.get_current_license_info(force_refresh=True)
 
 def as_server(hw):
-    U._CACHED_INST_ID = None
+    U._CACHED_INST_ID = U._CACHED_CLUSTER_ID = None
     return mock.patch.object(U, 'get_hardware_uuid', return_value=hw)
 
 CL = U.get_cluster_id()
@@ -118,8 +118,14 @@ with as_server('hardware-of-server-a'):
     other = 'CL-' + '-'.join(['ABCD'] * 4)
     rc, lic_other = gen('--cluster-id', other, '--servers', SA)
     check("another company's cluster licence is refused here", rc == 0 and 'cluster' in (install(lic_other) or ''))
+    U._CACHED_CLUSTER_ID = None
     with mock.patch.object(U, 'get_installation_seed', return_value='ANOTHER-DATABASE'):
         check('this licence on a copy with another database seed is refused', not info()['is_valid'])
+    U._CACHED_CLUSTER_ID = None
+with as_server('default-hardware-uuid'):
+    check('a server whose hardware ID cannot be read is refused a cluster licence',
+          'hardware ID cannot be read' in (U.check_license_binding(
+              {'cluster_id': CL, 'servers': [U.get_server_id()], 'max_servers': 2})[1] or ''))
 
 # limits on the number of servers
 rc, out = gen('--cluster-id', CL, '--servers', f'{SA},{SB},SRV-0000-0000-0000')
@@ -128,6 +134,8 @@ rc, lic3 = gen('--cluster-id', CL, '--servers', f'{SA},{SB},SRV-0000-0000-0000',
 check('with --max-servers 3 it issues one', rc == 0)
 rc, out = gen('--cluster-id', 'CL-NOT-AN-ID', '--servers', SA)
 check('the generator refuses a malformed cluster ID', rc != 0)
+rc, out = gen('--cluster-id', CL, '--servers', 'SRV-0DD4-586A-F1CE')
+check("the generator refuses the shared ID of servers whose hardware can't be read", rc != 0)
 base = {'type': 'license', 'license_id': 'x', 'serial_no': 'XPAM-LIC-T', 'installation_id': CL, 'user_limit': 9,
         'asset_count': 9, 'date_expired': 'Never', 'cluster_id': CL}
 with as_server('hardware-of-server-a'):

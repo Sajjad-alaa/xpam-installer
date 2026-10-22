@@ -25,7 +25,9 @@ import json
 import os
 import subprocess
 import sys
+import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 import urllib.error
 import urllib.request
 
@@ -33,6 +35,7 @@ INSTALLER = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CONFIG_FILE = os.environ.get('XPAM_CONFIG_FILE', '/opt/xpam/config/config.txt')
 SECRETS_FILE = '/run/xpam/secrets/all.env'
 INTERVAL = 2
+SENTINEL_EVERY = 10         # active-active: how often the Sentinels are asked for the main Redis
 STABLE_CHECKS = 2           # a role must be seen this many times in a row before acting (2 s apart)
 UNKNOWN_GRACE = 30          # seconds without Patroni before the services are stopped
 SYNC_EVERY = 60
@@ -94,13 +97,22 @@ def run(cmd, timeout=120, env=None):
         return 127, str(e)
 
 
+_TLS = {'key': None, 'ctx': None}
+
+
 def tls_context(conf):
-    """Client TLS with the cluster certificate (Patroni's API and etcd require it)."""
+    """Client TLS with the cluster certificate (Patroni's API and etcd require it); kept until it changes."""
     import ssl
     certs = os.path.join((conf.get('CONFIG_DIR') or '/opt/xpam/config'), 'ha', 'certs')
-    ctx = ssl.create_default_context(cafile=os.path.join(certs, 'ca.crt'))
-    ctx.load_cert_chain(os.path.join(certs, 'node.crt'), os.path.join(certs, 'node.key'))
-    return ctx
+    try:
+        key = (certs, os.path.getmtime(os.path.join(certs, 'node.crt')), os.path.getmtime(os.path.join(certs, 'ca.crt')))
+    except OSError:
+        key = None
+    if _TLS['ctx'] is None or key != _TLS['key']:
+        ctx = ssl.create_default_context(cafile=os.path.join(certs, 'ca.crt'))
+        ctx.load_cert_chain(os.path.join(certs, 'node.crt'), os.path.join(certs, 'node.key'))
+        _TLS.update(key=key, ctx=ctx)
+    return _TLS['ctx']
 
 
 def patroni(conf, path, host=None, method='GET', body=None, auth=False, timeout=5):
@@ -202,18 +214,27 @@ def ensure_firewall(conf):
     Only connections addressed to this server are checked; XPAM's own containers always pass."""
     run(['iptables', '-N', 'DOCKER-USER'], 10)
     run(['iptables', '-N', CHAIN], 10)
-    run(['iptables', '-F', CHAIN], 10)
     peer_ports = PEER_PORTS + (f',{SENTINEL_PORT}' if active_active(conf) else '')
-    rules = [['-i', 'br-+', '-j', 'RETURN'], ['-i', 'docker0', '-j', 'RETURN']]
-    rules += [['-s', p, '-p', 'tcp', '-m', 'multiport', '--dports', peer_ports, '-j', 'RETURN'] for p in peers(conf)]
+    rules = [f'-A {CHAIN} -i br-+ -j RETURN', f'-A {CHAIN} -i docker0 -j RETURN']
+    rules += [f'-A {CHAIN} -s {p}/32 -p tcp -m multiport --dports {peer_ports} -j RETURN' for p in peers(conf)]
     if conf.get('HA_WITNESS_IP'):
-        rules.append(['-s', conf['HA_WITNESS_IP'], '-p', 'tcp', '-m', 'multiport', '--dports', WITNESS_PORTS, '-j', 'RETURN'])
-    rules.append(['-j', 'DROP'])
-    for rule in rules:
-        run(['iptables', '-A', CHAIN, *rule], 10)
+        rules.append(f"-A {CHAIN} -s {conf['HA_WITNESS_IP']}/32 -p tcp -m multiport --dports {WITNESS_PORTS} -j RETURN")
+    rules.append(f'-A {CHAIN} -j DROP')
+    code, current = run(['iptables', '-S', CHAIN], 10)
+    if code != 0 or [line for line in current.splitlines() if line.startswith('-A ')] != rules:
+        # one atomic replacement (a flush followed by appends would leave the chain open in between)
+        script = f'*filter\n:{CHAIN} - [0:0]\n' + '\n'.join(rules) + '\nCOMMIT\n'
+        try:
+            p = subprocess.run(['iptables-restore', '--noflush'], input=script, capture_output=True, text=True, timeout=10)
+            if p.returncode:
+                log('firewall rules could not be set:', (p.stdout + p.stderr).strip()[-300:])
+        except (OSError, subprocess.TimeoutExpired) as e:
+            log('firewall rules could not be set:', e)
     for old in (['DOCKER-USER', '!', '-i', 'br-+', '-p', 'tcp', '-m', 'multiport', '--dports', '5432,8008,2379,2380,6379',
                  '-j', CHAIN],
                 ['DOCKER-USER', '-p', 'tcp', '-m', 'multiport', '--dports', '5432,8008,2379,2380,6379', '-m', 'conntrack',
+                 '--ctorigdst', conf['HA_NODE_IP'], '-j', CHAIN],
+                ['DOCKER-USER', '-p', 'tcp', '-m', 'multiport', '--dports', '5432,8008,2379,2380,6379,6380', '-m', 'conntrack',
                  '--ctorigdst', conf['HA_NODE_IP'], '-j', CHAIN]):
         while run(['iptables', '-D', *old], 10)[0] == 0:  # (rules of earlier versions)
             pass
@@ -226,8 +247,13 @@ def ensure_firewall(conf):
 
 
 def peers_alive(conf):
-    """Each other server's Patroni answers: {ip: True/False}."""
-    return {p: patroni(conf, 'liveness', host=p, timeout=3)[0] != 0 for p in peers(conf)}
+    """Each other server's Patroni answers: {ip: True/False} (asked in parallel: a server that is down costs 3 s)."""
+    others = peers(conf)
+    if not others:
+        return {}
+    with ThreadPoolExecutor(max_workers=len(others)) as pool:
+        answers = pool.map(lambda p: patroni(conf, 'liveness', host=p, timeout=3)[0] != 0, others)
+    return dict(zip(others, answers))
 
 
 def witness_alive(conf):
@@ -395,6 +421,21 @@ def handle_request(conf, members):
             'by': req.get('by', ''), 'time': int(time.time())}
 
 
+def start_sync(conf, sync, state):
+    """ the file copies in their own thread: the agent keeps following the cluster meanwhile """
+    if state.get('thread') and state['thread'].is_alive():
+        return
+
+    def work():
+        ok, err = sync_files(conf)
+        sync.update({'ok': ok, 'time': int(time.time()), 'error': err})
+        if not ok:
+            log('file copy to the other servers failed:', err)
+
+    state['thread'] = threading.Thread(target=work, daemon=True)
+    state['thread'].start()
+
+
 def write_status(conf, status):
     path = os.path.join((conf.get('VOLUME_DIR') or '/data/xpam'), 'core', 'data', 'ha')
     os.makedirs(path, exist_ok=True)
@@ -417,7 +458,8 @@ def main():
     reach = {'peer_reachable': None, 'witness_reachable': None, 'peers': {}}
     last_request = None
     unknown_since = None
-    last_sync, sync = 0, {'ok': None, 'time': None, 'error': ''}
+    last_sync, sync, sync_state = 0, {'ok': None, 'time': None, 'error': ''}, {}
+    last_sentinel = 0
     log(f"agent started on {conf['HA_NODE_NAME']} ({conf['HA_NODE_IP']}), {conf.get('HA_TOPOLOGY') or 'active-passive'}, "
         f"other servers {','.join(peers(conf))}, witness {conf.get('HA_WITNESS_IP') or 'none'}")
     while True:
@@ -440,7 +482,9 @@ def main():
                 if role in ('primary', 'standby'):
                     last_stable = role
                     floating_ip(conf, role == 'primary')
-                    redis_follow_sentinels(conf)
+                    if now - last_sentinel >= SENTINEL_EVERY:
+                        redis_follow_sentinels(conf)
+                        last_sentinel = now
                     if same_version_as_leader(conf, members):
                         if not app_running():
                             log(f'{role}: starting XPAM (active-active)')
@@ -449,11 +493,8 @@ def main():
                         log("the leader runs another XPAM version: stopping XPAM until this server has it")
                         app('stop')
                     if now - last_sync >= SYNC_EVERY:
-                        ok, err = sync_files(conf)
+                        start_sync(dict(conf), sync, sync_state)
                         last_sync = now
-                        sync = {'ok': ok, 'time': int(now), 'error': err}
-                        if not ok:
-                            log('file copy to the other servers failed:', err)
                 elif role == 'unknown' and unknown_since and now - unknown_since >= UNKNOWN_GRACE:
                     floating_ip(conf, False)
                     if app_running():
@@ -476,11 +517,8 @@ def main():
                     if notify_pending and core_healthy():
                         notify_pending = not notify_primary(conf, reach.get('peer_reachable') is not False)
                     if now - last_sync >= SYNC_EVERY:
-                        ok, err = sync_files(conf)
+                        start_sync(dict(conf), sync, sync_state)
                         last_sync = now
-                        sync = {'ok': ok, 'time': int(now), 'error': err}
-                        if not ok:
-                            log('file copy to the other servers failed:', err)
                 elif role == 'standby':
                     floating_ip(conf, False)
                     notify_pending = False
@@ -512,7 +550,7 @@ def main():
                 'node': conf['HA_NODE_NAME'], 'node_ip': conf['HA_NODE_IP'], 'peer_ip': ','.join(peers(conf)),
                 'servers': servers(conf), 'topology': conf.get('HA_TOPOLOGY') or 'active-passive',
                 'witness_ip': conf.get('HA_WITNESS_IP', ''), 'role': role, 'app_running': app_running(),
-                **reach, 'file_sync': sync, 'updated': int(now),
+                **reach, 'file_sync': dict(sync), 'updated': int(now),
                 'floating_ip': conf.get('HA_VIP', ''), 'members': members, 'request': last_request,
             })
         except Exception as e:  # never die: the service manager would restart us anyway

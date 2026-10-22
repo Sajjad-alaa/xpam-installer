@@ -109,10 +109,18 @@ chown postgres:postgres "$RUN/patroni.yml"
 
 # A server without data never starts a cluster of its own (that would split XPAM into two databases):
 # it waits for the primary and copies it. Only the converted single server (with data) can lead first.
+primary_up() { # one of the other servers is the primary
+  local p
+  for p in ${HA_SERVERS//,/ } ${HA_PEER_IP:-}; do
+    [[ "$p" == "$HA_NODE_IP" ]] && continue
+    curl -fsS -o /dev/null --max-time 3 --cacert "$RUN/ca.crt" --cert "$RUN/node.crt" --key "$RUN/node.key" \
+      "https://$p:8008/primary" && return 0
+  done
+  return 1
+}
 if [[ ! -s "$DATA/PG_VERSION" ]]; then
-  until curl -fsS -o /dev/null --max-time 3 --cacert "$RUN/ca.crt" --cert "$RUN/node.crt" --key "$RUN/node.key" \
-      "https://${HA_PEER_IP}:8008/primary"; do
-    echo "No data yet: waiting for the primary on ${HA_PEER_IP} to copy it..."
+  until primary_up; do
+    echo "No data yet: waiting for the primary among the other servers to copy it..."
     sleep 5
   done
 fi

@@ -379,7 +379,27 @@ What the target needs:
 - The desktop client shows the just-in-time account from client version 5.1.0 on; the Access page
   is part of the web workspace.
 
-## 11. High availability (two servers and a witness)
+## 11. High availability
+
+You choose how the servers work together:
+
+| | Active-passive | Active-active |
+|---|---|---|
+| Who serves users | the primary; the others wait | every server at the same time |
+| Servers | 2 to 5 | 3 or 5 |
+| Witness (small vote-only machine) | needed with 2 or 4 servers | none (the servers vote among themselves) |
+| In front of the servers | a load balancer, DNS or the floating address | a load balancer (or DNS) that spreads users |
+| A server fails | the standby takes over: XPAM runs there within about a minute | its users reconnect to the others; the database moves in about 30 seconds if it was the primary |
+| Capacity | one server's | grows with each server |
+
+In both, the database has **one writer** (the primary) with synchronous copies on the others, and a majority of
+votes decides which server is the primary, so two primaries can never run at once. In active-active, XPAM's
+services on every server use the primary's database and the main Redis (chosen by Redis Sentinel on each server),
+always over TLS with the cluster's own certificate; recordings and files made on any server are copied to the
+others every minute.
+
+`xpamctl ha init` without options asks which you want. The rest of this section describes active-passive with
+two servers and a witness; the steps are the same for more servers (one join bundle per server).
 
 Two XPAM servers run as **primary** and **standby**. The standby has a live copy of the database
 (synchronous streaming replication, so no committed change is lost) and of the recordings and files
@@ -427,7 +447,14 @@ database on the host at all (set `POSTGRESQL_EXPOSE_PORT` in `config.txt` to all
    (`xpam-vault-<second-server-ip>.enc` from `xpam-vault.sh init`):
 
    ```bash
-   xpamctl ha init <this-server-ip> <second-server-ip> <witness-ip> --vault-bundle xpam-vault-<second-server-ip>.enc
+   xpamctl ha init
+   ```
+
+   It asks for the topology, the servers and the witness. Without questions (automation):
+
+   ```bash
+   xpamctl ha init --topology active-passive --servers <this-ip>,<second-ip> --witness <witness-ip> --vault-bundle xpam-vault-<second-ip>.enc
+   xpamctl ha init --topology active-active --servers <this-ip>,<ip-2>,<ip-3> --vault-bundle xpam-vault-<ip-2>.enc,xpam-vault-<ip-3>.enc
    ```
 
    It shows two passphrases once — keep them in your password safe:
@@ -444,9 +471,9 @@ database on the host at all (set `POSTGRESQL_EXPOSE_PORT` in `config.txt` to all
 
    The first server then backs up, switches its database (XPAM is offline for a few minutes) and
    starts the agent (`systemctl status xpam-ha`).
-4. On the second server: copy `xpam-ha-join.enc` there (XPAM's configuration, encrypted) and run
-   `xpamctl ha join xpam-ha-join.enc` (it asks for the bundle passphrase). It copies the database and
-   becomes the standby.
+4. On each other server, one after the other: copy its bundle `xpam-ha-join-<its-ip>.enc` there (XPAM's
+   configuration, encrypted) and run `xpamctl ha join xpam-ha-join-<its-ip>.enc` (it asks for the bundle
+   passphrase). It copies the database and becomes a standby (active-active: it serves users too).
 
 System settings → **High availability** in the console (and `xpamctl ha status` on a server) shows both
 servers, their roles, the replication lag, the last file copy and whether the witness answers.
@@ -473,10 +500,10 @@ removes it.
 
 | | |
 |---|---|
-| A server is rebuilt (disk lost, same address) | install the same XPAM version on it; on the primary `xpamctl ha join-bundle`; copy the bundle over and run `xpamctl ha join xpam-ha-join.enc` |
+| A server is rebuilt (disk lost, same address) | install the same XPAM version on it; on the primary `xpamctl ha join-bundle <its-ip>`; copy the bundle over and run `xpamctl ha join xpam-ha-join-<its-ip>.enc` |
 | Replace every certificate (e.g. a server was compromised) | on the primary `xpamctl ha rotate-certs` (asks for the cluster passphrase); then `xpamctl ha apply-certs xpam-ha-join.enc` on the other server and the witness bundle on the witness; then `xpamctl ha rotate-certs --finish` on the primary. XPAM keeps running; automatic failover is paused meanwhile |
 | The witness is replaced (same address) | on the primary `xpamctl ha witness-bundle`; on the new witness run its `witness.sh` as at setup |
-| Back to one server | `xpamctl ha disable` on the standby first, then on the primary (it keeps XPAM and all data) |
+| Back to one server | `xpamctl ha disable` on every standby first, then on the primary (it keeps XPAM and all data) |
 
 **Planned maintenance**: `xpamctl ha switchover` (or "Switch to the other server" in the console)
 moves the primary to the standby in about a minute.
@@ -487,12 +514,13 @@ show them; `xpamctl license-ids` prints them on any server, including the standb
 vendor. A server that is not in the licence (for example a replacement server) works with trial limits only
 until the vendor issues a licence that lists it, so request it before you add or replace a server.
 
-**Upgrading** (rolling): get the new installer on both servers, then run `xpamctl ha upgrade`:
+**Upgrading** (rolling): get the new installer on every server, then run `xpamctl ha upgrade`:
 
-1. on the **standby**: it checks the cluster (other server in sync, witness, Vault) and upgrades this
-   server; XPAM keeps running on the primary;
-2. on the **primary**: it hands XPAM over to the upgraded standby (one short interruption while XPAM
-   starts there and updates the database), then upgrades itself as the new standby.
+1. on **each standby**: it checks the cluster (every server in the cluster, the witness, Vault) and upgrades
+   this server; XPAM keeps running on the primary. In active-active, an upgraded server waits with the new
+   version until the database has it, while the others serve users;
+2. on the **primary**: it moves the database's primary to an upgraded server (one short interruption while
+   XPAM starts there and updates the database), then upgrades itself.
 
 Run on the primary first, it refuses and says which server to start with. `xpamctl ha status` shows each
 server's XPAM version. Afterwards the second server is the primary (`xpamctl ha switchover` moves XPAM

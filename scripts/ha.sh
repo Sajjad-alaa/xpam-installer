@@ -163,6 +163,7 @@ function app_start() {
   local cmd
   cmd=$(app_cmd)
   cd "${PROJECT_DIR}" || return 1
+  gen_safe_config >/dev/null
   ${cmd} up -d 2>/dev/null || bash "${PROJECT_DIR}/xpamctl.sh" start
 }
 
@@ -180,6 +181,8 @@ function ha_servers() { # every XPAM server (HA_SERVERS; two-server clusters of 
   listed=$(get_config HA_SERVERS)
   if [[ -n "${listed}" ]]; then
     tr ',' ' ' <<< "${listed}"
+  elif [[ "$(get_config HA_NODE_NAME)" == "xpam-b" ]]; then
+    echo "$(get_config HA_PEER_IP) $(get_config HA_NODE_IP)"  # (in the order of the names: xpam-a, xpam-b)
   else
     echo "$(get_config HA_NODE_IP) $(get_config HA_PEER_IP)"
   fi
@@ -234,7 +237,7 @@ function install_agent() {
   systemctl daemon-reload
   systemctl enable xpam-ha-firewall >/dev/null 2>&1  # (the rules are in place before Docker at every boot)
   python3 "${PROJECT_DIR}/ha/agent.py" firewall
-  systemctl enable --now xpam-ha >/dev/null 2>&1 || systemctl restart xpam-ha
+  systemctl enable xpam-ha >/dev/null 2>&1
   systemctl restart xpam-ha
 }
 
@@ -269,14 +272,20 @@ function make_join_bundle() { # ip — for 'xpamctl ha join' on that server: the
   work=$(mktemp -d)
   mkdir -p "${work}/ha/certs"
   cp "${CONFIG_FILE}" "${work}/config.txt"
-  sed -i -e '/^HA_NODE_IP=/d' -e '/^HA_NODE_NAME=/d' -e '/^HA_JOIN_PRIMARY=/d' "${work}/config.txt"
-  printf 'HA_NODE_IP=%s\nHA_NODE_NAME=%s\nHA_JOIN_PRIMARY=%s\n' "${ip}" "${name}" "$(get_config HA_NODE_IP)" >> "${work}/config.txt"
+  sed -i -e '/^HA_NODE_IP=/d' -e '/^HA_NODE_NAME=/d' -e '/^HA_JOIN_PRIMARY=/d' -e '/^HA_SERVERS=/d' "${work}/config.txt"
+  printf 'HA_NODE_IP=%s\nHA_NODE_NAME=%s\nHA_JOIN_PRIMARY=%s\nHA_SERVERS=%s\n' "${ip}" "${name}" "$(get_config HA_NODE_IP)" \
+    "$(ha_servers | xargs | tr ' ' ',')" >> "${work}/config.txt"
   cp "${HA_DIR}"/certs/{ca.crt,ca.key.enc,node.crt,node.key,client.crt,client.key} "${work}/ha/certs/" || {
     rm -rf "${work}"; log_error "The cluster certificates are incomplete"; return 1; }
   for s in app.crt app.key witness.crt witness.key; do
     [[ -s "${HA_DIR}/certs/${s}" ]] && cp "${HA_DIR}/certs/${s}" "${work}/ha/certs/"
   done
   cp -r "${HA_DIR}/ssh" "${work}/ha/"
+  if [[ -f "${HA_DIR}/peer-vault/vault.env" ]]; then  # (earlier versions: the one other server's login, directly)
+    local t
+    t=$(mktemp -d -p "${HA_DIR}")
+    mv "${HA_DIR}"/peer-vault/* "${t}/" && mv "${t}" "${HA_DIR}/peer-vault/$(get_config HA_PEER_IP)"
+  fi
   [[ -d "${HA_DIR}/peer-vault/${ip}" ]] && cp -r "${HA_DIR}/peer-vault/${ip}" "${work}/vault"  # (its own Vault login)
   (umask 077 && encrypt_dir "${work}" "$(join_bundle_path "${ip}")")
   rm -rf "${work}"
@@ -551,6 +560,7 @@ SQL
   setup_vote_accounts || { log_error "The vote's accounts could not be set up"; return 1; }
   unset HA_ETCD_ENDPOINTS
   install_app_certs || { log_error "The cluster's app certificate could not be installed"; return 1; }
+  rm -rf "$(get_config VOLUME_DIR)/redis/sentinel"  # (a Sentinel's state from an earlier cluster)
   $(db_cmd) up -d
   if ! wait_until 300 "waiting for PostgreSQL under Patroni to become primary" \
       bash -c '[[ $(curl -s -o /dev/null -w "%{http_code}" --max-time 5 --cacert "'"${HA_DIR}"'/certs/ca.crt" --cert "'"${HA_DIR}"'/certs/node.crt" --key "'"${HA_DIR}"'/certs/node.key" "https://'"${this}"':8008/primary") == 200 ]]'; then
@@ -615,7 +625,9 @@ function ha_join() {
   cp "${work}/config.txt" "${CONFIG_FILE}"
   [[ -n "${volume_dir}" ]] && set_config VOLUME_DIR "${volume_dir}"
   [[ -n "${config_dir}" ]] && set_config CONFIG_DIR "${config_dir}"
+  set_config HA_PEER_IP "${primary}"  # (tools of earlier versions: the server joined)
   set_config HA_ENABLED 1
+  gen_safe_config >/dev/null  # (the components' shared config follows the cluster's)
   rm -rf "${HA_DIR}" && mkdir -p "${HA_DIR}"
   cp -r "${work}/ha/certs" "${work}/ha/ssh" "${HA_DIR}/"
   if [[ -d "${work}/vault" ]]; then
@@ -639,20 +651,27 @@ function ha_join() {
     # a rebuilt server: its old membership goes first (a member that lost its data must not vote again)
     etcdctl member remove "${old_id}" >/dev/null || { log_error "The old membership of this server could not be removed"; return 1; }
   fi
-  local tries=0
-  until etcdctl member add "${name}" --peer-urls "https://${this}:2380" >/dev/null 2>&1; do
+  local tries=0 added member_id
+  # a learner first: it receives the vote's data without counting, then becomes a voting member (the vote's
+  # majority never depends on a server that is still starting)
+  until added=$(etcdctl member add "${name}" --learner --peer-urls "https://${this}:2380" 2>&1); do
     tries=$((tries + 1))
     (( tries < 12 )) || { log_error "This server could not be added to the vote ('etcdctl member list' on the primary)"; return 1; }
     sleep 5  # (etcd accepts a new member only when the others have been connected for a few seconds)
   done
+  member_id=$(grep -oE 'Member [0-9a-f]+' <<< "${added}" | awk '{print $2}' | head -1)
   # the vote's current members (the new one has no name until it starts)
   set_config HA_ETCD_CLUSTER "$(etcdctl member list -w simple | awk -F', ' -v me="${name}" \
     '{n=$3; if (n=="") n=me; printf "%s%s=%s", (NR>1?",":""), n, $4}')"
   set_config HA_ETCD_STATE existing
-  unset HA_ETCD_ENDPOINTS
   install_app_certs || { log_error "The cluster's app certificate could not be installed"; return 1; }
+  rm -rf "${volume_dir}/redis/sentinel"  # (a Sentinel's state from an earlier cluster)
   echo_yellow "\nCopying the database from the primary"
   $(db_cmd) up -d
+  promote() { etcdctl member promote "${member_id}" >/dev/null 2>&1; }
+  wait_until 300 "waiting for this server's vote to catch up" promote || {
+    log_error "This server's vote did not catch up ('docker logs xpam_etcd'; 'etcdctl member list' on the primary)"; return 1; }
+  unset HA_ETCD_ENDPOINTS
   if ! wait_until 7200 "copying (large databases take a while)" \
       bash -c '[[ $(curl -s -o /dev/null -w "%{http_code}" --max-time 5 --cacert "'"${HA_DIR}"'/certs/ca.crt" --cert "'"${HA_DIR}"'/certs/node.crt" --key "'"${HA_DIR}"'/certs/node.key" "https://'"${this}"':8008/replica") == 200 ]]'; then
     log_error "The database could not be copied: 'docker logs xpam_postgresql'"; return 1
@@ -829,7 +848,8 @@ function ha_upgrade() { # [-y] — rolling upgrade to this installer's version: 
     [[ "${confirm}" == "y" ]] || return 1
   fi
   ha_switchover "${cand_name}" || return 1
-  wait_until 180 "waiting for this server to become a standby" test "$(ha_role)" == standby || {
+  is_standby() { [[ "$(ha_role)" == "standby" ]]; }
+  wait_until 180 "waiting for this server to become a standby" is_standby || {
     log_error "This server is still not a standby: check 'xpamctl ha status' before upgrading it"; return 1; }
   wait_until 900 "waiting for XPAM to answer on ${cand_host} (it updates the database)" xpam_answers "${cand_host}" || {
     log_error "XPAM does not answer on ${cand_host}: check it there ('docker logs xpam_core'); this server was not upgraded"
@@ -989,6 +1009,10 @@ function ha_rotate_certs() { # [--finish]
   done
   [[ -n "${witness}" ]] && echo "  - on the witness (${witness}): copy ${HA_DIR}/xpam-ha-witness.enc there and run: ${WITNESS_UNPACK}"
   echo "  then here: xpamctl ha rotate-certs --finish"
+  if [[ "$(ha_topology)" == "active-active" ]]; then
+    echo_yellow "  Active-active: until a server has applied its bundle, its XPAM cannot reach the database and Redis"
+    echo_yellow "  (they now use the new CA): apply the bundles right away, one server after the other."
+  fi
 }
 
 function ha_apply_certs() { # bundle — on the other server, after 'rotate-certs' on the primary
@@ -1033,6 +1057,18 @@ function ha_disable() {
   volume_dir=$(get_config VOLUME_DIR); stamp=$(date +%F_%H%M%S)
   if [[ "${role}" == "primary" ]]; then
     bash "${BASE_DIR}/5_db_backup.sh" || { log_error "Database backup failed: nothing was changed"; return 1; }
+  else
+    # a server that is not the primary leaves only while another server runs (it might hold the last copy),
+    # and leaves the vote too: the servers that stay keep their majority
+    local alive="" member
+    for p in $(ha_peers); do
+      [[ "$(patroni_code liveness "${p}")" == "200" ]] && alive=1
+    done
+    [[ -n "${alive}" ]] || { log_error "No other server of the cluster is running: this one may hold the only copy of the database. Start another server first."; return 1; }
+    member=$(ha_etcdctl --root member list 2>/dev/null | awk -F', ' -v u="https://$(get_config HA_NODE_IP):2380" '$4 == u {print $1}')
+    if [[ -n "${member}" ]]; then
+      ha_etcdctl --root member remove "${member}" >/dev/null || { log_error "This server could not leave the vote: nothing was changed"; return 1; }
+    fi
   fi
   systemctl disable --now xpam-ha >/dev/null 2>&1 || true
   systemctl disable xpam-ha-firewall >/dev/null 2>&1 || true
@@ -1050,6 +1086,7 @@ function ha_disable() {
   iptables -F XPAM-HA 2>/dev/null; iptables -X XPAM-HA 2>/dev/null
   sed -i '/ xpam-ha$/d' /root/.ssh/authorized_keys 2>/dev/null || true
   # (active-active: XPAM's containers used the cluster's app certificate)
+  rm -rf "${volume_dir}/redis/sentinel"
   rm -rf "$(get_config CONFIG_DIR)/certs/ha" "$(get_config CONFIG_DIR)/certs/db_ca.pem" \
     "$(get_config CONFIG_DIR)/certs/db_client.crt" "$(get_config CONFIG_DIR)/certs/db_client.key"
   if [[ "${role}" == "primary" ]]; then
@@ -1119,7 +1156,7 @@ function main() {
     join) [[ $# -ge 1 ]] || { echo "usage: xpamctl ha join <xpam-ha-join-IP.enc> [-y]"; return 2; }
           ha_join "$@" ;;
     status) ha_status ;;
-    switchover) ha_switchover ;;
+    switchover) ha_switchover "$@" ;;
     upgrade) ha_upgrade "$@" ;;
     failover) ha_failover "$@" ;;
     role) ha_role ;;

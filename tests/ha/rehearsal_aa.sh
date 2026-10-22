@@ -108,8 +108,11 @@ say "seed data on A"
 on xaaa "$PSQL 'CREATE TABLE xpam_ha_rehearsal(v text); INSERT INTO xpam_ha_rehearsal VALUES (\$\$seed\$\$)'"
 
 say "ha init on A: active-active, servers A, B, C (no witness)"
-check 'ha init refuses active-active with 2 servers' "on xaaa 'cd /opt/xpam-installer && bash ./xpamctl.sh ha init --topology active-active --servers $A,$B -y' 2>&1 | grep -q '3 or 5 servers'"
-check 'ha init refuses a witness with 3 servers' "on xaaa 'cd /opt/xpam-installer && bash ./xpamctl.sh ha init --topology active-passive --servers $A,$B,$C --witness 172.31.11.99 -y' 2>&1 | grep -q 'no witness is needed'"
+# (output captured first: `cmd | grep -q` fails under pipefail when grep stops reading early)
+OUT2=$(on xaaa "cd /opt/xpam-installer && bash ./xpamctl.sh ha init --topology active-active --servers $A,$B -y" 2>&1)
+check 'ha init refuses active-active with 2 servers' "[[ \$OUT2 == *'3 or 5 servers'* ]]"
+OUTW=$(on xaaa "cd /opt/xpam-installer && bash ./xpamctl.sh ha init --topology active-passive --servers $A,$B,$C --witness 172.31.11.99 -y" 2>&1)
+check 'ha init refuses a witness with 3 servers' "[[ \$OUTW == *'no witness is needed'* ]]"
 on xaaa "cd /opt/xpam-installer && export $PASSENV && timeout 1800 bash ./xpamctl.sh ha init --topology active-active --servers $A,$B,$C --vault-bundle /root/vbB.enc,/root/vbC.enc -y > /root/ha-init.log 2>&1"
 check 'A is the primary and serves' "[[ \$(primary_ip) == $A ]] && wait_for 'core_healthy xaaa' 60"
 check 'a join bundle for each other server, encrypted, without secrets' "on xaaa 'test -s /opt/xpam/config/ha/xpam-ha-join-$B.enc && test -s /opt/xpam/config/ha/xpam-ha-join-$C.enc' && ! on xaaa 'grep -qa SECRET_KEY /opt/xpam/config/ha/xpam-ha-join-$B.enc'"
@@ -126,6 +129,7 @@ check "B's and C's XPAM use the primary's database (A), not their read-only copy
 check 'a write made through C reaches the cluster (read on B)' "django xaac 'from django.db import connection; c = connection.cursor(); c.execute(\"insert into xpam_ha_rehearsal values (%s)\", [\"via-c\"]); connection.commit() if not connection.get_autocommit() else None' >/dev/null; wait_for \"on xaab \\\"\\\$PSQL 'select v from xpam_ha_rehearsal'\\\" | grep -qx via-c\" 6"
 check 'one Redis for all: a value stored through B is read through C' "django xaab 'from django.core.cache import cache; cache.set(\"xpam-aa\", \"shared\", 300)' >/dev/null; django xaac 'from django.core.cache import cache; print(\"CACHE\", cache.get(\"xpam-aa\"))' | grep -q '^CACHE shared'"
 sentinel_master() { on "$1" 'docker exec xpam_sentinel sh -c "REDISCLI_AUTH=\$(. /run/xpam-secrets/env 2>/dev/null; echo \$REDIS_PASSWORD) redis-cli --tls -p 26380 --cacert /tmp/xpam-tls/ca.crt --cert /tmp/xpam-tls/node.crt --key /tmp/xpam-tls/node.key SENTINEL get-master-addr-by-name xpam"' 2>/dev/null | head -1; }
+check "the Sentinel's state on disk holds no password" "! on xaab 'grep -qE \"requirepass|auth-pass|sentinel-pass\" /data/xpam/redis/sentinel/state.conf' && on xaab 'test -s /data/xpam/redis/sentinel/state.conf'"
 check 'the three Sentinels agree: the main Redis is on A' "[[ \$(sentinel_master xaaa) == $A && \$(sentinel_master xaab) == $A && \$(sentinel_master xaac) == $A ]]"
 DBU=$(on xaab 'grep ^DB_USER= /opt/xpam/config/config.txt | cut -d= -f2'); DBN=$(on xaab 'grep ^DB_NAME= /opt/xpam/config/config.txt | cut -d= -f2')
 login() { # from B to A's database as XPAM, with or without the app certificate

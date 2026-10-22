@@ -212,7 +212,7 @@ function install_app_certs() {
   # certificate (database and Redis logins only: the vote does not know its name)
   [[ "$(ha_topology)" == "active-active" ]] || return 0
   local d
-  d="$(get_config CONFIG_DIR)/certs"
+  d="${CONFIG_DIR}/certs"
   mkdir -p "${d}/ha"
   cp "${HA_DIR}/certs/ca.crt" "${HA_DIR}/certs/app.crt" "${HA_DIR}/certs/app.key" "${d}/ha/" || return 1
   cp "${HA_DIR}/certs/ca.crt" "${d}/db_ca.pem"
@@ -1087,8 +1087,8 @@ function ha_disable() {
   sed -i '/ xpam-ha$/d' /root/.ssh/authorized_keys 2>/dev/null || true
   # (active-active: XPAM's containers used the cluster's app certificate)
   rm -rf "${volume_dir}/redis/sentinel"
-  rm -rf "$(get_config CONFIG_DIR)/certs/ha" "$(get_config CONFIG_DIR)/certs/db_ca.pem" \
-    "$(get_config CONFIG_DIR)/certs/db_client.crt" "$(get_config CONFIG_DIR)/certs/db_client.key"
+  rm -rf "${CONFIG_DIR}/certs/ha" "${CONFIG_DIR}/certs/db_ca.pem" \
+    "${CONFIG_DIR}/certs/db_client.crt" "${CONFIG_DIR}/certs/db_client.key"
   if [[ "${role}" == "primary" ]]; then
     # PostgreSQL on its own again: Patroni's settings out (its TLS files exist only in the HA container)
     docker run --rm -v "${volume_dir}/postgresql/data:/d" --entrypoint sh postgres:16.15-bookworm -c \

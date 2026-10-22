@@ -1,6 +1,7 @@
 # Only the apps tree is copied; never ship keys, licenses or caches.
 *
 !apps
+!jms
 apps/**/__pycache__
 **/*.pyc
 **/*.pem

@@ -29,6 +29,10 @@ RUN /usr/local/bin/uv pip install --python /opt/py3/bin/python "oracledb==3.4.2"
 RUN /usr/local/bin/uv pip install --python /opt/py3/bin/python "netmiko==4.5.0"
 
 COPY apps /opt/jumpserver/apps
+# XPAM: the start script (quick start when nothing changed) and this build's identity
+COPY jms /opt/jumpserver/jms
+ARG XPAM_BUILD_ID=dev
+RUN echo "${XPAM_BUILD_ID}" > /opt/jumpserver/BUILD_ID
 # Compile the Python sources once at build time: faster first start, and the interpreter's
 # warnings about old-style escape sequences do not show up in installation and upgrade logs
 RUN /opt/py3/bin/python -W ignore -m compileall -q -j 0 /opt/jumpserver/apps >/dev/null 2>&1 || true

@@ -26,8 +26,8 @@ import urllib.request
 INSTALLER = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CONFIG_FILE = os.environ.get('XPAM_CONFIG_FILE', '/opt/xpam/config/config.txt')
 SECRETS_FILE = '/run/xpam/secrets/all.env'
-INTERVAL = 3
-STABLE_CHECKS = 2           # a role must be seen this many times in a row before acting
+INTERVAL = 2
+STABLE_CHECKS = 2           # a role must be seen this many times in a row before acting (2 s apart)
 UNKNOWN_GRACE = 30          # seconds without Patroni before the services are stopped
 SYNC_EVERY = 60
 HA_PORTS = '5432,8008,2379,2380,6379,6380'

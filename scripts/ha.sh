@@ -142,8 +142,12 @@ function db_cmd() {
 # ---------------------------------------------------------------- used by the agent
 
 function app_start() {
-  # through xpamctl: the usual preparation steps run (it starts XPAM only when this server is primary)
-  bash "${PROJECT_DIR}/xpamctl.sh" start
+  # failover: the containers straight away (their settings are those of the last full start); the full
+  # `xpamctl start` (preparation steps) only when that is not enough
+  local cmd
+  cmd=$(app_cmd)
+  cd "${PROJECT_DIR}" || return 1
+  ${cmd} up -d 2>/dev/null || bash "${PROJECT_DIR}/xpamctl.sh" start
 }
 
 function app_stop() {

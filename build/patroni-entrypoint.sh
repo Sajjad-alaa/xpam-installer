@@ -52,7 +52,9 @@ config = {
     },
     'bootstrap': {
         'dcs': {
-            'ttl': 30, 'loop_wait': 10, 'retry_timeout': 10, 'maximum_lag_on_failover': 1048576,
+            # failover in about 20 s (ttl >= loop_wait + 2 * retry_timeout); HA_PATRONI_TTL & co. to change it
+            'ttl': int(e.get('HA_PATRONI_TTL') or 20), 'loop_wait': int(e.get('HA_PATRONI_LOOP_WAIT') or 5),
+            'retry_timeout': int(e.get('HA_PATRONI_RETRY_TIMEOUT') or 5), 'maximum_lag_on_failover': 1048576,
             # no committed transaction is lost in a failover while both servers are healthy; with the
             # standby down the primary keeps working (not strict)
             'synchronous_mode': e.get('HA_SYNC', '1') == '1', 'synchronous_mode_strict': False,

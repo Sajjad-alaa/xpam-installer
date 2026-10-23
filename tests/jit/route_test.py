@@ -155,6 +155,47 @@ try:
           'Approval: level 1' in notes(t) and 'Not approved automatically' not in notes(t), notes(t))
     t.close()
 
+    # ================================================================ approval flows from the rule form
+    p = api(U, 'post', '/api/v1/accounts/jit-access/preview/', {'assets': [str(db.id)], 'hours': 4}).data
+    check("preview: the rule decides the flow (the console form locks it)",
+          p['policy_locks_flow'] is True and p['policy_flow_id'] == str(flow.id) and p['policies'] == ['rt-db-flow'], p)
+    default = selfservice.org_flows(org.id).first()
+    r = api(U, 'post', '/api/v1/tickets/apply-asset-tickets/open/', {
+        'title': 'rt-other-flow', 'type': 'apply_asset', 'org_id': str(org.id), 'flow_id': str(default.id),
+        'apply_assets': [str(db.id)], 'apply_nodes': [], 'apply_accounts': ['@JIT'], 'apply_actions': ['connect'],
+        'apply_date_start': timezone.now().isoformat(),
+        'apply_date_expired': (timezone.now() + timezone.timedelta(hours=4)).isoformat()})
+    t = ApplyAssetTicket.objects.filter(title='rt-other-flow', applicant=user).first()
+    check("a console request naming another flow gets the rule's flow",
+          r.status_code == 201 and t and t.flow_id == flow.id and steps(t) == [['rt.dba1', 'rt.dba2'], ['rt.lead']],
+          (r.status_code, t and t.flow_id, t and steps(t)))
+    if t:
+        t.close()
+    from rbac.models import Role, Permission
+    editor = mkuser('rt.ruleeditor')
+    role = Role.objects.filter(name='rt-rule-editor').first() or Role.objects.create(name='rt-rule-editor', scope='org')
+    role.permissions.set(Permission.objects.filter(
+        content_type__app_label='accounts', codename__in=['view_jitpolicy', 'add_jitpolicy', 'change_jitpolicy']))
+    org.add_member(editor, role=role)
+    E = APIClient(); E.force_authenticate(editor)
+    r = api(E, 'post', '/api/v1/accounts/jit-policies/approval-flows/', {
+        'id': str(flow.id), 'name': 'rt-db-team', 'approval_level': 1,
+        'rules': [{'level': 1, 'users': {'type': 'ids', 'ids': [str(editor.id)]}}]})
+    check('someone who may only edit rules cannot change an approval flow', r.status_code == 403, r.status_code)
+    r = api(A, 'patch', f'/api/v1/tickets/flows/{flow.id}/', {'cc_users': [str(dba2.id)]})
+    r = api(A, 'post', '/api/v1/accounts/jit-policies/approval-flows/', {
+        'id': str(flow.id), 'name': 'rt-db-team', 'approval_level': 2,
+        'rules': [{'level': 1, 'users': {'type': 'ids', 'ids': [str(dba1.id), str(dba2.id)]}},
+                  {'level': 2, 'users': {'type': 'ids', 'ids': [str(lead.id)]}}]})
+    flow.refresh_from_db()
+    check('editing a flow from the rule form keeps its CC users',
+          r.status_code == 200 and list(flow.cc_users.values_list('username', flat=True)) == ['rt.dba2'], (r.status_code, r.data))
+    five = [{'level': i, 'users': {'type': 'ids', 'ids': [str(u.id)]}} for i, u in enumerate([dba1, dba2, lead, dba1, dba2], 1)]
+    r = api(A, 'post', '/api/v1/accounts/jit-policies/approval-flows/', {'name': 'rt-five', 'approval_level': 5, 'rules': five})
+    check('a five-level flow can be made from the rule form', r.status_code == 201 and len(r.data['route']) == 5, r.data)
+    r = api(A, 'post', '/api/v1/accounts/jit-policies/approval-flows/', {'name': 'rt-bad', 'approval_level': 'x', 'rules': []})
+    check('a wrong level is refused, not an error', r.status_code == 400, r.status_code)
+
     # ================================================================ specific people
     r = rule('rt-db-people', db, priority=1, approval_route='approvers')
     check('"Specific people" without anyone chosen is refused', r.status_code == 400 and 'approvers' in r.data, r.data)

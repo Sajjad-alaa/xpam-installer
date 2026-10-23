@@ -202,6 +202,12 @@ try:
         t2 = ApplyAssetTicket.objects.get(id=t2.id)
     check('a request with explicit choices keeps them (SSH; connect only)',
           t2.apply_protocols == ['ssh'] and t2.apply_actions == ActionChoices.connect, (t2.apply_protocols, t2.apply_actions))
+    t2_ext = selfservice.extend(R, t2.id, 0.5)
+    with tmp_to_root_org():
+        t2_ext = ApplyAssetTicket.objects.get(id=t2_ext.id)
+    check('an extension keeps the original protocols and actions',
+          t2_ext.apply_protocols == ['ssh'] and t2_ext.apply_actions == ActionChoices.connect,
+          (t2_ext.apply_protocols, t2_ext.apply_actions))
     r = U.post(f'/api/v1/tickets/apply-asset-tickets/{t2.id}/access/end/', {}, format='json', **H)
     set_current_org(org)
     check('the requester ends it from the ticket', r.status_code == 200 and access(U, t2).data['state'] == 'ended', r.data)

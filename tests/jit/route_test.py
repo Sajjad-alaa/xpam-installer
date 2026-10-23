@@ -182,6 +182,11 @@ try:
     p = api(U, 'post', '/api/v1/accounts/jit-access/preview/', form).data
     check('console preview, an existing account: not instant, says so', p['instant'] is False and 'existing accounts' in p['why'], p)
     default = selfservice.org_flows(org.id).first()
+    r = api(A, 'patch', f'/api/v1/accounts/jit-policies/{JITPolicy.objects.get(name="rt-db-flow").id}/',
+            {'approval_flow': str(default.id)})
+    listed = api(A, 'get', '/api/v1/accounts/jit-policies/')
+    check('a rule with the global approval flow lists cleanly',
+          r.status_code == 200 and listed.status_code == 200, (r.status_code, listed.status_code))
     r = api(U, 'post', '/api/v1/tickets/apply-asset-tickets/open/', {
         'title': 'ITP', 'type': 'apply_asset', 'org_id': str(org.id), 'flow_id': str(default.id),
         'apply_assets': [str(web.id)], 'apply_nodes': [], 'apply_accounts': ['@JIT'], 'apply_actions': ['all'],
@@ -191,6 +196,25 @@ try:
           r.status_code == 201 and t and t.state == 'pending' and 'Not approved automatically' in notes(t), (r.status_code, notes(t) if t else r.data))
     if t:
         t.close()
+    JITPolicy.objects.filter(name='rt-web-2h').update(protocols=['ssh'])
+    r = api(U, 'post', '/api/v1/tickets/apply-asset-tickets/open/', {
+        'title': 'ITP-PROTO', 'type': 'apply_asset', 'org_id': str(org.id), 'flow_id': str(default.id),
+        'apply_assets': [str(web.id)], 'apply_nodes': [], 'apply_accounts': ['@JIT'], 'apply_actions': ['all'],
+        'apply_protocols': ['sftp'],
+        'apply_date_start': start.isoformat(), 'apply_date_expired': (start + timezone.timedelta(hours=1)).isoformat()})
+    tp = ApplyAssetTicket.objects.filter(title='ITP-PROTO', applicant=user).order_by('-date_created').first()
+    check('a console request asking for a disallowed protocol is not auto-approved',
+          r.status_code == 201 and tp and tp.state == 'pending' and 'only allows ssh' in notes(tp),
+          (r.status_code, notes(tp) if tp else r.data))
+    if tp:
+        tp.close()
+    JITPolicy.objects.filter(name='rt-web-2h').update(protocols=['all'], actions=1 | 4)  # connect + download
+    form['accounts'], form['date_expired'] = ['@JIT'], (start + timezone.timedelta(hours=1)).isoformat()
+    p = api(U, 'post', '/api/v1/accounts/jit-access/preview/', dict(form, actions=['all'])).data
+    check('console preview asking for all actions where the rule limits them: not instant, says so',
+          p['instant'] is False and 'actions' in p['why'], p)
+    p = api(U, 'post', '/api/v1/accounts/jit-access/preview/', dict(form, actions=['connect'])).data
+    check('... asking only what the rule allows: approved at once', p['instant'] is True, p)
     p = api(U, 'post', '/api/v1/accounts/jit-access/preview/', {'assets': [], 'hours': 1}).data
     check('preview of nothing: nothing to say', p['instant'] is False and p['route'] == [], p)
 except Exception:

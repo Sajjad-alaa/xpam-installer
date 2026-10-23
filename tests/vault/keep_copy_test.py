@@ -131,6 +131,19 @@ elif PHASE == 'up':
     kept, failed = update_secret_copies()
     check('option on: the copies are filled from Vault', (kept, failed) == (2, 0)
           and fresh(Account, st['acc'])._secret_copy == st['s2'], (kept, failed))
+    # a secret saved to the vault before 5.1.17 keeps an encrypted marker in the database
+    from common.db.utils import Encryptor
+    with connection.cursor() as c:
+        c.execute(f'UPDATE {AccountTemplate._meta.db_table} SET "_secret" = %s, "_secret_copy" = NULL WHERE id = %s',
+                  [Encryptor(VAULT_SAVED_SECRET_MARK).encrypt(), st['tpl']])
+    old = raw(AccountTemplate, st['tpl'], '_secret')
+    kept, failed = update_secret_copies()
+    check('a secret saved before 5.1.17 (encrypted marker) gets its copy too',
+          old != VAULT_SAVED_SECRET_MARK and (kept, failed) == (2, 0) and fresh(AccountTemplate, st['tpl'])._secret_copy == st['t1'],
+          (kept, failed))
+    from accounts.tasks.vault import _get_model_queryset, ACTION_RESTORE
+    qs, _skipped = _get_model_queryset(AccountTemplate, ACTION_RESTORE)
+    check('... and bringing secrets back from Vault still finds it', qs.filter(id=st['tpl']).exists())
     acc = fresh(Account, st['acc'])
     from accounts.backends import vault_client
     acc.restore_secret_from_vault(vault_client.get_for_restore(acc))

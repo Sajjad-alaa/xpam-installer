@@ -12,6 +12,8 @@ _release = lambda jit_id, reason='': __import__('accounts.jit.service', fromlist
 jit_tasks.jit_release_task.delay = lambda jit_id, reason='': _release(jit_id, reason)
 jit_tasks.jit_release_task.apply_async = lambda args=(), kwargs=None, **kw: _release(*args, **(kwargs or {}))
 jit_tasks.jit_provision_task.delay = lambda *a: __import__('accounts.jit.service', fromlist=['x']).provision_granted(*a)
+import xpack.utils
+xpack.utils.has_ticket_license = lambda: True
 import paramiko, psycopg2
 from accounts.models import JITAccount
 from django.utils import timezone

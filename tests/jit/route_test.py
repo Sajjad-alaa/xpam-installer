@@ -256,6 +256,32 @@ try:
           p['instant'] is False and 'actions' in p['why'], p)
     p = api(U, 'post', '/api/v1/accounts/jit-access/preview/', dict(form, actions=['connect'])).data
     check('... asking only what the rule allows: approved at once', p['instant'] is True, p)
+    # ================================================================ console: reason required, request shortened
+    pure = host('rt-pure')
+    rule('rt-pure-2h', pure, auto_approve=True, auto_approve_max_hours=2, max_hours=2, require_reason=True)
+    default = selfservice.org_flows(org.id).first()
+
+    def console(title, comment, hours):
+        start = timezone.now()
+        r = api(U, 'post', '/api/v1/tickets/apply-asset-tickets/open/', {
+            'title': title, 'comment': comment, 'type': 'apply_asset', 'org_id': str(org.id),
+            'flow_id': str(default.id), 'apply_assets': [str(pure.id)], 'apply_nodes': [], 'apply_accounts': ['@JIT'],
+            'apply_actions': ['connect'], 'apply_date_start': start.isoformat(),
+            'apply_date_expired': (start + timezone.timedelta(hours=hours)).isoformat()})
+        return r, ApplyAssetTicket.objects.filter(title=title, applicant=user).order_by('-date_created').first()
+
+    r, t = console('rt-title-only', '', 1)
+    check('a console request with a title but no reason is not instant when the rule asks for a reason',
+          t and t.state == 'pending' and 'no reason given' in notes(t), (r.status_code, t and t.state, t and notes(t)))
+    if t:
+        t.close()
+    reset()
+    r, t = console('rt-too-long', 'patching the kernel', 168)
+    hours = t and round((t.apply_date_expired - t.apply_date_start).total_seconds() / 3600, 1)
+    check('a request longer than the rule ever allows is shortened to it, approved, and says so',
+          t and t.state == 'approved' and hours == 2.0 and 'Shortened from 168 h to 2 h' in notes(t),
+          (t and t.state, hours, t and notes(t)))
+    reset()
     p = api(U, 'post', '/api/v1/accounts/jit-access/preview/', {'assets': [], 'hours': 1}).data
     check('preview of nothing: nothing to say', p['instant'] is False and p['route'] == [], p)
 except Exception:

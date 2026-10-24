@@ -282,6 +282,68 @@ try:
           t and t.state == 'approved' and hours == 2.0 and 'Shortened from 168 h to 2 h' in notes(t),
           (t and t.state, hours, t and notes(t)))
     reset()
+    # ================================================================ extensions
+    from perms.models import AssetPermission
+    ext = host('rt-ext')
+    r = rule('rt-ext', ext, auto_approve=True, auto_approve_max_hours=2, max_hours=4, max_extensions=1)
+    ext_rule = r.data['id']
+    t = selfservice.submit(Req(user), [ext.id], 1, reason='deploy')
+    perm = AssetPermission.objects.filter(from_ticket=True, users=user, assets=ext).order_by('-date_created').first()
+    check('an access to extend', t.state == 'approved' and perm is not None, t.state)
+
+    def extend(hours, reason='more time'):
+        try:
+            return selfservice.extend(Req(user), perm.id, hours, reason=reason)
+        except selfservice.SelfServiceError as e:
+            return str(e)
+
+    e1 = extend(1)
+    check('an extension within the rule is approved by itself', getattr(e1, 'state', e1) == 'approved', getattr(e1, 'state', e1))
+    e2 = extend(1)
+    check('... a second one is refused (one extension allowed)', isinstance(e2, str) and 'Maximum number of extensions' in e2, e2)
+    api(A, 'patch', f'/api/v1/accounts/jit-policies/{ext_rule}/', {'max_extensions': 0, 'extension_approval': 'manual'})
+    e3 = extend(1)
+    check('"always manual": the extension waits for an approver, and says why',
+          getattr(e3, 'state', None) == 'pending' and 'manual approval for extensions' in notes(e3), getattr(e3, 'state', e3))
+    if not isinstance(e3, str):
+        e3.close()
+    api(A, 'patch', f'/api/v1/accounts/jit-policies/{ext_rule}/', {'auto_approve': False, 'extension_approval': 'auto'})
+    e4 = extend(1)
+    check('"approve extensions automatically" even where the rule does not approve requests by itself',
+          getattr(e4, 'state', e4) == 'approved', getattr(e4, 'state', e4))
+    api(A, 'patch', f'/api/v1/accounts/jit-policies/{ext_rule}/', {'allow_extension': False})
+    e5 = extend(1)
+    check('extensions switched off: refused', isinstance(e5, str) and 'does not allow extending' in e5, e5)
+    r = api(A, 'patch', f'/api/v1/accounts/jit-policies/{ext_rule}/', {'allow_extension': True, 'extension_max_hours': 10})
+    check('a longest extension above the longest access is refused', r.status_code == 400 and 'extension_max_hours' in r.data, r.data)
+    reset()
+
+    # ================================================================ who sees which tickets
+    from rbac.builtin import BuiltinRole
+    oadmin = mkuser('rt.orgadmin')
+    org.add_member(oadmin, role=BuiltinRole.org_admin.get_role())
+    other_org = Organization.objects.filter(name='rt-other').first() or Organization.objects.create(name='rt-other')
+    boss = mkuser('rt.boss')
+    other_org.add_member(boss, role=BuiltinRole.org_admin.get_role())
+    from orgs.utils import tmp_to_org
+    with tmp_to_org(org):
+        org.members.through.objects.filter(user=boss, role_id=BuiltinRole.org_admin.id).delete()
+    set_current_org(org)
+
+    def ticket_titles(u):
+        c = APIClient(); c.force_authenticate(u)
+        r = c.get('/api/v1/tickets/tickets/?limit=500', HTTP_X_JMS_ORG=str(org.id))
+        set_current_org(org)
+        rows = r.data.get('results', r.data) if isinstance(r.data, dict) else r.data
+        return {row['title'] for row in rows}
+
+    mine = {t.title for t in ApplyAssetTicket.objects.filter(applicant=user)}
+    check("an organization's admin sees its tickets in All Submitted Tickets", mine and mine <= ticket_titles(oadmin), len(mine))
+    check("another organization's admin does not", not (mine & ticket_titles(boss)), sorted(mine & ticket_titles(boss))[:3])
+    nobody = mkuser('rt.nobody')
+    check("a user who is neither applicant nor approver sees none of them", not (ticket_titles(nobody) & mine),
+          sorted(ticket_titles(nobody) & mine)[:3])
+
     p = api(U, 'post', '/api/v1/accounts/jit-access/preview/', {'assets': [], 'hours': 1}).data
     check('preview of nothing: nothing to say', p['instant'] is False and p['route'] == [], p)
 except Exception:

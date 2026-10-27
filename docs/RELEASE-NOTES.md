@@ -1,5 +1,33 @@
 # XPAM release notes
 
+## 5.1.20 — custom dashboards, approval flows from the rule, access extensions, dark mode
+
+- **Dark mode across the console:** every page, form, table, dialog, chart and the assistant are readable in
+  dark mode; radios, checkboxes and input borders are visible; light mode is unchanged.
+- **Custom dashboards:** several dashboards per section, built from a widget gallery and starter templates,
+  shared with users, groups or the whole organization. Managing them needs the dashboard permissions
+  (organization administrators); everyone else sees what is shared with them.
+- **Just-in-time approval and ticket flows:** a rule picks an approval flow (create or edit flows of 1–5
+  levels from the rule form) or specific people; the request form locks the flow the rule decides; Flow
+  setup lists the rules that use each flow; approval channels reachable from Flow setup. Changing approval
+  flows needs the ticket flow permission.
+- **Console requests:** the request form follows the rule (duration, actions, protocols, quick durations);
+  a request longer than the rule ever allows is shortened to its limit, with a note. A title does not count
+  as the reason when a rule requires one.
+- **Access extensions per rule:** allowed or not, approved like the request / automatically / always by a
+  person, longest extension (at most the longest access), how many per access. Extend from the ticket.
+- **Tickets:** "All Submitted Tickets" for administrators (every ticket of the organizations they
+  administer, never another organization's); applicant column; search by number and applicant.
+- **Just-in-time access needs Tickets enabled and licensed.** Without it no just-in-time access is given out,
+  and a "JIT only" rule still hides the standing accounts. A failed licence check keeps the last answer.
+- **Instant approval only within the rule:** console requests asking for protocols or actions beyond the
+  rule wait for an approver; extensions keep the access's protocols and actions; "End now" also ends the
+  live sessions.
+- **Ctrl+K command palette** with quick actions (only those the user may open) and keyboard navigation;
+  refreshed look (surfaces, focus rings, menu highlight).
+- **Fixes:** secrets saved to a vault before 5.1.17 (encrypted marker) are found again when bringing secrets
+  back or keeping database copies.
+
 ## 5.1.19 — just-in-time approval you can see; a copy of account passwords in the database (optional)
 
 - **Who approves, in the rule:** *Approved by* is **An approval flow** (pick one of Tickets → Flow setup; the

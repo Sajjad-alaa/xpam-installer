@@ -4,6 +4,21 @@ BASE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" &>/dev/null && pwd)"
 
 . "${BASE_DIR}/utils.sh"
 
+# XPAM: a server in a high availability cluster leaves it first (xpamctl ha disable): its agent would start the
+# containers again while the data is deleted, and the other servers would keep waiting for its vote.
+function refuse_uninstall_in_ha() {
+  is_ha_enabled || return 0
+  if [[ "${XPAM_UNINSTALL_IGNORE_HA:-}" == "1" ]]; then
+    echo_warn "High availability is still on: stopping its agent here (the other servers are not told)"
+    systemctl disable --now xpam-ha xpam-ha-firewall &>/dev/null || true
+    rm -f /etc/systemd/system/xpam-ha.service /etc/systemd/system/xpam-ha-firewall.service
+    systemctl daemon-reload &>/dev/null || true
+    return 0
+  fi
+  log_error "This server is part of a high availability cluster: run 'xpamctl ha disable' first (or XPAM_UNINSTALL_IGNORE_HA=1 to ignore it). Nothing was changed."
+  return 1
+}
+
 function stop_services() {
   local container_ids network_ids volume_ids resource_id failed=0
 
@@ -120,7 +135,7 @@ function remove_compose() {
 }
 
 function remove_jumpserver() {
-  local images volume_dir jdmc_data_dir kotl_data_dir image config_parent
+  local images volume_dir jdmc_data_dir kotl_data_dir image config_parent from_vault
   local failed=0
 
   if [[ ! -f "${CONFIG_FILE}" ]]; then
@@ -132,6 +147,8 @@ function remove_jumpserver() {
   volume_dir=$(get_config_or_env VOLUME_DIR /data/xpam)
   jdmc_data_dir=$(get_current_jdmc_data_dir)
   kotl_data_dir=$(get_legacy_kotl_data_dir)
+  from_vault=0
+  secrets_from_vault && from_vault=1
   confirm="n"
   read_from_input confirm "$(gettext 'Are you clean up XPAM files')?" "y/n" "${confirm}"
   if [[ "${confirm}" == "y" ]]; then
@@ -143,9 +160,15 @@ function remove_jumpserver() {
       if [[ "${keep}" == "y" ]]; then
         keep_dir="/root/xpam-backup-$(date +%Y%m%d%H%M%S)"
         (umask 077 && mkdir -p "${keep_dir}") || return 1
+        # (without SECRET_KEY the backups cannot be read: stop here if the configuration cannot be kept)
+        if [[ -f "${CONFIG_FILE}" ]]; then
+          cp -p "${CONFIG_FILE}" "${keep_dir}/config.txt" || return 1
+        fi
         mv "${volume_dir}/db_backup" "${keep_dir}/" || return 1
-        cp -p "${CONFIG_FILE}" "${keep_dir}/config.txt" 2>/dev/null
         echo "$(gettext 'Backups kept in') ${keep_dir}"
+        if [[ "${from_vault}" == "1" ]]; then
+          echo_warn "The secrets are in Vault, not in the kept configuration: keep Vault's copies as long as you need the backups"
+        fi
       fi
     fi
     remove_managed_dir "${volume_dir}" || return 1
@@ -154,6 +177,13 @@ function remove_jumpserver() {
     remove_managed_dir "${JDMC_INSTALL_DIR}" || return 1
     remove_managed_dir "${JDMC_LEGACY_INSTALL_DIR}" || return 1
     remove_managed_dir "${CONFIG_DIR}" || return 1
+    if [[ "${from_vault}" == "1" ]]; then
+      # (the boot service that reads the secrets from Vault into memory has nothing left to serve)
+      systemctl disable --now xpam-secrets.service &>/dev/null || true
+      rm -f /etc/systemd/system/xpam-secrets.service /etc/tmpfiles.d/xpam-secrets.conf
+      systemctl daemon-reload &>/dev/null || true
+      remove_managed_dir "${XPAM_SECRETS_RUN_DIR}" || return 1
+    fi
     rm -f "${PROJECT_DIR}/.env" "${PROJECT_DIR}/compose/.env" || return 1
     # The shortcut to the data folder and the "current installer" link belong to this installation
     config_parent=$(dirname "${CONFIG_DIR}")
@@ -188,6 +218,7 @@ function remove_jumpserver() {
 
 function main() {
   echo_yellow "\n>>> $(gettext 'Uninstall XPAM')"
+  refuse_uninstall_in_ha || return 1
   prepare_jdmc_uninstall || {
     log_error "Failed to safely retire JDMC HA"
     return 1

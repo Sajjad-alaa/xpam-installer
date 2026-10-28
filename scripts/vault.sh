@@ -67,16 +67,18 @@ scratch() {
   fi
 }
 
-vcurl() { # url-path [curl args] — tries each Vault server in turn
+vcurl() { # url-path [curl args] — tries each Vault server in turn (not --data @-: a body is read once)
   local path=$1; shift
-  local addr code
+  local addr code sealed=""
   for addr in $(venv VAULT_ADDRS | tr ',' ' '); do
     code=$(curl -s --tlsv1.3 --max-time 15 --cacert "${VDIR}/ca.crt" --cert "${VDIR}/client.crt" --key "${VDIR}/client.key" \
       -o "${SCRATCH}/out" -w '%{http_code}' "$@" "${addr}/v1/${path}") || continue
     [[ "${code}" == 000 ]] && continue
+    # (a sealed server answers 503: another one may be unsealed)
+    [[ "${code}" == 503 ]] && { sealed=503; continue; }
     echo "${code}"; return 0
   done
-  echo 000
+  echo "${sealed:-000}"
 }
 
 vault_login() { # → SCRATCH/token.hdr
@@ -102,17 +104,18 @@ vault_read_startup() { # → SCRATCH/startup.json ({} when empty)
 
 vault_write_startup() { # file.json — the whole set (Vault keeps the previous versions)
   local code
-  code=$(python3 -c 'import json,sys; print(json.dumps({"data": json.load(open(sys.argv[1]))}))' "$1" \
-    | vcurl "$(venv VAULT_STARTUP_PATH)" -X POST -H @"${SCRATCH}/token.hdr" --data @-)
+  python3 -c 'import json,sys; print(json.dumps({"data": json.load(open(sys.argv[1]))}))' "$1" > "${SCRATCH}/payload.json" || return 1
+  code=$(vcurl "$(venv VAULT_STARTUP_PATH)" -X POST -H @"${SCRATCH}/token.hdr" --data @"${SCRATCH}/payload.json")
+  rm -f "${SCRATCH}/payload.json"
   [[ "${code}" == 200 ]] || { echo "writing the startup secrets failed (${code}): $(head -c 300 "${SCRATCH}/out")" >&2; return 1; }
 }
 
 # ---------------------------------------------------------------- secrets in memory
 
 write_run_files() { # SCRATCH/startup.json → /run/xpam/secrets/{all.env,<service>/env}
-  mkdir -p "${RUN}"; chmod 711 "$(dirname "${RUN}")" "${RUN}"
+  mkdir -p "${RUN}" && chmod 711 "$(dirname "${RUN}")" "${RUN}" || return 1
   local svc
-  python3 - "${SCRATCH}/startup.json" "${RUN}" <<'EOF'
+  python3 - "${SCRATCH}/startup.json" "${RUN}" <<'EOF' || return 1
 import json, os, sys
 data = json.load(open(sys.argv[1]))
 run = sys.argv[2]
@@ -124,8 +127,8 @@ with open(os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600), 'w') as f:
 os.replace(tmp, os.path.join(run, 'all.env'))
 EOF
   for svc in "${!SERVICE_SECRETS[@]}"; do
-    mkdir -p "${RUN}/${svc}"
-    python3 - "${SCRATCH}/startup.json" "${RUN}/${svc}" "${SERVICE_SECRETS[${svc}]}" "${SERVICE_UID[${svc}]:-0}" <<'EOF'
+    mkdir -p "${RUN}/${svc}" || return 1
+    python3 - "${SCRATCH}/startup.json" "${RUN}/${svc}" "${SERVICE_SECRETS[${svc}]}" "${SERVICE_UID[${svc}]:-0}" <<'EOF' || return 1
 import json, os, sys
 data = json.load(open(sys.argv[1]))
 d, spec, uid = sys.argv[2], sys.argv[3].split(), int(sys.argv[4])
@@ -211,9 +214,13 @@ cmd_fetch() {
   for i in $(seq 1 100000); do
     if vault_login && vault_read_startup; then
       vault_logout
-      write_run_files
-      rm -f "${SCRATCH}/startup.json"
-      return 0
+      # (an empty answer, e.g. a Vault without XPAM's secrets, would leave every container without its secrets)
+      if python3 -c 'import json,sys; sys.exit(0 if json.load(open(sys.argv[1])).get("SECRET_KEY") else 1)' "${SCRATCH}/startup.json" \
+          && write_run_files; then
+        rm -f "${SCRATCH}/startup.json"
+        return 0
+      fi
+      echo "Vault holds no XPAM secrets for this installation (or they could not be written to ${RUN})" >&2
     fi
     [[ "${wait}" == "--wait" ]] || return 1
     sleep 10
@@ -226,21 +233,49 @@ cmd_put() { # key (value in XV_VALUE) — one secret into Vault, then into memor
   [[ -n "${XV_VALUE:-}" ]] || return 0
   scratch
   vault_login && vault_read_startup || return 1
-  python3 - "${SCRATCH}/startup.json" "${key}" <<'EOF' || { vault_logout; return 0; }
+  local rc=0
+  python3 - "${SCRATCH}/startup.json" "${key}" <<'EOF' || rc=$?
 import json, os, sys
 path, key = sys.argv[1], sys.argv[2]
 data = json.load(open(path))
 if data.get(key) == os.environ['XV_VALUE']:
-    sys.exit(1)            # unchanged: nothing to write
+    sys.exit(3)            # unchanged: nothing to write
 data[key] = os.environ['XV_VALUE']
 json.dump(data, open(path, 'w'))
 EOF
+  # (3: unchanged; any other failure must not look like "nothing to do": the new value would be lost)
+  [[ "${rc}" == 3 ]] && { vault_logout; return 0; }
+  [[ "${rc}" == 0 ]] || { vault_logout; return 1; }
   vault_write_startup "${SCRATCH}/startup.json" || { vault_logout; return 1; }
   vault_logout
   write_run_files
 }
 
+connect_undo() { # a move that stopped before the switch: the current Vault stays in use, with its secrets
+  if [[ "${CONNECT_MOVED_DIR}" == 1 && -d "${VDIR}.previous" ]]; then
+    rm -rf "${VDIR}"; mv "${VDIR}.previous" "${VDIR}"
+  fi
+  if [[ "${CONNECT_TAKEN_OUT}" == 1 ]]; then
+    echo_warn "Nothing was moved: the account secrets go back into the current Vault"
+    core_exec <<'PY' >/dev/null || echo_warn "They are still in the database: the console System settings → Vault → Sync moves them"
+from accounts.tasks.vault import sync_secret_to_vault
+r = sync_secret_to_vault()
+if r.get('status') != 'succeeded':
+    raise SystemExit(1)
+PY
+    reencrypt_with_current_key >/dev/null || true
+  fi
+}
+
 cmd_connect() {
+  local rc=0
+  CONNECT_MOVED_DIR=0; CONNECT_TAKEN_OUT=0; CONNECT_COMMITTED=0
+  cmd_connect_run "$@" || rc=$?
+  [[ "${rc}" == 0 || "${CONNECT_COMMITTED}" == 1 ]] || connect_undo
+  return "${rc}"
+}
+
+cmd_connect_run() {
   local bundle=$1 yes=$2
   [[ -f "${bundle}" ]] || { echo "usage: xpamctl vault connect <xpam-vault-IP.enc> [-y]"; return 2; }
   # already connected: a move (e.g. from the local Vault to the Vault servers) — the secrets come from memory
@@ -263,9 +298,11 @@ cmd_connect() {
   [[ -f "${d}/vault.env" && -f "${d}/client.key" ]] || { log_error "Wrong bundle passphrase (or not an XPAM bundle of the Vault kit)"; return 1; }
   if [[ "${moving}" == 1 ]]; then
     echo_yellow "0. Moving from $(venv VAULT_ADDRS): account secrets back into the database first"
+    CONNECT_TAKEN_OUT=1
     to_legacy_data_key >/dev/null || { log_error "Reading the secrets from the current Vault failed: nothing changed"; return 1; }
     cp "${RUN}/all.env" "${SCRATCH}/current.env"; source_file="${SCRATCH}/current.env"
     rm -rf "${VDIR}.previous"; mv "${VDIR}" "${VDIR}.previous"
+    CONNECT_MOVED_DIR=1
   fi
   mkdir -p "${VDIR}"; chmod 700 "${VDIR}"
   install -m 644 "${d}/ca.crt" "${VDIR}/ca.crt"
@@ -325,8 +362,8 @@ EOF
   if [[ -n "${XPAM_VAULT_RECOVERY_PASSPHRASE:-}" ]]; then rpw="${XPAM_VAULT_RECOVERY_PASSPHRASE}"; else
     rpw="$(random_str 32)"
   fi
-  XV_R="${rpw}" openssl enc -aes-256-cbc -pbkdf2 -iter 600000 -salt -pass env:XV_R -in "${SCRATCH}/startup.json" \
-    -out "${VDIR}/escrow.enc" && chmod 600 "${VDIR}/escrow.enc"
+  (umask 077 && XV_R="${rpw}" openssl enc -aes-256-cbc -pbkdf2 -iter 600000 -salt -pass env:XV_R -in "${SCRATCH}/startup.json" \
+    -out "${VDIR}/escrow.enc") && [[ -s "${VDIR}/escrow.enc" ]] || { log_error "The recovery copy could not be written: stopped"; return 1; }
   echo_check "${VDIR}/escrow.enc (recovery passphrase below)"
 
   echo_yellow "4. Secrets into memory at every boot (xpam-secrets.service)"
@@ -335,6 +372,7 @@ EOF
   echo_check "${RUN}"
 
   echo_yellow "5. Configuration: account storage in Vault, settings locked, secrets removed from config.txt"
+  CONNECT_COMMITTED=1
   set_vault_config
   gen_safe_config >/dev/null 2>&1 || true
   echo_check "config.txt holds no secrets"
@@ -480,17 +518,28 @@ to_legacy_data_key() { # every value back under SECRET_KEY (before leaving or ch
   core_exec <<'PY'
 from django.conf import settings
 settings.XPAM_DATA_KEY = 'legacy'
+import sys
 from accounts.tasks.vault import restore_secret_from_vault
-restore_secret_from_vault()
+# (a secret that stayed in Vault, or a value that could not be re-encrypted, must stop the caller: it would
+# switch to a setup that cannot read it)
+if restore_secret_from_vault().get('status') != 'succeeded':
+    sys.exit(1)
 from settings.tasks.datakey import _reencrypt_database
-print('re-encrypted', _reencrypt_database(None))
+done = _reencrypt_database(None)
+print('re-encrypted', done)
+if getattr(_reencrypt_database, 'failed', 0):
+    sys.exit(1)
 PY
 }
 
 reencrypt_with_current_key() { # after XPAM restarted with its data key: every value to it, now
   core_exec <<'PY'
+import sys
 from settings.tasks.datakey import rotate_data_keys
-print(rotate_data_keys())
+result = rotate_data_keys()
+print(result)
+if result.get('failed'):
+    sys.exit(1)
 PY
 }
 
@@ -526,7 +575,12 @@ cmd_local() { # a hardened Vault on this server (the kit with --local) and XPAM 
   export XPAM_VAULT_BUNDLE_PASSPHRASE="$(random_str 32)"
   XPAM_DOCKER_SUBNET="${subnet}" bash "${PROJECT_DIR}/vault/xpam-vault.sh" init --local --nodes "${ip}" --xpam "${ip}" \
     || { log_error "The local Vault could not be set up"; return 1; }
-  cmd_connect "/opt/xpam-vault/out/xpam-vault-${ip}.enc" -y || return 1
+  if ! cmd_connect "/opt/xpam-vault/out/xpam-vault-${ip}.enc" -y; then
+    # (the Vault exists; the bundle's passphrase was random and is not kept: it is needed to try again)
+    log_error "XPAM could not be connected to the local Vault. Fix the cause, then: xpamctl vault connect /opt/xpam-vault/out/xpam-vault-${ip}.enc"
+    echo "  Bundle passphrase (shown once; delete the bundle afterwards): ${XPAM_VAULT_BUNDLE_PASSPHRASE}"
+    return 1
+  fi
   shred -u /opt/xpam-vault/out/*.enc 2>/dev/null || rm -f /opt/xpam-vault/out/*.enc
 }
 
@@ -643,7 +697,7 @@ cmd_verify() { # proves the connection is encrypted and XPAM's access is what it
     v "${host}: its certificate is signed by the kit CA and names this address" "grep -q 'Verify return code: 0 (ok)' <<<\"\${out}\""
     days=$(( ( $(date -d "$(sed -n '/BEGIN CERT/,/END CERT/p' <<<"${out}" | openssl x509 -noout -enddate 2>/dev/null | cut -d= -f2)" +%s 2>/dev/null || date +%s) - $(date +%s) ) / 86400 ))
     v "${host}: its certificate is valid for ${days} more days" "[[ ${days} -gt 30 ]]"
-    v "${host}: TLS 1.2 is refused" "! timeout 15 openssl s_client -connect ${host}:${port} -tls1_2 -CAfile ${VDIR}/ca.crt -cert ${VDIR}/client.crt -key ${VDIR}/client.key </dev/null 2>&1 | grep -q 'Verify return code: 0'"
+    v "${host}: TLS 1.2 is refused" "! timeout 15 openssl s_client -connect ${host}:${port} -tls1_2 -CAfile ${VDIR}/ca.crt -cert ${VDIR}/client.crt -key ${VDIR}/client.key </dev/null 2>&1 | grep 'Verify return code: 0' >/dev/null"
     v "${host}: without a client certificate nothing is answered" "[[ \$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 --cacert ${VDIR}/ca.crt ${addr}/v1/sys/health) == 000 ]]"
   done
   days=$(( ( $(date -d "$(openssl x509 -noout -enddate -in "${VDIR}/client.crt" | cut -d= -f2)" +%s) - $(date +%s) ) / 86400 ))
@@ -667,8 +721,12 @@ cmd_verify() { # proves the connection is encrypted and XPAM's access is what it
   for key in ${XPAM_VAULT_SECRET_KEYS}; do [[ -n "$(config_value "${key}")" ]] && left+=" ${key}"; done
   v "config.txt holds no secret${left:+ (left:${left})}" "[[ -z '${left}' ]]"
   v "the secrets are in memory only (tmpfs)" "findmnt -no FSTYPE --target ${RUN} | grep -q tmpfs"
-  local sk; sk=$(get_config SECRET_KEY)
-  v "no container holds SECRET_KEY in its settings" "[[ -n '${sk}' ]] && ! docker ps -q | xargs -r docker inspect | grep -qF -- '${sk}'"
+  local sk
+  # shellcheck disable=SC2034  # (read inside the checks below)
+  sk=$(get_config SECRET_KEY)
+  # (the key goes to grep through a file descriptor, never on a command line; no -q: grep must read all, or a
+  # match would end the pipe early and "pipefail" would turn a found key into a pass)
+  v "no container holds SECRET_KEY in its settings" "[[ -n \"\${sk}\" ]] && ! docker ps -q | xargs -r docker inspect | grep -F -f <(printf '%s\\n' \"\${sk}\") >/dev/null"
   v "XPAM's own client: TLS 1.3, the kit CA only, login and store OK" "[[ \$(docker exec -i xpam_core bash -c 'cd /opt/jumpserver/apps && python manage.py shell' 2>/dev/null <<'PY' | tail -1
 import ssl
 from accounts.backends import vault_client
@@ -714,6 +772,17 @@ cmd_disconnect() {
     key=${line%%=*}; value=${line#*=}
     set_config "${key}" "${value}"
   done < "${RUN}/all.env"
+  # every secret must be in config.txt before the memory copy and the boot service are removed
+  local missing=""
+  while IFS= read -r line; do
+    key=${line%%=*}; value=${line#*=}
+    [[ "$(config_value "${key}")" == "${value}" ]] || missing+=" ${key}"
+  done < "${RUN}/all.env"
+  if [[ -n "${missing}" ]]; then
+    set_config XPAM_SECRETS_FROM_VAULT 1
+    log_error "These secrets could not be written to ${CONFIG_FILE}:${missing}. Nothing else was changed; the secrets are still in Vault."
+    return 1
+  fi
   set_config VAULT_ENABLED false
   set_config VAULT_LOCKED false
   set_config VAULT_KEEP_DB_COPY false

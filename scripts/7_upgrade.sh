@@ -267,7 +267,9 @@ function backup_config() {
   if [[ ! -d ${BACKUP_DIR} ]]; then
     mkdir -p "${BACKUP_DIR}" || return 1
   fi
-  cp "${CONFIG_FILE}" "${backup_config_file}" || return 1
+  # (the copy holds the configuration, secrets included: owner only)
+  chmod 700 "${BACKUP_DIR}" 2>/dev/null
+  (umask 077 && cp "${CONFIG_FILE}" "${backup_config_file}") || return 1
   echo "$(gettext 'Back up to') ${backup_config_file}"
 }
 
@@ -360,6 +362,8 @@ function db_migrations() {
       exit 1
     fi
   fi
+  # (from here on the database may change: a failure no longer restores the old configuration)
+  UPGRADE_DATABASE_MIGRATION_STARTED=1
   if ! perform_db_migrations; then
     log_error "$(gettext 'Failed to change the table structure')!"
     confirm="n"
@@ -519,7 +523,6 @@ function main() {
 
   echo_yellow "\n6. $(gettext 'Apply database changes')"
   echo "$(gettext 'Changing database schema may take a while, please wait patiently')"
-  UPGRADE_DATABASE_MIGRATION_STARTED=1
   db_migrations
 
   echo_yellow "\n7. $(gettext 'Upgrade Docker')"
@@ -562,7 +565,8 @@ function main() {
   confirm="y"
   read_from_input confirm "Restart XPAM with the new version now?" "y/n" "${confirm}"
   if [[ "${confirm}" == "y" ]]; then
-    start_xpam_and_wait
+    # (the upgrade is done, but a start that failed must not end with exit code 0: scripts such as "ha upgrade" go on after it)
+    start_xpam_and_wait || { echo; exit 1; }
   else
     echo "Apply it later with: xpamctl start"
   fi

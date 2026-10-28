@@ -1,3 +1,4 @@
+# shellcheck shell=bash
 
 function has_config() {
   local key=$1

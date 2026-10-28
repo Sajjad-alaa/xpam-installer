@@ -535,6 +535,9 @@ cmd_init() {
     [[ "$(echo "${nodes//,/ }" | wc -w)" -eq 3 ]] || yellow "  warning: 3 Vault servers are recommended (a majority must be up)"
   fi
   [[ -z "${seal_file}" || -f "${seal_file}" ]] || die "--seal-config: no such file"
+  # (the boot unseal needs the plain shares; PGP-encrypted ones would be sent to Vault as they are)
+  [[ -z "${pgp}" || ( "${LOCAL}" != 1 && "${COLOCATED}" != 1 ) || -n "${seal_file}" ]] \
+    || die "--pgp-keys cannot be combined with --local or --colocated (the server unseals itself at boot)"
   if [[ -n "${pgp}" ]]; then
     [[ "$(echo "${pgp//,/ }" | wc -w)" -eq "${KEY_SHARES}" ]] || die "--pgp-keys: give ${KEY_SHARES} key files (one per share holder)"
   fi
@@ -728,7 +731,11 @@ cmd_auto_unseal() { # boot: wait for this Vault, unseal it with the sealed share
   load_env; scratch
   local i
   for i in $(seq 1 600); do [[ "$(api_code GET sys/seal-status)" == 200 ]] && break; sleep 2; done
-  [[ "$(api GET sys/seal-status | json sealed)" == "True" ]] || return 0
+  local state
+  state=$(api GET sys/seal-status | json sealed) || state=""
+  [[ "${state}" == "False" ]] && return 0
+  # (no answer is not "unsealed": fail, so that systemd tries again)
+  [[ "${state}" == "True" ]] || die "Vault does not answer on ${NODE_IP}:8200: not unsealed"
   systemd-creds decrypt --name=xpam-vault-unseal /etc/xpam-vault/unseal.cred - | unseal_from_stdin_keys || die "auto-unseal failed"
   info "unsealed"
 }

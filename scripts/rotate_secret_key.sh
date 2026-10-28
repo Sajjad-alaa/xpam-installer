@@ -48,18 +48,30 @@ PY
 # ---------------------------------------------------------------- with a data key: nobody signed out
 
 function rotate_keep_sessions() {
-  local image=$1 old_key new_key
+  local image=$1 old_key new_key pending
   old_key=$(get_config SECRET_KEY)
   new_key=$(random_str 50)
+  pending=$(get_config XPAM_KEY_ROTATION_PENDING)
 
-  echo_yellow "\n1. Backup"
-  bash "${BASE_DIR}/5_db_backup.sh" || { log_error "Database backup failed: nothing was changed"; return 1; }
+  if [[ "${pending}" == 1 && -n "$(get_config SECRET_KEY_PREVIOUS)" && "$(get_config SECRET_KEY_PREVIOUS)" != "${old_key}" ]]; then
+    # a rotation that did not finish: the data keys may still be wrapped by the previous key. A new key now would
+    # push that one out of SECRET_KEY_PREVIOUS and lock them for good: the same rotation is finished instead
+    echo_yellow "\nThe last rotation did not finish: finishing it (nothing new is generated)"
+    new_key=${old_key}
+    old_key=$(get_config SECRET_KEY_PREVIOUS)
+    (cd "${PROJECT_DIR}" && bash ./xpamctl.sh restart >/dev/null 2>&1)
+    wait_core || log_warn "XPAM is slow to start; the re-encryption goes on"
+  else
+    echo_yellow "\n1. Backup"
+    bash "${BASE_DIR}/5_db_backup.sh" || { log_error "Database backup failed: nothing was changed"; return 1; }
 
-  echo_yellow "\n2. New key, the previous one kept as a fallback; XPAM restarts (sessions stay valid)"
-  set_config SECRET_KEY_PREVIOUS "${old_key}" || return 1
-  set_config SECRET_KEY "${new_key}" || { set_config SECRET_KEY_PREVIOUS ""; return 1; }
-  (cd "${PROJECT_DIR}" && bash ./xpamctl.sh restart >/dev/null 2>&1)
-  wait_core || log_warn "XPAM is slow to start; the re-encryption goes on"
+    echo_yellow "\n2. New key, the previous one kept as a fallback; XPAM restarts (sessions stay valid)"
+    set_config XPAM_KEY_ROTATION_PENDING 1 || return 1
+    set_config SECRET_KEY_PREVIOUS "${old_key}" || { set_config XPAM_KEY_ROTATION_PENDING ""; return 1; }
+    set_config SECRET_KEY "${new_key}" || { set_config SECRET_KEY_PREVIOUS ""; set_config XPAM_KEY_ROTATION_PENDING ""; return 1; }
+    (cd "${PROJECT_DIR}" && bash ./xpamctl.sh restart >/dev/null 2>&1)
+    wait_core || log_warn "XPAM is slow to start; the re-encryption goes on"
+  fi
 
   echo_yellow "\n3. Keyring re-wrapped, e-mail lookups recomputed (XPAM running)"
   oneoff_args
@@ -67,9 +79,10 @@ function rotate_keep_sessions() {
   if SECRET_KEY="${old_key}" NEW_SECRET_KEY="${new_key}" docker run --rm --network xpam_net "${ONEOFF[@]}" \
       --env SECRET_KEY --env NEW_SECRET_KEY -w /opt/jumpserver/apps --entrypoint /opt/py3/bin/python "${image}" \
       manage.py rotate_secret_key; then
+    set_config XPAM_KEY_ROTATION_PENDING ""
     echo_green "\nSECRET_KEY rotated; nobody was signed out (the previous key stays valid until the next rotation)."
   else
-    log_error "The re-encryption failed: XPAM runs with the new key and the previous one as a fallback (nothing is lost); run it again: xpamctl rotate-secret-key"
+    log_error "The re-encryption failed: XPAM runs with the new key and the previous one as a fallback (nothing is lost); run it again: xpamctl rotate-secret-key (it finishes this rotation)"
     return 1
   fi
 }
@@ -91,13 +104,13 @@ PY
   bash "${BASE_DIR}/5_db_backup.sh" || { log_error "Database backup failed: nothing was changed"; accounts_back_to_vault; return 1; }
   backup_dir="$(get_config VOLUME_DIR)/db_backup"
   config_backup="${backup_dir}/config-before-key-rotation-$(date +%F_%H%M%S).txt"
-  (umask 077 && cp -p "${CONFIG_FILE}" "${config_backup}") || return 1
+  (umask 077 && cp -p "${CONFIG_FILE}" "${config_backup}") || { log_error "config.txt could not be saved: nothing was changed"; accounts_back_to_vault; return 1; }
   echo "   config.txt saved to ${config_backup}"
 
   echo_yellow "\n2. Stopping XPAM (database and Redis keep running)"
   local cmd
   cmd=$(get_docker_compose_cmd_line "ignore_db")
-  ${cmd} down || return 1
+  ${cmd} down || { log_error "XPAM could not be stopped: nothing was changed"; accounts_back_to_vault; return 1; }
 
   echo_yellow "\n3. Re-encrypting"
   new_key=$(random_str 50)

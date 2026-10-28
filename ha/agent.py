@@ -21,6 +21,7 @@ It also keeps the firewall rule that lets only the other servers and the witness
 and writes a status file the console shows (System settings -> High availability).
 Only the Python standard library is used (the host's python3).
 """
+import ipaddress
 import json
 import os
 import subprocess
@@ -169,6 +170,11 @@ def redis(conf, *args):
     return run(['docker', 'exec', '-e', 'REDISCLI_AUTH', 'xpam_redis', 'redis-cli', *args], 15, env=env)
 
 
+def follows(info, address):
+    """This Redis (INFO replication) replicates from exactly that address (not 10.0.0.1 for 10.0.0.12)."""
+    return any(line.strip() == f'master_host:{address}' for line in info.splitlines())
+
+
 def redis_follow(conf, primary):
     """primary=None: be the master; else follow that address."""
     code, info = redis(conf, 'INFO', 'replication')
@@ -180,7 +186,7 @@ def redis_follow(conf, primary):
             redis(conf, 'REPLICAOF', 'NO', 'ONE')
             log('redis: now the master')
         return 'master'
-    if is_master or f'master_host:{primary}' not in info:
+    if is_master or not follows(info, primary):
         redis(conf, 'REPLICAOF', primary, '6380')  # (the TLS port: replication is encrypted)
         log(f'redis: following {primary}')
     return 'replica'
@@ -369,7 +375,11 @@ def sentinel_master(conf):
                      '--cacert', '/tmp/xpam-tls/ca.crt', '--cert', '/tmp/xpam-tls/node.crt',
                      '--key', '/tmp/xpam-tls/node.key', 'SENTINEL', 'get-master-addr-by-name', 'xpam'], 15, env=env)
     lines = out.split() if code == 0 else []
-    return lines[0] if lines else None
+    try:
+        ipaddress.IPv4Address(lines[0])  # (an error text from redis-cli is not an address to follow)
+    except (IndexError, ValueError):
+        return None
+    return lines[0]
 
 
 def redis_follow_sentinels(conf):
@@ -383,7 +393,7 @@ def redis_follow_sentinels(conf):
     code, info = redis(conf, 'INFO', 'replication')
     if code:
         return 'unreachable'
-    if 'role:master' in info or f'master_host:{master}' not in info:
+    if 'role:master' in info or not follows(info, master):
         redis(conf, 'REPLICAOF', master, '6380')
         log(f'redis: following {master} (named by the Sentinels)')
     return 'replica'

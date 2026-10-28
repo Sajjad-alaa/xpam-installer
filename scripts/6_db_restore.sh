@@ -20,7 +20,9 @@ WORKER_WAS_RUNNING=0
 started_db_env=0
 
 function restore_mysql() {
+  # (pipefail: a truncated .gz must fail the restore, not load half of the data and report success)
   local restore_cmd='
+        set -o pipefail
         if [[ "${DB_FILE}" == *.gz ]]; then
           gzip -dc "${DB_FILE}" | MYSQL_PWD="${DB_PASSWORD}" mysql -h"${DB_HOST}" -P"${DB_PORT}" -u"${DB_USER}" "${DB_NAME}"
         else
@@ -125,6 +127,17 @@ function main() {
     fi
   fi
 
+  # never restore into a database that was not named (psql/mysql would pick one by themselves)
+  if [[ -z "${DB_NAME}" || -z "${DB_HOST}" || -z "${DB_USER}" ]]; then
+    log_error "DB_NAME, DB_HOST or DB_USER is empty in ${CONFIG_FILE}: nothing was changed"
+    return 1
+  fi
+  # high availability: only the primary's database accepts writes
+  if is_ha_enabled && [[ "$(bash "${SCRIPT_DIR}/ha.sh" role)" != "primary" ]]; then
+    log_error "High availability: restore on the primary server (xpamctl ha status); nothing was changed"
+    return 1
+  fi
+
   DB_FILE="$(cd "$(dirname "${DB_FILE}")" && pwd -P)/$(basename "${DB_FILE}")"
   BACKUP_DIR=$(dirname "${DB_FILE}")
 
@@ -142,6 +155,8 @@ function main() {
       ;;
   esac
 
+  backup_before_restore || return 1
+
   if ! restore_database; then
     log_error "$(gettext 'Database recovery failed. Please check whether the database file is complete or try to recover manually')!"
     return 1
@@ -151,6 +166,18 @@ function main() {
     return 1
   fi
   log_success "$(gettext 'Database recovered successfully')!"
+}
+
+# A restore replaces the whole database: keep a copy of the current one first, so a wrong or damaged backup
+# file does not leave nothing to go back to. SKIP_BACKUP_DB=1 skips it (as in the upgrade).
+function backup_before_restore() {
+  [[ "${SKIP_BACKUP_DB:-}" != "1" ]] || return 0
+  echo "$(gettext 'Backing up the current database before it is replaced')..."
+  if ! bash "${BASE_DIR}/5_db_backup.sh"; then
+    confirm="n"
+    read_from_input confirm "The current database could not be backed up: it cannot be recovered after the restore. Restore anyway?" "y/n" "${confirm}"
+    [[ "${confirm}" == "y" ]] || return 1
+  fi
 }
 
 function run_post_restore() {

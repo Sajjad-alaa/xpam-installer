@@ -21,7 +21,7 @@ function main() {
     [[ -n "${seed}" ]] || seed='XPAM-DEFAULT-SEED'
     cluster="CL-$(printf '%s' "XPAM-CLUSTER:${seed}" | sha256sum | tr 'a-f' 'A-F' | sed -E 's/^(.{4})(.{4})(.{4})(.{4}).*/\1-\2-\3-\4/')"
   fi
-  echo "Cluster ID:      ${cluster:-unknown (XPAM's database is not running here)}"
+  echo "Cluster ID:      ${cluster:-unknown (the XPAM database is not running here)}"
   echo "This server ID:  ${server}"
   if is_ha_enabled; then
     echo "High availability: run this on every server and send all the IDs to your vendor (one licence for the cluster)."

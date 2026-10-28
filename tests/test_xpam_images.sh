@@ -37,7 +37,10 @@ for image in core web koko chen kael; do
 done
 assert_eq '' "$(get_xpam_image_registry)" 'local must disable the registry'
 assert_eq "xpam/ai:${XPAM_DEFAULT_VERSION}" "$(get_images | tr ' ' '\n' | grep '/ai:')" 'get_images must list the XPAM runtime tag'
-assert_eq 'v5.1.17' "${XPAM_DEFAULT_VERSION}" 'XPAM images must not carry the upstream -ce suffix'
+# (checked by shape, so a version bump does not break it)
+[[ "${XPAM_DEFAULT_VERSION}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] ||
+  fail "XPAM images must not carry the upstream -ce suffix: got <${XPAM_DEFAULT_VERSION}>"
+
 printf 'PASS: XPAM_IMAGE_REGISTRY=local maps the services to local-only XPAM images\n'
 
 printf '%s\n' 'XPAM_VERSION=v5.0.0-xpam1' 'XPAM_NAMESPACE=acme/' 'XPAM_IMAGE_REGISTRY=ghcr.io/owner/' >>"${test_dir}/config.txt"
@@ -76,12 +79,12 @@ printf 'PASS: missing XPAM images fail without contacting Docker Hub\n'
 
 rendered=$(
   cd "${TEST_ROOT}"
-  VERSION=v5.1.17 command docker compose --env-file /dev/null -f compose/core.yml -f compose/koko.yml -f compose/chen.yml \
+  VERSION=${XPAM_DEFAULT_VERSION} command docker compose --env-file /dev/null -f compose/core.yml -f compose/koko.yml -f compose/chen.yml \
     -f compose/kael.yml -f compose/gateway.yml -f compose/web.yml -f compose/workspace.yml -f compose/network.yml config --images 2>/dev/null | sort -u
 ) || true
 if [[ -n "${rendered}" ]]; then
   for image in core gateway web workspace secureconnection webconnector ai; do
-    assert_contains "${rendered}" "xpam/${image}:v5.1.17" "compose must default to the XPAM ${image} image"
+    assert_contains "${rendered}" "xpam/${image}:${XPAM_DEFAULT_VERSION}" "compose must default to the XPAM ${image} image"
   done
   printf 'PASS: compose files default to the XPAM images\n'
 fi

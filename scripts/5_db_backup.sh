@@ -189,6 +189,13 @@ function backup_main_db() {
       ;;
   esac
 
+  # (an empty dump is not a backup, whatever the exit code said)
+  if [[ ! -s "${DB_FILE}" ]]; then
+    log_error "$(gettext 'Backup file is empty')!"
+    rm -f "${DB_FILE}"
+    return 1
+  fi
+
   if command -v gzip &>/dev/null; then
     if gzip -f "${DB_FILE}"; then
       DB_FILE="${DB_FILE}.gz"
@@ -297,6 +304,11 @@ function backup_audits() {
 
 function main() {
   started_db_env=0
+  # (an empty name would make pg_dump/mysqldump pick a database by themselves)
+  if [[ -z "${DB_NAME}" || -z "${DB_HOST}" || -z "${DB_USER}" ]]; then
+    log_error "DB_NAME, DB_HOST or DB_USER is empty in ${CONFIG_FILE}: no backup was taken"
+    exit 1
+  fi
   ensure_backup_dir
 
   echo "$(gettext 'Backing up')..."

@@ -1,3 +1,4 @@
+# shellcheck shell=bash
 
 common_services=(core kael worker koko chen gateway web workspace browser)
 xpack_services=(magnus razor xrdp video-worker nec)

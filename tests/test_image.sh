@@ -19,12 +19,19 @@ set_config DB_ENGINE mysql
 set_config DB_HOST mysql
 mkdir -p "${test_dir}/volume/mariadb/data"
 assert_eq 'mariadb:10.6' "$(get_db_images)" 'existing MariaDB must retain its image'
-assert_eq 'compose/mariadb.yml -f compose/mysql.port.yml' "$(get_db_images_file)" 'existing MariaDB must retain its compose file'
+# (the port is published on the host only when MYSQL_EXPOSE_PORT is set)
+assert_eq 'compose/mariadb.yml' "$(get_db_images_file)" 'existing MariaDB must retain its compose file'
+set_config MYSQL_EXPOSE_PORT 3306
+assert_eq 'compose/mariadb.yml -f compose/mysql.port.yml' "$(get_db_images_file)" 'MariaDB publishes its port when MYSQL_EXPOSE_PORT is set'
+set_config MYSQL_EXPOSE_PORT ''
 remove_config DB_ENGINE
 assert_eq 'mariadb:10.6' "$(get_db_images)" 'legacy configurations without DB_ENGINE must retain MariaDB'
 mkdir -p "${test_dir}/volume/mysql/data"
 assert_eq 'mysql:8.0' "$(get_db_images)" 'existing MySQL must retain its image'
-assert_eq 'compose/mysql.yml -f compose/mysql.port.yml' "$(get_db_images_file)" 'existing MySQL must retain its compose file'
+assert_eq 'compose/mysql.yml' "$(get_db_images_file)" 'existing MySQL must retain its compose file'
+set_config MYSQL_EXPOSE_PORT 3306
+assert_eq 'compose/mysql.yml -f compose/mysql.port.yml' "$(get_db_images_file)" 'MySQL publishes its port when MYSQL_EXPOSE_PORT is set'
+set_config MYSQL_EXPOSE_PORT ''
 printf 'PASS: database selection preserves PostgreSQL defaults and legacy databases\n'
 
 docker_calls="${test_dir}/docker-calls"

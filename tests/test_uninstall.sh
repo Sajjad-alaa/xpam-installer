@@ -57,3 +57,11 @@ main
 assert_eq 'retire stop jdmc telemetry jumpserver compose docker xpamctl' "${calls[*]}" \
   'The management command must be removed only after cleanup succeeds'
 printf 'PASS: uninstall failures propagate and cleanup ordering is safe\n'
+
+# A server that is still part of a high availability cluster is not uninstalled (its agent would start XPAM again)
+log_error() { :; }
+is_ha_enabled() { return 0; }
+if refuse_uninstall_in_ha; then
+  fail 'uninstall must be refused while high availability is on'
+fi
+printf 'PASS: uninstall is refused inside a high availability cluster\n'

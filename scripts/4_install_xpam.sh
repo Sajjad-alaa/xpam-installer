@@ -156,8 +156,28 @@ function post_install() {
   echo
 }
 
+# "install" on a server that already runs another XPAM version would load the new images and change the database
+# schema without the backup an upgrade takes first (and forget which version the data belongs to).
+function refuse_install_over_other_version() {
+  local installed volume_dir db_dir has_data=0
+  [[ -f "${CONFIG_FILE}" ]] || return 0
+  installed=$(get_config CURRENT_VERSION)
+  volume_dir=$(get_config VOLUME_DIR)
+  # (only a server that already holds a database counts: an installation that stopped early may be run again)
+  for db_dir in postgresql mysql mariadb; do
+    if [[ -n "$(ls -A "${volume_dir}/${db_dir}/data" 2>/dev/null)" ]]; then
+      has_data=1
+    fi
+  done
+  if [[ "${has_data}" == "1" && -n "${installed}" && "${installed}" != "${VERSION}" && "${XPAM_FORCE_INSTALL:-}" != "1" ]]; then
+    log_error "XPAM ${installed} is already installed here: use 'xpamctl upgrade' (it backs up first). Nothing was changed."
+    return 1
+  fi
+}
+
 function main() {
   echo_logo
+  refuse_install_over_other_version || exit 1
   pre_install
   prepare_config
   set_current_version

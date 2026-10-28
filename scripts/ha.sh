@@ -287,7 +287,19 @@ function make_join_bundle() { # ip — for 'xpamctl ha join' on that server: the
     mv "${HA_DIR}"/peer-vault/* "${t}/" && mv "${t}" "${HA_DIR}/peer-vault/$(get_config HA_PEER_IP)"
   fi
   [[ -d "${HA_DIR}/peer-vault/${ip}" ]] && cp -r "${HA_DIR}/peer-vault/${ip}" "${work}/vault"  # (its own Vault login)
-  (umask 077 && encrypt_dir "${work}" "$(join_bundle_path "${ip}")")
+  if [[ "$(ha_topology)" == "active-active" ]]; then
+    # the Sentinels' main Redis now (a rebuilt server's Sentinel starts from it: the one named at init may be gone)
+    local master
+    master=$(REDISCLI_AUTH="$(get_config REDIS_PASSWORD)" docker exec -e REDISCLI_AUTH xpam_sentinel redis-cli --tls -p 26380 \
+      --cacert /tmp/xpam-tls/ca.crt --cert /tmp/xpam-tls/node.crt --key /tmp/xpam-tls/node.key \
+      SENTINEL get-master-addr-by-name xpam 2>/dev/null | head -1)
+    if valid_ip "${master}"; then
+      sed -i '/^HA_REDIS_MASTER=/d' "${work}/config.txt"
+      printf 'HA_REDIS_MASTER=%s\n' "${master}" >> "${work}/config.txt"
+    fi
+  fi
+  (umask 077 && encrypt_dir "${work}" "$(join_bundle_path "${ip}")") || {
+    rm -rf "${work}"; log_error "The join bundle for ${ip} could not be written"; return 1; }
   rm -rf "${work}"
 }
 
@@ -295,13 +307,15 @@ function make_witness_bundle() { # cluster state(new|existing|keep) — the witn
   local work
   work=$(mktemp -d)
   mkdir -p "${work}/certs"
-  cp "${HA_DIR}/certs/ca.crt" "${work}/certs/ca.crt"
-  cp "${HA_DIR}/certs/witness.crt" "${work}/certs/node.crt"
-  cp "${HA_DIR}/certs/witness.key" "${work}/certs/node.key"
+  { cp "${HA_DIR}/certs/ca.crt" "${work}/certs/ca.crt" &&
+    cp "${HA_DIR}/certs/witness.crt" "${work}/certs/node.crt" &&
+    cp "${HA_DIR}/certs/witness.key" "${work}/certs/node.key"; } || {
+    rm -rf "${work}"; log_error "The witness certificate is missing"; return 1; }
   sed -e "s#@THIS@#$(get_config HA_WITNESS_IP)#g" -e "s#@CLUSTER@#$1#g" -e "s#@STATE@#$2#g" \
       -e "s#@ALLOWED@#$(ha_servers | xargs)#g" "${PROJECT_DIR}/ha/witness.sh.in" > "${work}/witness.sh"
   chmod 700 "${work}/witness.sh"
-  (umask 077 && encrypt_dir "${work}" "${HA_DIR}/xpam-ha-witness.enc")
+  (umask 077 && encrypt_dir "${work}" "${HA_DIR}/xpam-ha-witness.enc") || {
+    rm -rf "${work}"; log_error "The witness bundle could not be written"; return 1; }
   rm -rf "${work}"
 }
 
@@ -461,14 +475,15 @@ function ha_init() { # topology servers(comma separated, this one among them) wi
   mkdir -p "${HA_DIR}/ssh"
   if [[ ! -s "${HA_DIR}/certs/ca.key.enc" ]]; then
     rm -rf "${HA_DIR}/certs"
-    bash "${PROJECT_DIR}/ha/certs.sh" "${HA_DIR}/certs" --servers "${servers_csv}" ${witness:+--witness "${witness}"} || return 1
+    bash "${PROJECT_DIR}/ha/certs.sh" "${HA_DIR}/certs" --servers "${servers_csv}" ${witness:+--witness "${witness}"} || {
+      rm -rf "${HA_DIR}/certs"; return 1; }  # (no CA key left in the clear)
     if [[ -n "${XPAM_HA_PASSPHRASE:-}" ]]; then
       export HA_CLUSTER_PW="${XPAM_HA_PASSPHRASE}"
     else
       export HA_CLUSTER_PW="$(random_str 32)"
       echo_yellow "Cluster passphrase (keep it in your password safe: needed to replace the certificates): ${HA_CLUSTER_PW}"
     fi
-    protect_ca_key "${HA_DIR}/certs" || return 1
+    protect_ca_key "${HA_DIR}/certs" || { rm -rf "${HA_DIR}/certs"; return 1; }
   fi
   [[ -s "${HA_DIR}/ssh/id_ed25519" ]] || ssh-keygen -q -t ed25519 -N '' -C xpam-ha -f "${HA_DIR}/ssh/id_ed25519"
   [[ -n "$(get_config HA_ETCD_PASSWORD)" ]] || set_config HA_ETCD_PASSWORD "$(random_str 32)"
@@ -619,6 +634,10 @@ function ha_join() {
   cp -p "${CONFIG_FILE}" "${CONFIG_FILE}.before-ha-${stamp}"
   if [[ -d "${volume_dir}/postgresql/data" ]]; then
     mv "${volume_dir}/postgresql/data" "${volume_dir}/postgresql/data.before-ha-${stamp}"
+  fi
+  if [[ -n "$(ls -A "${volume_dir}/etcd" 2>/dev/null)" ]]; then
+    # (the vote's data of an earlier membership: this server joins it as a new member, with an empty folder)
+    mv "${volume_dir}/etcd" "${volume_dir}/etcd.before-ha-${stamp}"
   fi
   mkdir -p "${volume_dir}/postgresql/data" "${volume_dir}/etcd"
   # the cluster's configuration (same keys and passwords), with this server's own address, name and paths
@@ -990,8 +1009,9 @@ function ha_rotate_certs() { # [--finish]
   work=$(mktemp -d)
   local witness
   witness=$(get_config HA_WITNESS_IP)
-  bash "${PROJECT_DIR}/ha/certs.sh" "${work}" --servers "$(ha_servers | xargs | tr ' ' ',')" ${witness:+--witness "${witness}"} || return 1
-  protect_ca_key "${work}" || return 1
+  bash "${PROJECT_DIR}/ha/certs.sh" "${work}" --servers "$(ha_servers | xargs | tr ' ' ',')" ${witness:+--witness "${witness}"} || {
+    rm -rf "${work}"; return 1; }
+  protect_ca_key "${work}" || { rm -rf "${work}"; return 1; }
   ha_pause on || { log_error "Maintenance mode could not be turned on: nothing was changed"; rm -rf "${work}"; return 1; }
   cluster=$(ha_etcdctl --root member list -w simple | awk -F', ' '{printf "%s%s=%s", (NR>1?",":""), $3, $4}')
   install_certs "${work}" || return 1
@@ -1065,7 +1085,9 @@ function ha_disable() {
       [[ "$(patroni_code liveness "${p}")" == "200" ]] && alive=1
     done
     [[ -n "${alive}" ]] || { log_error "No other server of the cluster is running: this one may hold the only copy of the database. Start another server first."; return 1; }
-    member=$(ha_etcdctl --root member list 2>/dev/null | awk -F', ' -v u="https://$(get_config HA_NODE_IP):2380" '$4 == u {print $1}')
+    member=$(ha_etcdctl --root member list 2>&1) ||
+      echo_yellow "The vote (etcd) does not answer: this server stays listed in it (remove it later: etcdctl member remove)"
+    member=$(awk -F', ' -v u="https://$(get_config HA_NODE_IP):2380" '$4 == u {print $1}' <<< "${member}")
     if [[ -n "${member}" ]]; then
       ha_etcdctl --root member remove "${member}" >/dev/null || { log_error "This server could not leave the vote: nothing was changed"; return 1; }
     fi
@@ -1105,6 +1127,9 @@ function ha_disable() {
     set_config HA_TOPOLOGY ""
     echo_green "This server left high availability and is stopped. When every other server has, run 'xpamctl ha disable' on the primary."
   fi
+  # (a later 'ha init' or 'ha join' starts from nothing: the vote's old data and the old certificates would not fit)
+  mv "${volume_dir}/etcd" "${volume_dir}/etcd.ha-disabled-${stamp}" 2>/dev/null || true
+  mv "${HA_DIR}" "${HA_DIR}.disabled-${stamp}" 2>/dev/null || true
 }
 
 function ha_role() {

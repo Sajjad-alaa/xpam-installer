@@ -1,3 +1,4 @@
+# shellcheck shell=bash
 # Messages are written in English; without the gettext tool they are shown as they are.
 if ! command -v gettext &>/dev/null; then
   function gettext() {

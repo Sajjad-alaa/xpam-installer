@@ -15,6 +15,7 @@ get_config() {
 }
 
 create_db_ops_env() { return 0; }
+secrets_from_vault() { return 1; }  # (service.sh calls it when composing the command; it lives in conf.sh)
 docker() { return 1; }
 log_error() { :; }
 gettext() { printf '%s\n' "$1"; }

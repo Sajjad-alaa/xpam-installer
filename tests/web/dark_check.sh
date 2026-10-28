@@ -2,7 +2,7 @@
 # The admin console in dark and light mode on a simulated XPAM server: screenshots of the main pages, and in dark
 # mode an automatic check of every page for visible light patches (light backgrounds) and dark text on a dark
 # background. Screenshots and the findings (findings.json) go to $OUT.
-#   tests/web/dark_check.sh <web-image> [core-image] [gateway-image]
+#   tests/web/dark_check.sh <web-image> [core-image] [gateway-image]      (ALL=1: every route of the console, dark only)
 #   (the images are retagged inside the test server; nothing of the live system is used)
 set -uo pipefail
 WEB_IMAGE=${1:?web image, e.g. xpam/web:dark-check}
@@ -73,6 +73,7 @@ const PAGES = [
   ['settings-log-shipment', '/web/#/settings/log-shipment'],
   ['settings-terminal', '/web/#/settings/terminal'],
   ['settings-license', '/web/#/settings/license'],
+  ['settings-chat-ai', '/web/#/settings/chat-ai'],
 ];
 // in dark mode: visible light backgrounds, and dark text on a dark background
 const ANALYZE = () => {
@@ -99,17 +100,21 @@ const ANALYZE = () => {
     for (let e = el; e; e = e.parentElement) { const l = parse(getComputedStyle(e).backgroundColor); if (l !== null) return l; }
     return parse(getComputedStyle(document.body).backgroundColor) ?? 1;
   };
-  const patches = [], darkText = [];
+  const patches = [], darkText = [], lightText = [];
   for (const el of document.querySelectorAll('body *')) {
     if (['IMG', 'CANVAS', 'SVG', 'PATH', 'VIDEO', 'svg', 'path'].includes(el.tagName) || !visible(el)) continue;
     const s = getComputedStyle(el); const r = el.getBoundingClientRect();
     const bg = parse(s.backgroundColor);
     if (bg !== null && bg > 0.6 && r.width * r.height > 1500) patches.push([name(el), `${Math.round(r.width)}x${Math.round(r.height)}`, s.backgroundColor]);
     const hasText = [...el.childNodes].some((n) => n.nodeType === 3 && n.textContent.trim().length > 1);
-    if (hasText) { const fg = parse(s.color); const b = bgOf(el); if (fg !== null && fg < 0.12 && b < 0.12) darkText.push([name(el), el.textContent.trim().slice(0, 30), s.color]); }
+    if (hasText) {
+      const fg = parse(s.color); const b = bgOf(el);
+      if (fg !== null && fg < 0.12 && b < 0.12) darkText.push([name(el), el.textContent.trim().slice(0, 30), s.color]);
+      if (fg !== null && fg > 0.45 && b > 0.45) lightText.push([name(el), el.textContent.trim().slice(0, 30), s.color]);
+    }
   }
   const uniq = (a) => [...new Map(a.map((x) => [x[0], x])).values()];
-  return { dark: document.documentElement.classList.contains('dark'), patches: uniq(patches).slice(0, 25), darkText: uniq(darkText).slice(0, 25) };
+  return { dark: document.documentElement.classList.contains('dark'), patches: uniq(patches).slice(0, 25), darkText: uniq(darkText).slice(0, 25), lightText: uniq(lightText).slice(0, 25) };
 };
 (async () => {
   const c = JSON.parse(process.env.COOKIES);
@@ -120,12 +125,26 @@ const ANALYZE = () => {
     await ctx.addInitScript((m) => { try { localStorage.setItem('lina-theme-mode', m); } catch (e) {} }, mode);
     await ctx.addCookies([{ name: c.session[0], value: c.session[1], url: 'https://127.0.0.1' }]);
     const page = await ctx.newPage();
-    for (const [name, path] of PAGES) {
+    let pages = PAGES;
+    if (process.env.ALL === '1' && mode === 'dark') {
+      await page.goto('https://127.0.0.1/web/#/console/dashboard', { waitUntil: 'networkidle' });
+      await page.waitForTimeout(2000);
+      const paths = await page.evaluate(() => {
+        const app = document.querySelector('#app').__vue_app__;
+        const skip = /:|\*|login|logout|redirect|^\/(403|404|500)|^\/$|download|connect|luna|koko|redirect/i;
+        return [...new Set(app.config.globalProperties.$router.getRoutes().map((r) => r.path))].filter((p) => !skip.test(p));
+      });
+      pages = paths.map((p) => [p.replace(/^\//, '').replace(/[\/]+/g, '_') || 'root', '/web/#' + p]);
+      console.log('ROUTES ' + pages.length);
+    }
+    for (const [name, path] of pages) {
       try {
         await page.goto('https://127.0.0.1' + path, { waitUntil: 'networkidle', timeout: 30000 });
         await page.waitForTimeout(2500);
-        await page.screenshot({ path: `/out/${mode}-${name}.png` });
-        if (mode === 'dark') findings[name] = await page.evaluate(ANALYZE);
+        const f = mode === 'dark' ? await page.evaluate(ANALYZE) : null;
+        const found = f && (f.patches.length + f.darkText.length + f.lightText.length) > 0;
+        if (process.env.ALL !== '1' || found) await page.screenshot({ path: `/out/${mode}-${name}.png` });
+        if (f) findings[name] = f;
       } catch (e) { findings[name] = { error: String(e).slice(0, 200) }; }
     }
     // the Ctrl+K command palette and a dialog
@@ -139,7 +158,7 @@ const ANALYZE = () => {
     await ctx.close();
   }
   require('fs').writeFileSync('/out/findings.json', JSON.stringify(findings, null, 1));
-  const total = Object.values(findings).reduce((n, f) => n + (f.patches ? f.patches.length + f.darkText.length : 0), 0);
+  const total = Object.values(findings).reduce((n, f) => n + (f.patches ? f.patches.length + f.darkText.length + (f.lightText || []).length : 0), 0);
   console.log('FINDINGS ' + total);
   await browser.close();
 })().catch((e) => { console.log('ERROR ' + e); process.exit(1); });
@@ -155,8 +174,8 @@ rm -f "$OUT/findings.json"
 for MODE in dark light; do
   say "browser ($MODE)"
   set_mode "$MODE"
-  docker run --rm --name xdkpw --network container:xdkx -v "$OUT:/out" -v "$PW:/pw" -e COOKIES="$COOKIES" -e MODE="$MODE" \
+  docker run --rm --name xdkpw --network container:xdkx -v "$OUT:/out" -v "$PW:/pw" -e COOKIES="$COOKIES" -e MODE="$MODE" -e ALL="${ALL:-}" \
     -w /pw "$PW_IMAGE" bash -c 'test -d node_modules/playwright || npm i -s playwright@1.63.0 >/dev/null 2>&1; node check.js' 2>&1 \
-    | grep -E '^(FINDINGS|ERROR)'
+    | grep -E '^(FINDINGS|ERROR|ROUTES)'
 done
 echo "screenshots and findings: $OUT"

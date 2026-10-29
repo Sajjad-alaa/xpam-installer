@@ -11,8 +11,10 @@ ARG APT_REFRESH=0
 RUN find /etc/apt -type f \( -name '*.sources' -o -name '*.list' \) -exec \
         sed -i -E 's#https?://mirrors\.(cloud\.)?aliyun(cs)?\.com#http://deb.debian.org#g' {} + \
     && apt-get update \
-    && DEBIAN_FRONTEND=noninteractive apt-get -y --no-install-recommends upgrade \
+    && DEBIAN_FRONTEND=noninteractive apt-get -y --no-install-recommends \
+        -o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold upgrade \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
+# (confold: an updated Java asks whether to replace the image's own java.security; the image's file is kept)
 COPY --from=jar chen.jar /opt/chen/chen.jar
 RUN rm -f /opt/chen/drivers/postgresql/postgresql-*.jar
 COPY drivers/postgresql/ /opt/chen/drivers/postgresql/

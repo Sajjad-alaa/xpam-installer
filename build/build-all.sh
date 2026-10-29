@@ -3,11 +3,11 @@
 #   ./build-all.sh                 build everything
 #   ./build-all.sh core web        build only the named images
 # Images: core gateway web workspace secureconnection webconnector ai facelive browser postgresql-ha
-# Environment: SRC (repos folder, default /opt), NS (default xpam), TAG (default v5.1.20).
+# Environment: SRC (repos folder, default /opt), NS (default xpam), TAG (default v5.1.21).
 # Needs: docker with BuildKit, and for the web and workspace images node 24 with the repos' node_modules installed.
 set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-SRC=${SRC:-/opt}; NS=${NS:-xpam}; TAG=${TAG:-v5.1.20}
+SRC=${SRC:-/opt}; NS=${NS:-xpam}; TAG=${TAG:-v5.1.21}
 # system packages are refreshed once a day (security updates such as libexpat)
 APT_REFRESH=${APT_REFRESH:-$(date +%Y%m%d)}
 CACHE="$HERE/.cache"; mkdir -p "$CACHE"
@@ -61,7 +61,7 @@ build_secureconnection() {
       cp -r /ro /src && cd /src
       go test ./pkg/httpd/ ./pkg/lion/... ./pkg/common/ ./pkg/config/ ./pkg/sshd/ >/dev/null
       KEY=$(head -c 100 /dev/urandom | base64 | tr -dc A-Za-z0-9 | head -c 32)
-      go build -trimpath -ldflags "-X main.Version=v5.1.20-xpam -X github.com/jumpserver/koko/pkg/config.CipherKey=$KEY -w -s" -o /out/koko ./cmd/koko/'
+      go build -trimpath -ldflags "-X main.Version=v5.1.21-xpam -X github.com/jumpserver/koko/pkg/config.CipherKey=$KEY -w -s" -o /out/koko ./cmd/koko/'
   say "secureconnection: database client"
   [[ -d "$CACHE/usql-src/.git" ]] || git clone -q "$USQL_REPO" "$CACHE/usql-src"
   git -C "$CACHE/usql-src" checkout -q "$USQL_COMMIT"
@@ -105,7 +105,7 @@ build_ai() {
     -v "$CACHE/gomod:/go/pkg/mod" -e CGO_ENABLED=0 -e GOFLAGS=-buildvcs=false "$GO_IMAGE" sh -ec '
       cp -r /ro /src && cd /src
       go test ./... >/dev/null
-      go build -trimpath -ldflags "-s -w -X main.Version=v5.1.20-xpam" -o /out/kael ./cmd/kael'
+      go build -trimpath -ldflags "-s -w -X main.Version=v5.1.21-xpam" -o /out/kael ./cmd/kael'
   say "ai: image"
   docker build -q --build-arg APT_REFRESH="$APT_REFRESH" -f "$HERE/ai.Dockerfile" -t "$NS/ai:$TAG" "$CACHE/ai-out"
 }

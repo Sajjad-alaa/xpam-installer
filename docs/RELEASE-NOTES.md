@@ -1,6 +1,6 @@
 # XPAM release notes
 
-## 5.1.21 (in progress) — face recognition works
+## 5.1.21 — face recognition works; HA, Vault and security fixes
 
 - **Face recognition engine (`xpam_facelive`):** face enrolment and face sign-in (MFA and the asset "face
   verification" check) now work; the capture page used to end with "connection closed" because nothing answered
@@ -11,6 +11,21 @@
   limits are now cosine 0.40 / distance 1.0955 (they were 0.45 / 0.35 for another model): remove your own
   `FACE_RECOGNITION_*_THRESHOLD` lines unless you meant them. A face enrolled earlier with another engine must be enrolled again.
 - **Not supported:** online face monitoring (the page says so).
+- **Face security:** only the face engine's own service account may use the face endpoints (not the SSH/RDP
+  service, the AI or another component); a comparison answers yes or no, and the sign-in page shows matched
+  samples, never a similarity score (a score would help someone tune a photo or a mask to the stored face); a
+  finished result is final; 30 faces that do not match a user within 15 minutes pause that user's face sign-in.
+- **Vault:** no secret is lost or emptied when secrets are restored, moved between backends or re-encrypted
+  (strict reads, history kept, the old copy removed last); `vault connect` undoes its steps when it fails;
+  `vault disconnect` checks every secret came back; a Vault server answering 503 fails over to the next one.
+- **High availability:** the rolling upgrade's handover, joining and leaving servers, the Redis follower check
+  and the file-copy SSH key (only copies into the data folder, no link out of it); `ha disable` keeps the cluster
+  files aside instead of deleting them.
+- **Install, upgrade, backup and restore:** a restore first backs up the current database; installing over
+  another version, or uninstalling a server of an HA cluster, is refused; backup and upgrade steps stop on errors.
+- **Security:** the infrastructure status page is for system administrators only; reading secrets from an
+  existing vault is for vault managers only; leftover secrets in old backups are reported; Redis and the HA
+  database keep their runtime files in memory; no password on a command line.
 
 ## 5.1.20 — custom dashboards, approval flows from the rule, access extensions, dark mode
 

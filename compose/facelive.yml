@@ -3,7 +3,7 @@ services:
   # Runs when FACE_RECOGNITION_ENABLED=true (or FACELIVE_ENABLED=1). Internal network only: no port is published;
   # the gateway forwards /ws/facelive/ here. It is a core service account (registers with BOOTSTRAP_TOKEN once).
   facelive:
-    image: ${XPAM_NAMESPACE:-xpam}/facelive:${XPAM_VERSION:-${XPAM_DEFAULT_VERSION:-v5.1.20}}
+    image: ${XPAM_NAMESPACE:-xpam}/facelive:${XPAM_VERSION:-${XPAM_DEFAULT_VERSION:-v5.1.21}}
     pull_policy: never  # XPAM images come from xpamctl (never Docker Hub)
     container_name: xpam_facelive
     hostname: xpam_facelive

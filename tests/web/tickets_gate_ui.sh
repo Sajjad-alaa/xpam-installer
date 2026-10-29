@@ -43,13 +43,18 @@ print('cookies', json.dumps({'session': [settings.SESSION_COOKIE_NAME, c.cookies
 
 # the ticket licence: the trial has none — "licensed" patches the check in the running core, "unlicensed" restores it
 licence() {
+  local f=/opt/jumpserver/apps/xpack/utils.py
   if [[ "$1" == on ]]; then
-    on xtgx "docker exec xpam_core sh -c \"grep -q _orig_has_ticket_license /opt/jumpserver/apps/xpack/utils.py || sed -i 's/^def has_ticket_license():/def has_ticket_license():\\n    return True\\ndef _orig_has_ticket_license():/' /opt/jumpserver/apps/xpack/utils.py\""
+    # (the original is kept aside, so "unlicensed" can put it back exactly)
+    on xtgx "docker exec xpam_core sh -c 'test -f $f.orig || cp $f $f.orig'"
+    on xtgx "docker exec xpam_core sh -c \"sed -i 's/^def has_ticket_license():/def has_ticket_license():\\n    return True\\ndef _orig_has_ticket_license():/' $f\""
   else
-    on xtgx "docker exec xpam_core sh -c \"sed -i '/^def has_ticket_license():/{n;/^    return True\$/d}; s/^def _orig_has_ticket_license():/def has_ticket_license():/' /opt/jumpserver/apps/xpack/utils.py; grep -n -A1 '^def has_ticket_license' /opt/jumpserver/apps/xpack/utils.py | head -2\""
+    on xtgx "docker exec xpam_core sh -c 'cp $f.orig $f'"
   fi
+  on xtgx "docker exec xpam_core python3 -m py_compile $f" || echo "  (xpack/utils.py does not compile)"
   on xtgx "docker restart xpam_core >/dev/null"
   wait_for "on xtgx 'docker ps --format \"{{.Names}} {{.Status}}\"' | grep -q '^xpam_core .*(healthy)'" 40
+  sleep 10  # (the gateway reaches the restarted core)
 }
 tickets_setting() {
   printf '%s\n' "from django.test import Client; from users.models import User

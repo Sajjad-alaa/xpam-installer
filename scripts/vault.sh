@@ -200,7 +200,12 @@ config_value() { # key — from config.txt only (no Vault fallback)
 core_exec() { docker exec -i xpam_core bash -c "cd /opt/jumpserver/apps && python manage.py shell" 2>/dev/null; }
 
 secrets_left_on_disk() { # files on this server that still hold a SECRET_KEY value
-  grep -rlE '^[[:space:]]*SECRET_KEY=.+' "${CONFIG_DIR}" "$(get_config VOLUME_DIR)/core/data/backup" 2>/dev/null \
+  # (config.txt copies: next to config.txt — .bak-*, .before-ha-* —, in the upgrade / key rotation backups
+  # (db_backup: config-*.conf, config-before-key-rotation-*.txt) and in the "xpamctl config" backups)
+  local volume_dir
+  volume_dir=$(get_config VOLUME_DIR)
+  grep -rIlE '^[[:space:]]*SECRET_KEY=.+' "${CONFIG_DIR}" "${volume_dir}/db_backup" "${volume_dir}/config_backup" \
+    "${volume_dir}/core/data/backup" 2>/dev/null \
     | grep -v "^${CONFIG_FILE}$" || true
   ls "${CONFIG_DIR}"/ha/*.enc 2>/dev/null || true
 }

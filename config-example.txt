@@ -250,8 +250,9 @@ CURRENT_VERSION=
 # healthy during installation, upgrade, backup, and restore.
 CONTAINER_HEALTH_TIMEOUT=300
 
-# Anonymous installation lifecycle telemetry. Set to false to disable it.
-INSTALLATION_TELEMETRY_ENABLED=true
+# XPAM reports nothing about installations or upgrades (the installer sends no usage ping). Kept false so that
+# no component of the upstream code base turns such a report on by default.
+INSTALLATION_TELEMETRY_ENABLED=false
 
 ################################ OpenBao Configuration ################################
 # Vault storage is disabled by default.

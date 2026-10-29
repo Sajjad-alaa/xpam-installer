@@ -56,10 +56,12 @@ function patroni_code() { # path [host]
   pcurl -s -o /dev/null -w '%{http_code}' --max-time 5 "https://${2:-$(get_config HA_NODE_IP)}:8008/$1"
 }
 
-function patroni_write() { # method path json — with the REST password (from the environment, not the command line)
+function patroni_write() { # method path json — with the REST password (from the environment, never on a command line)
+  # (curl reads the login from its configuration on stdin: "-u" would show the password in the process list)
   HA_P="$(get_config HA_PATRONI_PASSWORD)" HA_C="${HA_DIR}/certs" HA_U="https://$(get_config HA_NODE_IP):8008/$2" \
-    HA_M="$1" HA_D="$3" bash -c 'curl -s -o /dev/null -w "%{http_code}" --max-time 60 --cacert "$HA_C/ca.crt" \
-      --cert "$HA_C/node.crt" --key "$HA_C/node.key" -u "patroni:${HA_P}" -X "$HA_M" \
+    HA_M="$1" HA_D="$3" bash -c 'p=${HA_P//\\/\\\\}; p=${p//\"/\\\"}; printf "user = \"patroni:%s\"\n" "$p" |
+      curl -K - -s -o /dev/null -w "%{http_code}" --max-time 60 --cacert "$HA_C/ca.crt" \
+      --cert "$HA_C/node.crt" --key "$HA_C/node.key" -X "$HA_M" \
       -H "Content-Type: application/json" -d "$HA_D" "$HA_U"'
 }
 

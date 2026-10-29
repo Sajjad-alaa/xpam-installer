@@ -18,6 +18,10 @@ services:
         printf 'include /etc/redis.conf\nrequirepass "%s"\nuser koko on >"%s" resetkeys ~JUMPSERVER:KOKO:* ~JUMPSERVER:LION:* resetchannels &JUMPSERVER:KOKO:* &JUMPSERVER:LION:* &JMS:KOKO:SESSIONS:* -@all +@connection +@read +@write +@pubsub +@keyspace -@dangerous -@admin -scan -keys\n' "$$REDIS_PASSWORD" "$${REDIS_KOKO_PASSWORD:-$$(head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n')}" > /tmp/redis-auth.conf &&
         chown redis:redis /tmp/redis-auth.conf &&
         exec docker-entrypoint.sh redis-server /tmp/redis-auth.conf
+    # /tmp (redis-auth.conf with the passwords, and in high availability the TLS key copy) is memory only:
+    # no secret reaches the container's disk layer. Mode 1777 like /tmp: the file is chowned to redis.
+    tmpfs:
+      - /tmp:mode=1777
     environment:
       TZ: ${TZ:-UTC}
       REDIS_PORT: $REDIS_PORT

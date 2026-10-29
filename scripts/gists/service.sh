@@ -26,7 +26,37 @@ function get_enabled_services() {
     fi
   done
  
+  # XPAM: the face recognition engine runs when face recognition is on (see is_facelive_enabled)
+  if is_facelive_enabled; then
+    enabled_services+=(facelive)
+  fi
+
   echo "${enabled_services[@]}"
+}
+
+# XPAM: facelive (the face recognition engine) follows FACE_RECOGNITION_ENABLED. FACELIVE_ENABLED overrides it:
+# 1 = run it anyway, 0 = never (the gateway uses the same rule, see compose/gateway.yml)
+function is_facelive_enabled() {
+  local flag
+  flag=$(get_config_or_env FACELIVE_ENABLED | tr '[:upper:]' '[:lower:]')
+  if [[ -z "${flag}" ]]; then
+    flag=$(get_config_or_env FACE_RECOGNITION_ENABLED | tr '[:upper:]' '[:lower:]')
+  fi
+  [[ "${flag}" == "1" || "${flag}" == "true" || "${flag}" == "yes" || "${flag}" == "on" ]]
+}
+
+# The key facelive gets from core is kept in this folder; the image runs as uid 10001
+function prepare_facelive_volume() {
+  local data_dir
+  if ! is_facelive_enabled; then
+    return 0
+  fi
+  data_dir="$(get_config VOLUME_DIR)/facelive/data"
+  mkdir -p "${data_dir}" || return 1
+  if [[ "$(stat -c '%u:%g' "${data_dir}")" != "10001:10001" ]]; then
+    chown -R 10001:10001 "${data_dir}" || return 1
+  fi
+  chmod 700 "${data_dir}" || return 1
 }
 
 

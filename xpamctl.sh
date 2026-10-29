@@ -93,7 +93,7 @@ function usage() {
   echo "  tail [service]    $(gettext 'View log')"
   echo "  version           Show the XPAM release and the build of each image"
   echo
-  echo "Services: core worker gateway web workspace secureconnection webconnector ai"
+  echo "Services: core worker gateway web workspace secureconnection webconnector ai facelive"
   echo
 }
 
@@ -127,6 +127,7 @@ function start() {
   gen_safe_config >/dev/null
   stop_disabled_video_worker || return 1
   prepare_video_worker_volume || return 1
+  prepare_facelive_volume || return 1
   retire_legacy_project || return 1
   retire_combined_web || return 1
   retire_renamed_services || return 1

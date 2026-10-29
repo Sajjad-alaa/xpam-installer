@@ -1,0 +1,40 @@
+services:
+  # Face recognition engine: the WebSocket behind /ws/facelive/ (face enrolment and face sign-in checks).
+  # Runs when FACE_RECOGNITION_ENABLED=true (or FACELIVE_ENABLED=1). Internal network only: no port is published;
+  # the gateway forwards /ws/facelive/ here. It is a core service account (registers with BOOTSTRAP_TOKEN once).
+  facelive:
+    image: ${XPAM_NAMESPACE:-xpam}/facelive:${XPAM_VERSION:-${XPAM_DEFAULT_VERSION:-v5.1.20}}
+    pull_policy: never  # XPAM images come from xpamctl (never Docker Hub)
+    container_name: xpam_facelive
+    hostname: xpam_facelive
+    ulimits:
+      core: 0
+    restart: always
+    # The image runs as uid 10001 and writes only to its data folder (the access key) and /tmp
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    # Face analysis is CPU work: a busy capture must not starve core and the database
+    cpus: ${FACELIVE_CPUS:-2}
+    mem_limit: ${FACELIVE_MEM_LIMIT:-1g}
+    pids_limit: 256
+    env_file:
+      - ${CONFIG_SAFE_FILE}
+    environment:
+      # (XPAM: config-safe.txt has no secrets; the one this service uses, by name)
+      BOOTSTRAP_TOKEN: ${BOOTSTRAP_TOKEN}
+      TZ: ${TZ:-UTC}
+    volumes:
+      - ${VOLUME_DIR}/facelive/data:/opt/facelive/data
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8085/facelive/health', timeout=4)"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
+    networks:
+      - net

@@ -2,7 +2,7 @@
 # Build all XPAM images from the source repos.
 #   ./build-all.sh                 build everything
 #   ./build-all.sh core web        build only the named images
-# Images: core gateway web workspace secureconnection webconnector ai browser postgresql-ha
+# Images: core gateway web workspace secureconnection webconnector ai facelive browser postgresql-ha
 # Environment: SRC (repos folder, default /opt), NS (default xpam), TAG (default v5.1.20).
 # Needs: docker with BuildKit, and for the web and workspace images node 24 with the repos' node_modules installed.
 set -euo pipefail
@@ -110,7 +110,13 @@ build_ai() {
   docker build -q --build-arg APT_REFRESH="$APT_REFRESH" -f "$HERE/ai.Dockerfile" -t "$NS/ai:$TAG" "$CACHE/ai-out"
 }
 
-targets=("$@"); [[ ${#targets[@]} -gt 0 ]] || targets=(core gateway web workspace secureconnection webconnector ai browser postgresql-ha)
+build_facelive() {
+  say "facelive"
+  # the models are downloaded inside the build and checked against pinned SHA-256 values
+  docker build -q --build-arg APT_REFRESH="$APT_REFRESH" -f "$HERE/facelive.Dockerfile" -t "$NS/facelive:$TAG" "$SRC/xpam-facelive"
+}
+
+targets=("$@"); [[ ${#targets[@]} -gt 0 ]] || targets=(core gateway web workspace secureconnection webconnector ai facelive browser postgresql-ha)
 for t in "${targets[@]}"; do "build_$t"; done
 say "done"
-docker images --format '{{.Repository}}:{{.Tag}}  {{.ID}}  {{.CreatedSince}}' | grep -E "^$NS/(core|gateway|web|workspace|secureconnection|webconnector|ai|browser|postgresql-ha):$TAG " | sort
+docker images --format '{{.Repository}}:{{.Tag}}  {{.ID}}  {{.CreatedSince}}' | grep -E "^$NS/(core|gateway|web|workspace|secureconnection|webconnector|ai|facelive|browser|postgresql-ha):$TAG " | sort

@@ -26,6 +26,8 @@ services:
       CHEN_ENABLED: ${CHEN_ENABLED:-1}
       KAEL_ENABLED: ${KAEL_ENABLED:-1}
       RAZOR_ENABLED: ${RAZOR_ENABLED:-1}
+      # the /ws/facelive/ route: on when face recognition is on (the same rule as scripts/gists/service.sh)
+      FACELIVE_ENABLED: ${FACELIVE_ENABLED:-${FACE_RECOGNITION_ENABLED:-0}}
       # Compatibility for older web images; the value is derived from the
       # edition and is not a user-configurable JDMC switch.
       JDMC_ENABLED: ${USE_XPACK:-0}

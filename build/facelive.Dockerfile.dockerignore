@@ -1,0 +1,9 @@
+# Only the engine, its build tools and its notice go into the build.
+*
+!facelive
+!tools
+!requirements.txt
+!entrypoint.sh
+!NOTICE
+**/__pycache__
+**/*.pyc

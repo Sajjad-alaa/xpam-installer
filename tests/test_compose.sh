@@ -137,3 +137,55 @@ if [[ "${external_worker_manifest}" == *'/video-worker:'* ]]; then
   fail 'disabled local worker must not be packed into the offline image manifest'
 fi
 printf 'PASS: external worker routing disables only the local container and image\n'
+
+# Face recognition: the facelive container and the gateway route follow FACE_RECOGNITION_ENABLED
+# (FACELIVE_ENABLED overrides)
+face_off=$(
+  cd "${TEST_ROOT}"
+  export JS_CONFIG_DIR="${test_dir}"
+  . ./scripts/utils.sh
+  get_docker_compose_cmd_line
+)
+if [[ "${face_off}" == *'compose/facelive.yml'* ]]; then
+  fail 'facelive must stay off while face recognition is off'
+fi
+face_dir="${TEST_TMP_ROOT}/compose-face"
+mkdir -p "${face_dir}"
+cp "${TEST_ROOT}/config-example.txt" "${face_dir}/config.txt"
+printf '%s\n' 'FACE_RECOGNITION_ENABLED=true' >>"${face_dir}/config.txt"
+face_config=$(
+  cd "${TEST_ROOT}"
+  export JS_CONFIG_DIR="${face_dir}"
+  . ./scripts/utils.sh
+  gen_safe_config >/dev/null
+  compose_cmd=$(get_docker_compose_cmd_line)
+  assert_contains "${compose_cmd}" 'compose/facelive.yml' 'face recognition on must start facelive'
+  ${compose_cmd} --env-file "${CONFIG_FILE}" config
+)
+assert_contains "${face_config}" 'container_name: xpam_facelive' 'rendered Compose config must contain facelive'
+assert_contains "${face_config}" 'FACELIVE_ENABLED: "true"' 'the gateway must route /ws/facelive/ when face recognition is on'
+assert_contains "${face_config}" 'read_only: true' 'facelive must have a read-only file system'
+facelive_block=${face_config#*container_name: xpam_facelive}
+facelive_block=${facelive_block%%container_name: xpam_*}
+if [[ "${facelive_block}" == *'published:'* || "${facelive_block}" == *$'\n    ports:'* ]]; then
+  fail 'facelive must not publish a port'
+fi
+face_manifest=$(
+  cd "${TEST_ROOT}"
+  export JS_CONFIG_DIR="${face_dir}"
+  . ./scripts/utils.sh
+  get_offline_image_manifest
+)
+assert_contains "${face_manifest}" 'xpam/facelive:' 'offline manifest must contain the facelive image when it is on'
+
+printf '%s\n' 'FACELIVE_ENABLED=0' >>"${face_dir}/config.txt"
+face_disabled=$(
+  cd "${TEST_ROOT}"
+  export JS_CONFIG_DIR="${face_dir}"
+  . ./scripts/utils.sh
+  get_docker_compose_cmd_line
+)
+if [[ "${face_disabled}" == *'compose/facelive.yml'* ]]; then
+  fail 'FACELIVE_ENABLED=0 must keep facelive off'
+fi
+printf 'PASS: facelive follows FACE_RECOGNITION_ENABLED and FACELIVE_ENABLED\n'

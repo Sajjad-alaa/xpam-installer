@@ -9,3 +9,5 @@
 !00-xpam-proto.conf
 !45-xpam-forwarded-proto.sh
 !46-xpam-download-fallback.sh
+!facelive.conf
+!47-xpam-facelive.sh

@@ -1,6 +1,7 @@
 # XPAM gateway: the front door. Official JumpServer v5.0.0 web image (nginx, TLS, routing) without any
 # application files. It forwards /web/ and /workspace/ to their own containers and the service paths
-# (/core/, /api/, /secureconnection/, /webconnector/, /ai/) to the services.
+# (/core/, /api/, /secureconnection/, /webconnector/, /ai/) to the services, and /ws/facelive/ to the face
+# recognition engine when face recognition is on.
 #   docker build -f gateway.Dockerfile -t xpam/gateway:<tag> <this folder>/nginx
 # Official JumpServer v5.0.0-ce image, pinned by digest (same image on every build host)
 FROM jumpserver/web@sha256:5971a1c6f088df1d3c785549d8566e224919abadc0006626259f961a3fd13ec2
@@ -20,7 +21,7 @@ RUN rm -f /etc/nginx/includes/koko.conf* /etc/nginx/includes/chen.conf* /etc/ngi
     && sed -i 's#includes/koko\.conf#includes/secureconnection.conf#g; s#includes/chen\.conf#includes/webconnector.conf#g; s#includes/kael\.conf#includes/ai.conf#g' \
         /docker-entrypoint.d/40-init-config.sh \
     && ! grep -qE 'includes/(koko|chen|kael)\.conf' /docker-entrypoint.d/40-init-config.sh
-COPY common.conf core.conf interface_security.conf secureconnection.conf webconnector.conf ai.conf /etc/nginx/includes/
+COPY common.conf core.conf interface_security.conf secureconnection.conf webconnector.conf ai.conf facelive.conf /etc/nginx/includes/
 # HTTPS only from now on for this host name: browsers stop trying plain HTTP for a year
 RUN sed -i 's#^  server_tokens off;#  server_tokens off;\n  add_header Strict-Transport-Security "max-age=31536000" always;#' /etc/nginx/sites-enabled/https_server.conf \
     && grep -q 'Strict-Transport-Security' /etc/nginx/sites-enabled/https_server.conf
@@ -31,6 +32,7 @@ RUN sed -i 's#^  server_tokens off;#  server_tokens off;\n  add_header Strict-Tr
 COPY 00-xpam-proto.conf /etc/nginx/conf.d/00-xpam-proto.conf
 COPY --chmod=755 45-xpam-forwarded-proto.sh /docker-entrypoint.d/45-xpam-forwarded-proto.sh
 COPY --chmod=755 46-xpam-download-fallback.sh /docker-entrypoint.d/46-xpam-download-fallback.sh
+COPY --chmod=755 47-xpam-facelive.sh /docker-entrypoint.d/47-xpam-facelive.sh
 RUN sed -i 's#proxy_set_header Host \$host;#proxy_set_header Host $http_host;#g; s#^\( *\)proxy_set_header X-Forwarded-For \$remote_addr;#&\n\1proxy_set_header X-Forwarded-Proto $scheme;#' /etc/nginx/sites-enabled/https_server.conf \
     && [ "$(grep -c 'proxy_set_header X-Forwarded-Proto \$scheme;' /etc/nginx/sites-enabled/https_server.conf)" = "2" ] \
     && [ "$(grep -c 'proxy_set_header Host \$http_host;' /etc/nginx/sites-enabled/https_server.conf)" = "2" ]

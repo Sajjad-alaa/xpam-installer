@@ -185,6 +185,18 @@ DOMAINS=
 # CHEN_ENABLED=0
 # WEB_ENABLED=0
 # VIDEO_WORKER_ENABLED=0
+# Face recognition (face as a second factor and on asset sign-in). true starts the facelive container
+# (the face engine; the /ws/facelive/ route follows) and turns the feature on in core. FACELIVE_ENABLED overrides
+# only the container and the route: 1 = run it, 0 = never.
+# Needs a valid license for the MFA part. See docs/INSTALL.md, "Face recognition".
+#
+# FACE_RECOGNITION_ENABLED=true
+# FACELIVE_ENABLED=
+# FACELIVE_CPUS=2
+# FACELIVE_MEM_LIMIT=1g
+# FACE_LIVENESS_MODE=motion        # off = no head movement challenge (a photo or a looped video could pass)
+# FACE_RECOGNITION_COSINE_THRESHOLD=0.40
+# FACE_RECOGNITION_DISTANCE_THRESHOLD=1.0955
 # Containers no longer run with full host privileges by default. Turn it back on only if needed:
 # KOKO_PRIVILEGED=true      # required for Kubernetes sessions in the web terminal
 # WORKER_PRIVILEGED=true

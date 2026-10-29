@@ -1,5 +1,17 @@
 # XPAM release notes
 
+## 5.1.21 (in progress) — face recognition works
+
+- **Face recognition engine (`xpam_facelive`):** face enrolment and face sign-in (MFA and the asset "face
+  verification" check) now work; the capture page used to end with "connection closed" because nothing answered
+  `/ws/facelive/`. New container, started when `FACE_RECOGNITION_ENABLED=true`; OpenCV YuNet and SFace models (MIT /
+  Apache-2.0, no InsightFace); a head-movement challenge and refusal of repeated camera frames. See section 12 of the
+  installation guide for what it does and does not stop.
+- **Core:** registers the face code format, so face checks no longer fail with "backend is not available". The match
+  limits are now cosine 0.40 / distance 1.0955 (they were 0.45 / 0.35 for another model): remove your own
+  `FACE_RECOGNITION_*_THRESHOLD` lines unless you meant them. A face enrolled earlier with another engine must be enrolled again.
+- **Not supported:** online face monitoring (the page says so).
+
 ## 5.1.20 — custom dashboards, approval flows from the rule, access extensions, dark mode
 
 - **Dark mode across the console:** every page, form, table, dialog, chart and the assistant are readable in

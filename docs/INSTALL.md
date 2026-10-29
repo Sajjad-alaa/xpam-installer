@@ -168,6 +168,7 @@ Where things are:
 | `xpam_workspace` | workspace pages in the browser | only the browser workspace is unavailable; the desktop client keeps working |
 | `xpam_webconnector` | database sessions in the browser | only those sessions are unavailable |
 | `xpam_ai` | AI assistant | only the assistant is unavailable |
+| `xpam_facelive` | face recognition (only when it is switched on, see section 12) | face enrolment and face checks fail; password logins and other factors keep working |
 
 ### Security defaults
 
@@ -535,7 +536,48 @@ back). Once the database is updated, going back to the old version means restori
 Other commands: `xpamctl ha role` (this server's role), `xpamctl ha pause on|off` (maintenance mode:
 no automatic failover).
 
-## 12. If something goes wrong
+## 12. Face recognition (optional)
+
+Face recognition lets a user enrol a face and then use it as a second factor at login and as the check
+on assets whose rule asks for "face verification". It needs the `xpam_facelive` container, a valid licence
+for the MFA part, and a camera in the user's browser (HTTPS is required for the browser to allow it).
+
+**Switch it on**
+
+1. In `config.txt` set `FACE_RECOGNITION_ENABLED=true`, then run `xpamctl start`. The installer starts
+   `xpam_facelive` (an XPAM image, nothing is downloaded at run time), and the gateway routes
+   `/ws/facelive/` to it. `FACELIVE_ENABLED=0` keeps the container off even then; `=1` starts it without the
+   core setting.
+2. The container registers itself with core the first time, using `BOOTSTRAP_TOKEN`, and keeps its key in
+   `<VOLUME_DIR>/facelive/data`. Core only accepts a first registration during the first five minutes after
+   core starts (setting `SECURITY_SERVICE_ACCOUNT_REGISTRATION`, default `auto`); if `xpam_facelive` stays
+   `unhealthy` with "waiting for core" in `xpamctl tail facelive`, run `xpamctl restart facelive`
+   right after core has restarted.
+3. Each user enrols a face in the profile page (the MFA settings) and can then pick Face at login.
+   A user must be signed in completely to enrol; a login that is still waiting for its second factor cannot
+   bind a new face.
+
+**What the check does.** The person looks at the camera, then does a random head movement (turn left and
+right, or nod) and looks straight again. Enrolment keeps three clear photos averaged into one template; a
+sign-in check compares live frames with the stored template (core does the comparison; the stored face never
+leaves core). The photos are looked at in memory only: no picture and no template is written to a file or a
+log. The same picture sent twice, or a camera that sends no new picture, is refused.
+
+**What it stops and what it does not.** It stops a photo (on paper or on a screen), a still image sent through
+a virtual camera and a short video that loops. It does **not** reliably stop a live replay or an edited video
+of the real user doing the movement, a 3D mask, or a tampered camera driver, and a tilted printed photo may
+give a similar head-turn signal. Use it as one factor next to the password, not as certified anti-spoofing.
+`FACE_LIVENESS_MODE=off` removes the head movement (not recommended).
+
+**Thresholds.** Two faces are the same person when the cosine similarity of their SFace features is at least
+`FACE_RECOGNITION_COSINE_THRESHOLD` (0.40; OpenCV documents 0.363) and their distance is at most
+`FACE_RECOGNITION_DISTANCE_THRESHOLD` (1.0955, the same cut). Lower values accept more look-alikes.
+A face enrolled with another engine is not a valid template: users enrol again.
+
+**Not included.** Online monitoring (pausing a session when the person leaves the camera) is not supported by
+this engine; a rule that asks for it cannot be satisfied.
+
+## 13. If something goes wrong
 
 | Symptom | Cause and fix |
 |---|---|

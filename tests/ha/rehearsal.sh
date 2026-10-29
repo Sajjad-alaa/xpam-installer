@@ -229,10 +229,11 @@ check 'it has all the data' "wait_for \"[[ \\\$(on harb \\\"\\\$PSQL 'select cou
 check 'the rebuilt server got the floating address setting from the fresh bundle' "on harb 'grep -q ^HA_VIP=172.31.9.100/24 /opt/xpam/config/config.txt'"
 
 say "rolling upgrade (xpamctl ha upgrade): the standby first, then the primary hands XPAM over"
-# a "next release": the same images tagged v5.1.18 and the installer's static.env saying v5.1.18
-NEXT=v5.1.18
+# a "next release": the same images tagged <tag>-next, the installer's static.env saying so, and the version the
+# test pinned in config.txt (XPAM_VERSION) moved along
+NEXT=${TAG}-next
 for n in hara harb; do
-  on $n "for i in core gateway postgresql-ha; do docker tag xpam/\$i:$TAG xpam/\$i:$NEXT; done; sed -i 's/^export VERSION=.*/export VERSION=$NEXT/; s/^export XPAM_DEFAULT_VERSION=.*/export XPAM_DEFAULT_VERSION=$NEXT/' /opt/xpam-installer/static.env"
+  on $n "for i in core gateway postgresql-ha; do docker tag xpam/\$i:$TAG xpam/\$i:$NEXT; done; sed -i 's/^export VERSION=.*/export VERSION=$NEXT/; s/^export XPAM_DEFAULT_VERSION=.*/export XPAM_DEFAULT_VERSION=$NEXT/' /opt/xpam-installer/static.env; sed -i 's/^XPAM_VERSION=.*/XPAM_VERSION=$NEXT/' /opt/xpam/config/config.txt"
 done
 wait_for "on hara 'curl -s --cacert /opt/xpam/config/ha/certs/ca.crt --cert /opt/xpam/config/ha/certs/node.crt --key /opt/xpam/config/ha/certs/node.key https://$A:8008/cluster' | grep -q sync_standby" 30
 on hara 'cd /opt/xpam-installer && bash ./xpamctl.sh ha upgrade -y > /root/ha-upgrade-a-first.log 2>&1'

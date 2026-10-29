@@ -92,7 +92,6 @@ check 'local: the unseal key is sealed with systemd-creds (no share readable in 
 check 'local: XPAM runs with its secrets from the local Vault' "wait_for \"on xvtx 'docker ps --format \\\"{{.Names}} {{.Status}}\\\"' | grep -q '^xpam_core .*(healthy)'\" 40"
 check 'local: xpamctl vault verify passes (TLS 1.3, certificates, least privilege, nothing on disk)' "on xvtx 'cd /opt/xpam-installer && bash ./xpamctl.sh vault verify' > /tmp/xvt-verify-local.log 2>&1"
 grep -E "FAIL|passed" /tmp/xvt-verify-local.log | head -8
-docker restart xvtx >/dev/null
 DK="import json
 try:
     from settings.tasks.datakey import data_key_status
@@ -101,6 +100,8 @@ except Exception as e:
     print('dk error', type(e).__name__, e)"
 DK_OUT=$(printf '%s\n' "$DK" | on xvtx "$CORE_SHELL" | grep '^dk ' | tail -1); echo "  $DK_OUT"
 check 'local: the data key is in the local Vault (Transit); every value uses it' "grep -q '\"provider\": \"transit\"' <<<\"\$DK_OUT\" && ! grep -q '\"legacy\"' <<<\"\$DK_OUT\""
+# (then the reboot: the next check waits for XPAM to come back)
+docker restart xvtx >/dev/null
 check 'local: after a reboot the local Vault unseals itself and XPAM starts' "wait_for \"on xvtx 'docker ps --format \\\"{{.Names}} {{.Status}}\\\"' 2>/dev/null | grep -q '^xpam_core .*(healthy)'\" 72"
 
 say "Vault (the kit, one server)"

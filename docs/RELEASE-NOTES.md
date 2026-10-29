@@ -1,5 +1,18 @@
 # XPAM release notes
 
+## 5.1.25 — API security review
+
+Every API URL and method was tested as an anonymous visitor, a plain user, an organization administrator, an
+organization auditor and a service account, against data of another organization (tests/security/api_matrix). No
+privilege escalation was found; fixed:
+- **Organizations:** an API request works in an organization the user is a member of (the organization named in the
+  request was not checked). Account usernames of any organization were listed to any user
+  (`accounts/username-suggestions`, now for those who may see accounts); the access request form listed every
+  organization's assets and nodes under "All organizations" (now the user's own organizations).
+- **Task logs:** organization administrators and auditors see the runs of their organization's members only.
+- **Smaller:** username hints only for permitted assets; a quick-job helper no longer leaves a folder per request;
+  service accounts cannot create single sign-on tokens; only the face engine pauses or resumes face-monitored sessions.
+
 ## 5.1.24 — core's pages in dark mode
 
 - **Dark mode on core's own pages:** an expired or missing message link shows the themed message page (it was a

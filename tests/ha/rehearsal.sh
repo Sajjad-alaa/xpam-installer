@@ -44,7 +44,7 @@ load_vault() { # node — the Vault image (VAULT_FS_TAR: `docker export` of a ha
     on "$1" "timeout 600 docker pull -q hashicorp/vault:2.1.2 >/dev/null"
   fi
 }
-MIN="XPAM_VAULT_MODE=none KOKO_ENABLED=0 CHEN_ENABLED=0 KAEL_ENABLED=0 BROWSER_ENABLED=0 WORKSPACE_ENABLED=0 WEB_ENABLED=0 WORKER_ENABLED=0 SERVER_SIZE=small XPAM_IMAGE_REGISTRY=local"
+MIN="XPAM_VAULT_MODE=none KOKO_ENABLED=0 CHEN_ENABLED=0 KAEL_ENABLED=0 BROWSER_ENABLED=0 WORKSPACE_ENABLED=0 WEB_ENABLED=0 WORKER_ENABLED=0 SERVER_SIZE=small XPAM_IMAGE_REGISTRY=local XPAM_VERSION=$TAG"
 
 say "servers"
 docker network create --subnet 172.31.9.0/24 "$NET" >/dev/null

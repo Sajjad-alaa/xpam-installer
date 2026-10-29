@@ -18,7 +18,7 @@ cleanup() { docker rm -f xvcx xvcpw >/dev/null 2>&1; docker volume rm xvcx-docke
 [[ "${KEEP:-}" == "1" ]] || trap cleanup EXIT
 cleanup
 mkdir -p "$OUT" "$PW"; chmod 777 "$OUT" "$PW"
-MIN="XPAM_VAULT_MODE=none KOKO_ENABLED=0 CHEN_ENABLED=0 KAEL_ENABLED=0 BROWSER_ENABLED=0 WORKSPACE_ENABLED=0 WORKER_ENABLED=0 SERVER_SIZE=small XPAM_IMAGE_REGISTRY=local"
+MIN="XPAM_VAULT_MODE=none KOKO_ENABLED=0 CHEN_ENABLED=0 KAEL_ENABLED=0 BROWSER_ENABLED=0 WORKSPACE_ENABLED=0 WORKER_ENABLED=0 SERVER_SIZE=small XPAM_IMAGE_REGISTRY=local XPAM_VERSION=$TAG"
 NODE_IMAGE=rockylinux/rockylinux:9-ubi-init
 docker image inspect xpam-test/rocky-docker:9 >/dev/null 2>&1 && NODE_IMAGE=xpam-test/rocky-docker:9
 CORE_SHELL="docker exec -i xpam_core bash -c 'cd /opt/jumpserver/apps && python manage.py shell 2>/dev/null'"

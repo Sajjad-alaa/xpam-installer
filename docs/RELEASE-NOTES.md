@@ -1,5 +1,11 @@
 # XPAM release notes
 
+## 5.1.23 — face enrolment from the profile
+
+- **Fix:** *Profile → MFA settings → Face recognition → Enable* did nothing (it reloaded the profile page); it opens
+  the camera for face enrolment now. *Reset* opens the face check that removes the face.
+- **Fix:** the MFA settings page was unreadable in dark mode (white cards, white titles); it follows the theme.
+
 ## 5.1.22 — no MFA setting can lock a user out
 
 - **MFA lockout safeguard:** a face or a passkey can only be added while signed in, so a user whose only allowed

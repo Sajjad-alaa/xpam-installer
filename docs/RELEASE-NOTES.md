@@ -1,5 +1,11 @@
 # XPAM release notes
 
+## 5.1.24 — core's pages in dark mode
+
+- **Dark mode on core's own pages:** an expired or missing message link shows the themed message page (it was a
+  bare white text page); the user agreement and privacy policy follow the console's theme. All 16 of core's pages
+  (profile and MFA, OTP and face setup, password, login, messages, policies) checked in dark mode.
+
 ## 5.1.23 — face enrolment from the profile
 
 - **Fix:** *Profile → MFA settings → Face recognition → Enable* did nothing (it reloaded the profile page); it opens

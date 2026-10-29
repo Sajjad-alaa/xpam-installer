@@ -3,6 +3,8 @@
 # mode an automatic check of every page for visible light patches (light backgrounds) and dark text on a dark
 # background. Screenshots and the findings (findings.json) go to $OUT.
 #   tests/web/dark_check.sh <web-image> [core-image] [gateway-image]      (ALL=1: every route of the console, dark only)
+#   CORE=1: core's own pages instead (profile and MFA, OTP and face setup, password pages, login, messages, policies;
+#   signed in and signed out)
 #   (the images are retagged inside the test server; nothing of the live system is used)
 set -uo pipefail
 WEB_IMAGE=${1:?web image, e.g. xpam/web:dark-check}
@@ -75,6 +77,25 @@ const PAGES = [
   ['settings-license', '/web/#/settings/license'],
   ['settings-chat-ai', '/web/#/settings/chat-ai'],
 ];
+// core's own pages (Django templates): [name, path, signed in]
+const CORE_PAGES = [
+  ['core-profile-mfa', '/core/auth/profile/mfa/', true],
+  ['core-otp-enable-start', '/core/auth/profile/otp/enable/start/', true],
+  ['core-otp-install-app', '/core/auth/profile/otp/enable/install-app/', true],
+  ['core-otp-bind', '/core/auth/profile/otp/enable/bind/', true],
+  ['core-otp-disable', '/core/auth/profile/otp/disable/', true],
+  ['core-face-enable', '/core/auth/profile/face/enable/', true],
+  ['core-face-disable', '/core/auth/profile/face/disable/', true],
+  ['core-password-verify', '/core/auth/password/verify/', true],
+  ['core-message-ok', '/core/common/flash-message/?code=' + (process.env.FLASH_OK || ''), true],
+  ['core-message-error', '/core/common/flash-message/?code=' + (process.env.FLASH_ERR || ''), true],
+  ['core-message-expired', '/core/common/flash-message/?code=expired', true],
+  ['core-login', '/core/auth/login/', false],
+  ['core-forgot-password', '/core/auth/password/forgot/', false],
+  ['core-reset-password-bad-token', '/core/auth/password/reset/?token=invalid', false],
+  ['core-user-agreement', '/core/auth/user-agreement/', false],
+  ['core-privacy-policy', '/core/auth/privacy-policy/', false],
+];
 // in dark mode: visible light backgrounds, and dark text on a dark background
 const ANALYZE = () => {
   const parse = (c) => {
@@ -124,8 +145,22 @@ const ANALYZE = () => {
     const ctx = await browser.newContext({ ignoreHTTPSErrors: true, viewport: { width: 1440, height: 950 }, colorScheme: mode });
     await ctx.addInitScript((m) => { try { localStorage.setItem('lina-theme-mode', m); } catch (e) {} }, mode);
     await ctx.addCookies([{ name: c.session[0], value: c.session[1], url: 'https://127.0.0.1' }]);
-    const page = await ctx.newPage();
+    let page = await ctx.newPage();
     let pages = PAGES;
+    if (process.env.CORE === '1') {
+      // (signed-in pages first: the message codes live for 60 s; then a browser that is not signed in)
+      const anon = await (await browser.newContext({ ignoreHTTPSErrors: true, viewport: { width: 1440, height: 950 }, colorScheme: mode })).newPage();
+      for (const [name, path, signedIn] of CORE_PAGES) {
+        const p = signedIn ? page : anon;
+        try {
+          await p.goto('https://127.0.0.1' + path, { waitUntil: 'networkidle', timeout: 30000 });
+          await p.waitForTimeout(1500);
+          await p.screenshot({ path: `/out/${mode}-${name}.png`, fullPage: true });
+          if (mode === 'dark') findings[name] = Object.assign(await p.evaluate(ANALYZE), { url: p.url().replace('https://127.0.0.1', '') });
+        } catch (e) { findings[name] = { error: String(e).slice(0, 200) }; }
+      }
+      pages = [];
+    }
     if (process.env.ALL === '1' && mode === 'dark') {
       await page.goto('https://127.0.0.1/web/#/console/dashboard', { waitUntil: 'networkidle' });
       await page.waitForTimeout(2000);
@@ -148,7 +183,7 @@ const ANALYZE = () => {
       } catch (e) { findings[name] = { error: String(e).slice(0, 200) }; }
     }
     // the Ctrl+K command palette and a dialog
-    try {
+    if (process.env.CORE !== '1') try {
       await page.goto('https://127.0.0.1/web/#/console/dashboard', { waitUntil: 'networkidle' });
       await page.waitForTimeout(1500);
       await page.keyboard.press('Control+K'); await page.waitForTimeout(1200);
@@ -174,7 +209,13 @@ rm -f "$OUT/findings.json"
 for MODE in dark light; do
   say "browser ($MODE)"
   set_mode "$MODE"
+  # (message pages: codes made just before the browser looks, they live for 60 s)
+  FLASH=$(printf '%s\n' "from common.utils import FlashMessageUtil as F
+print('flash', F.get_message_code({'title': 'Face binding successful', 'message': 'Face binding successful', 'redirect_url': '/web/'}),
+      F.get_message_code({'title': 'MFA unavailable', 'error': 'No available MFA method. Please contact your administrator.', 'redirect_url': '/core/auth/login/'}))" \
+    | on xdkx "$CORE_SHELL" | grep '^flash ')
   docker run --rm --name xdkpw --network container:xdkx -v "$OUT:/out" -v "$PW:/pw" -e COOKIES="$COOKIES" -e MODE="$MODE" -e ALL="${ALL:-}" \
+    -e CORE="${CORE:-}" -e FLASH_OK="$(cut -d' ' -f2 <<<"${FLASH}")" -e FLASH_ERR="$(cut -d' ' -f3 <<<"${FLASH}")" \
     -w /pw "$PW_IMAGE" bash -c 'test -d node_modules/playwright || npm i -s playwright@1.63.0 >/dev/null 2>&1; node check.js' 2>&1 \
     | grep -E '^(FINDINGS|ERROR|ROUTES)'
 done

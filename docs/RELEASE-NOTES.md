@@ -1,5 +1,15 @@
 # XPAM release notes
 
+## 5.1.22 — no MFA setting can lock a user out
+
+- **MFA lockout safeguard:** a face or a passkey can only be added while signed in, so a user whose only allowed
+  MFA methods are those, and not set up, could never sign in again. Refused now, with the reason: in the user form
+  (e.g. *Face recognition* only for a user with no face enrolled — allow OTP as well until the face is enrolled),
+  in the global allowed MFA methods (face and/or passkey alone), and when removing the face that is a user's only
+  way to sign in (the admin's *Reset MFA* keeps it then).
+- **Fix:** a user without any usable MFA method saw "The message code provided is invalid or has expired" after the
+  password; the page now says "No available MFA method. Please contact your administrator."
+
 ## 5.1.21 — face recognition works; HA, Vault and security fixes
 
 - **Face recognition engine (`xpam_facelive`):** face enrolment and face sign-in (MFA and the asset "face

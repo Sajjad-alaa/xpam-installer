@@ -3,16 +3,6 @@
 # Official JumpServer v5.0.0-ce image, pinned by digest (same image on every build host)
 FROM jumpserver/core@sha256:902c58566c5248f3752309c8fb34c2f61b1ba39bde54a7439b36115afb7fd16d
 
-# Security updates for the OS packages inherited from the upstream image (same Debian release)
-# (the upstream image points apt at a mirror that is only reachable inside Alibaba Cloud)
-# a new build date re-runs the system upgrade (otherwise the cached layer keeps old packages)
-ARG APT_REFRESH=0
-RUN find /etc/apt -type f \( -name '*.sources' -o -name '*.list' \) -exec \
-        sed -i -E 's#https?://mirrors\.(cloud\.)?aliyun(cs)?\.com#http://deb.debian.org#g' {} + \
-    && apt-get update \
-    && DEBIAN_FRONTEND=noninteractive apt-get -y --no-install-recommends upgrade \
-    && apt-get clean && rm -rf /var/lib/apt/lists/*
-
 # Security upgrades for critical Python dependencies (FIX-08)
 RUN /usr/local/bin/uv pip install --python /opt/py3/bin/python \
     "Django==5.2.17" "PyJWT==2.15.0" "urllib3==2.8.0" "requests==2.33.0" \
@@ -27,6 +17,18 @@ RUN /usr/local/bin/uv pip install --python /opt/py3/bin/python "oracledb==3.4.2"
 # Network device accounts (FortiGate, Palo Alto, Cisco, Juniper, Huawei, H3C): push, change secret,
 # removal, discovery and just-in-time accounts (libs/ansible/modules_utils/network_device.py)
 RUN /usr/local/bin/uv pip install --python /opt/py3/bin/python "netmiko==4.5.0"
+
+# Security updates for the OS packages inherited from the upstream image (same Debian release)
+# (the upstream image points apt at a mirror that is only reachable inside Alibaba Cloud)
+# a new build date re-runs the system upgrade (otherwise the cached layer keeps old packages). It comes after the
+# pinned Python packages: those layers stay the same from one release to the next, so an upgrade downloads
+# the system updates and the code, not ~200 MB of unchanged packages again.
+ARG APT_REFRESH=0
+RUN find /etc/apt -type f \( -name '*.sources' -o -name '*.list' \) -exec \
+        sed -i -E 's#https?://mirrors\.(cloud\.)?aliyun(cs)?\.com#http://deb.debian.org#g' {} + \
+    && apt-get update \
+    && DEBIAN_FRONTEND=noninteractive apt-get -y --no-install-recommends upgrade \
+    && apt-get clean && rm -rf /var/lib/apt/lists/*
 
 COPY apps /opt/jumpserver/apps
 # XPAM: the start script (quick start when nothing changed) and this build's identity

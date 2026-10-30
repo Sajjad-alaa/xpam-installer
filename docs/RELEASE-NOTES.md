@@ -1,5 +1,17 @@
 # XPAM release notes
 
+## 5.1.26 — faster console, smaller upgrades, dead code removed
+
+- **Console first load 5.3 MB -> 3.25 MB:** charts and the AI assistant load when they are shown. Built files are
+  cached by the browser for a year (their names change with every release), so later visits download almost nothing.
+- **Smaller upgrades:** an upgrade downloads ~35 MB of the core image instead of ~240 MB (the unchanged Python
+  packages are reused).
+- **User list:** 17% faster with many users. Measured with 400 assets, 800 accounts and 120 users: no list makes more
+  database queries for more rows.
+- **Dead code removed** (each piece proven unused): 1,181 lines in core, 62 unreachable console files.
+- **Fixes:** LDAP "Test" on a wrong server address shows its message (it failed with an error); a malformed import
+  file is answered "bad request", not a server error.
+
 ## 5.1.25 — API security review
 
 Every API URL and method was tested as an anonymous visitor, a plain user, an organization administrator, an

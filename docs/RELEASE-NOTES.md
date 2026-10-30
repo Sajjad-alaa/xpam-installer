@@ -1,5 +1,20 @@
 # XPAM release notes
 
+## 5.1.27 — upstream security fixes since v5.0.0; remaining gaps closed
+
+- **Upstream security fixes (JumpServer v5.1.0/v5.1.1) backported:** 27 to core and 5 to the console: escaping of
+  automation input before Ansible templating (GHSA-gr5x), session recording access by organization, connection tokens
+  for safe methods only, passkey MFA bound to the signed-in user, no gateway secrets in zone responses, IM OAuth
+  callbacks, job ACLs on node-selected assets, report permissions, MFA / Applet Host / OIDC / risk action / LDAP
+  authorization, a user's MFA methods only narrowing the system's, per-organization permission caching, and more.
+- **WebSocket origin check:** a browser WebSocket must come from XPAM's own pages (cross-site WebSocket hijacking);
+  no configuration needed, access by IP keeps working.
+- **No self-approval:** a request is refused when nobody but its applicant could approve it (instant JIT approval
+  still works; login reviews keep the applicant as a last resort so a sole administrator is never locked out).
+- **Custom SSO** logins go through the login ACLs and blocks; the login page no longer tells the exact version.
+- **Fixes:** checking the login confirmation status no longer signs users out; SMS one-time codes are no longer
+  written to the logs; malformed input is answered "bad request" instead of a server error everywhere.
+
 ## 5.1.26 — faster console, smaller upgrades, dead code removed
 
 - **Console first load 5.3 MB -> 3.25 MB:** charts and the AI assistant load when they are shown. Built files are

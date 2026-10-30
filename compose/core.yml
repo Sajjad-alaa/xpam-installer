@@ -12,6 +12,8 @@ services:
       - ${CONFIG_FILE}
     environment:
       TIME_ZONE: ${TZ:-UTC}
+      # (the desktop client on the download page: CLIENT_VERSION in config.txt overrides the release's)
+      CLIENT_VERSION: ${CLIENT_VERSION:-${XPAM_CLIENT_VERSION:-5.0.0}}
     volumes:
       - ${CONFIG_DIR}/certs:/opt/jumpserver/data/certs
       - ${VOLUME_DIR}/core/data:/opt/jumpserver/data

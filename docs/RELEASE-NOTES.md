@@ -1,5 +1,10 @@
 # XPAM release notes
 
+## 5.1.28 — the AI assistant starts again
+
+- **Fix:** in 5.1.27 the AI assistant kept restarting: one backported user filter made the API schema it loads at
+  start fail. The filter works the same; the schema builds again.
+
 ## 5.1.27 — upstream security fixes since v5.0.0; remaining gaps closed
 
 - **Upstream security fixes (JumpServer v5.1.0/v5.1.1) backported:** 27 to core and 5 to the console: escaping of

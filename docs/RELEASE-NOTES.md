@@ -1,5 +1,22 @@
 # XPAM release notes
 
+## 5.1.29 — security review fixes
+
+- **High availability:** the file copy between servers accepts only the options XPAM's own sync sends (a peer could
+  otherwise make rsync follow a link out of the data folder). The Redis Sentinel state is saved by the redis user.
+- **Face sign-in:** every user reached the face engine as 127.0.0.1, so the whole company shared one address's
+  connection limit (4); the engine now sees each browser's address.
+- **Just-in-time access:** an access that ended, or that an approver revoked, can no longer be "extended" back into
+  a new access — it is requested again.
+- **Network devices:** NX-OS refuses `;` in passwords (it separates commands), FortiGate checks the current password
+  it sends; JIT custom device commands refuse values with a line break.
+- **Keys:** `xpamctl rotate-secret-key` skips secrets kept in a vault instead of stopping on them, and refuses (without
+  a data key) while vault copies are encrypted with SECRET_KEY; data key rotation also re-encrypts a vault mirror when
+  OpenBao is the main vault. Clock unlock tokens must match every licence binding they name.
+- **Smaller:** account import with "update" keeps the account's user name; the remote browser's Chromium and VNC do
+  not receive BROWSER_KEY; installer Docker settings are passed as data; the unused Loki/Promtail compose file (it
+  mounted the Docker socket) is removed. The download page's desktop client version comes from the release.
+
 ## 5.1.28 — the AI assistant starts again
 
 - **Fix:** in 5.1.27 the AI assistant kept restarting: one backported user filter made the API schema it loads at

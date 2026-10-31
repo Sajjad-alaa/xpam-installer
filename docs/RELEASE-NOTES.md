@@ -1,5 +1,18 @@
 # XPAM release notes
 
+## 5.1.30 — faster, lighter
+
+- **Less memory on mid-size servers:** servers with fewer than 8 CPUs or less than 15 GB now run as "medium":
+  2 web workers instead of 4, one background worker for every queue, and no task monitor (Flower) — about a
+  third less memory for XPAM's containers. Large servers are unchanged; `SERVER_SIZE=large` in config.txt keeps
+  the previous services. The console shows the Task monitor button only where Flower runs.
+- **Faster lists:** the user list is ~38% faster and the account list ~16% (empty encrypted values are no
+  longer run through a needless signature check, the account list no longer reads or decrypts the passwords it
+  never shows, the JIT MFA check no longer asks Redis for every user, and the organization check of every API
+  request uses the role cache).
+- **Smaller downloads:** the console and workspace files are compressed once at the strongest level: ~14% less
+  to download on the first visit.
+
 ## 5.1.29 — security review fixes
 
 - **High availability:** the file copy between servers accepts only the options XPAM's own sync sends (a peer could

@@ -99,22 +99,22 @@ function set_docker_config() {
     echo -e "{\n}" >>${DOCKER_CONFIG}
   fi
 
-"${docker_command}" -c "import json
-key = '${key}'
-value = '${value}'
+  # (the values reach Python as arguments, never as part of its code)
+  "${docker_command}" -c '
+import json, sys
+key, value, filepath = sys.argv[1], sys.argv[2], sys.argv[3]
 try:
     value = json.loads(value)
 except:
     pass
-filepath = \"${DOCKER_CONFIG}\"
-f = open(filepath);
-config = json.load(f);
+f = open(filepath)
+config = json.load(f)
 config[key] = value
-f.close();
-f = open(filepath, 'w');
-json.dump(config, f, indent=True, sort_keys=True);
 f.close()
-"
+f = open(filepath, "w")
+json.dump(config, f, indent=True, sort_keys=True)
+f.close()
+' "${key}" "${value}" "${DOCKER_CONFIG}"
 }
 
 function config_docker() {

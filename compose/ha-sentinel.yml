@@ -25,7 +25,7 @@ services:
         fi &&
         printf 'requirepass "%s"\nsentinel sentinel-pass "%s"\nsentinel auth-pass xpam "%s"\n' "$$REDIS_PASSWORD" "$$REDIS_PASSWORD" "$$REDIS_PASSWORD" >> "$$f" &&
         chown -R redis:redis /tmp/xpam-tls /data/sentinel "$$f" &&
-        { ( while sleep 5; do grep -v -e '^requirepass ' -e '^masterauth ' -e '^user ' -e '^sentinel auth-pass ' -e '^sentinel sentinel-pass ' "$$f" > "$$s.new" 2>/dev/null && mv -f "$$s.new" "$$s"; done ) & } &&
+        { setpriv --reuid redis --regid redis --clear-groups sh -c 'while sleep 5; do grep -v -e "^requirepass " -e "^masterauth " -e "^user " -e "^sentinel auth-pass " -e "^sentinel sentinel-pass " "$$1" > "$$2.new" 2>/dev/null && mv -f "$$2.new" "$$2"; done' sh "$$f" "$$s" & } &&
         exec docker-entrypoint.sh redis-server "$$f" --sentinel
     environment:
       TZ: ${TZ:-UTC}

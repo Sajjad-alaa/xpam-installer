@@ -23,7 +23,14 @@ while [ $# -gt 0 ] && [ "$1" != . ]; do
     --partial | --timeout=[0-9]*) ;;
     --*) deny ;;
     -*[!A-Za-z.]*) deny ;;  # (short flags only, e.g. -logDtpre.iLsfxCIvu: no attached paths)
-    -?*) ;;
+    -?*)
+      # only the options the HA agent's rsync -a [--update] sends; what follows the e is the client's protocol
+      # capabilities, not options. (e.g. -K would follow a link already in the folder out of it, -L copy through it)
+      flags=${1#-}
+      case "${flags%%e*}" in
+        *[!ulogDtpr]*) deny ;;
+      esac
+      ;;
     *) deny ;;
   esac
   opts="${opts} $1"

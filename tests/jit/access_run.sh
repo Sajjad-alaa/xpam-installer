@@ -28,6 +28,9 @@ EOF
 . "$W/env"
 ROOT_PASSWORD="R-$(rnd | cut -c1-20)"
 TARGET_PG_PASSWORD="T-$(rnd | cut -c1-20)"
+docker image inspect xpam-test/linuxhost:latest >/dev/null 2>&1 \
+  || docker build -q -t xpam-test/linuxhost:latest -f "$HERE/linuxhost.Dockerfile" "$HERE" >/dev/null \
+  || { echo "could not build xpam-test/linuxhost"; exit 1; }
 docker network create $NET >/dev/null
 docker run -d --name accpg --network $NET -e POSTGRES_PASSWORD="$DB_PASSWORD" -e POSTGRES_DB=jumpserver postgres:16.15-bookworm >/dev/null
 docker run -d --name accredis --network $NET redis:7.4.10-bookworm redis-server --requirepass "$REDIS_PASSWORD" >/dev/null

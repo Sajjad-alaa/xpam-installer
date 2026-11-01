@@ -16,6 +16,13 @@ Registry. Plan about 20 minutes.
 
 Use a clean server. The installer sets up Docker itself; you do not need to install it first.
 
+**Server size.** XPAM sizes its services to the server (since 5.1.30): below 4 cores or 7 GB it runs as
+*small* (1 web worker), below 8 cores or 15 GB as *medium* (2 web workers), otherwise as *large* (4 web
+workers, a background worker per job queue and the task monitor). Small and medium use one background worker
+for every queue and no task monitor, so the Task monitor button is hidden. To choose, set
+`SERVER_SIZE=small|medium|large` in `/opt/xpam/config/config.txt` and run `xpamctl restart`. As a guide, a
+4-core / 8 GB server carries about 50 SSH, 10 desktop (RDP) and 3 remote-browser sessions at once.
+
 **Network**
 
 | Port | Direction | Purpose |
@@ -72,6 +79,17 @@ git clone -b xpam https://github.com/Sajjad-alaa/xpam-installer.git /opt/xpam-in
 cd /opt/xpam-installer && ./xpamctl.sh install
 ```
 
+**When the installer repository is private**, the download needs the token too (scope `repo` as well as
+`read:packages`):
+
+```bash
+git clone -b xpam https://<github-user>:<token>@github.com/Sajjad-alaa/xpam-installer.git /opt/xpam-installer
+cd /opt/xpam-installer && XPAM_REGISTRY_USER=<github-user> XPAM_REGISTRY_TOKEN=<token> ./xpamctl.sh install
+```
+
+The token then stays in `/opt/xpam-installer/.git/config`, which `xpamctl upgrade` uses to fetch the next
+installer. Use a token for this server only, so it can be withdrawn on its own.
+
 **Unattended installation** (no questions): set `AUTO_INSTALL=1`, and pass the registry sign-in in
 the environment as `XPAM_REGISTRY_USER` and `XPAM_REGISTRY_TOKEN`. XPAM does not store the token.
 
@@ -100,6 +118,13 @@ the environment as `XPAM_REGISTRY_USER` and `XPAM_REGISTRY_TOKEN`. XPAM does not
 - **Backups.** Schedule `xpamctl backup_db` (it writes to `/data/xpam/db_backup/`) and copy
   `/opt/xpam/config/` somewhere safe. The config holds the secret keys; without them a database
   backup cannot be read.
+- **Session recordings and disk space.** Recordings are kept on this server by default, and desktop
+  (RDP) recordings are large (about 50–200 MB per hour). A full disk stops XPAM. Under System settings →
+  System tasks → Regular clean-up → Session recordings, XPAM keeps 10% of the disk free and can also cap the
+  recordings at a size in GB: the oldest are deleted first (since 5.1.31). "Session log retention days"
+  on the same page deletes them by age (200 days by default). To keep recordings off the server, add an
+  S3/MinIO, SFTP, Azure, OSS or Ceph storage under System settings → Storage → Object Storage and select it
+  for each component under System settings → Terminal → Components (replay storage).
 - **Firewall.** Open only 443, 80, 2222 and 5001 to users.
 - **Desktop client.** Users download it from the "Download" link in the web UI.
 - **Sign-in policy.** Passwords need 12 characters (14 for administrators) with upper case, lower

@@ -1,5 +1,14 @@
 # XPAM release notes
 
+## 5.1.32 — account automations work again
+
+- **Fix:** since 5.1.27 every automation that uses an account — just-in-time accounts (create and remove), account
+  push, password change, account verification and discovery — failed before reaching the asset ("type object
+  'Account' has no attribute 'escape_jinja2_syntax'"): a helper moved by an upstream security backport was still
+  called at its old place. Just-in-time accounts left on assets by failed removals are removed by the next retry.
+- **Installer:** new installations ask whether to enable face recognition (default yes), and `xpamctl start` /
+  `restart` download images the server does not have yet (a service switched on after the installation).
+
 ## 5.1.31 — recordings cannot fill the disk
 
 - **Session recordings stay within a disk limit:** System settings → System tasks → Regular clean-up → Session

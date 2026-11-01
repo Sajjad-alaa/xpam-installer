@@ -121,7 +121,21 @@ function is_jdmc_target() {
   [[ "${target}" == "jdmc" ]]
 }
 
+function ensure_images_present() {
+  # XPAM: a service switched on after the install (face recognition, for example) has no image on this server yet,
+  # and the containers never download one themselves: fetch what is missing (nothing when all are here)
+  local target
+  while IFS=$'\t' read -r _ target _; do
+    [[ -z "${target}" ]] || docker image inspect "${target}" >/dev/null 2>&1 || {
+      echo "Not on this server yet: ${target} — downloading the missing images"
+      pull_images
+      return
+    }
+  done < <(INCLUDE_PANDA_IMAGE=0 get_offline_image_manifest)
+}
+
 function start() {
+  ensure_images_present || return 1
   set_openbao || return 1
   configure_jdmc || return 1
   gen_safe_config >/dev/null
@@ -201,6 +215,7 @@ function restart() {
   echo -e "\n"
 
   if [[ -n "${target}" && "${target}" != "ignore_db" ]]; then
+    ensure_images_present || return 1
     ${EXE} up -d "${target}" || return 1
     remove_stopped_openbao_init_container
     return

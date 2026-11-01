@@ -571,7 +571,8 @@ for the MFA part, and a camera in the user's browser (HTTPS is required for the 
 **Switch it on**
 
 1. New installations ask for it (default yes). Otherwise, in `config.txt` set `FACE_RECOGNITION_ENABLED=true`,
-   then run `xpamctl restart` (all of XPAM: see step 2). The installer starts
+   then run `xpamctl restart` (all of XPAM: see step 2). The face recognition image is downloaded then if the
+   server does not have it yet (with the same GitHub token as at installation: the installer asks for it). The installer starts
    `xpam_facelive` (an XPAM image, nothing is downloaded at run time), and the gateway routes
    `/ws/facelive/` to it. `FACELIVE_ENABLED=0` keeps the container off even then; `=1` starts it without the
    core setting.

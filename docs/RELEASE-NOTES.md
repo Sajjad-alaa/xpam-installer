@@ -1,5 +1,13 @@
 # XPAM release notes
 
+## 5.1.31 — recordings cannot fill the disk
+
+- **Session recordings stay within a disk limit:** System settings → System tasks → Regular clean-up → Session
+  recordings. "Keep disk free" (default 10%) and an optional size limit in GB: every 10 minutes the oldest
+  recordings kept on this server are deleted until both hold — a full disk stops XPAM. Recordings of running
+  sessions or of the last 10 minutes are kept; a session whose recording was deleted says so in its activity log
+  and no longer offers playback. Recordings in object storage (S3, SFTP...) are not affected.
+
 ## 5.1.30 — faster, lighter
 
 - **Less memory on mid-size servers:** servers with fewer than 8 CPUs or less than 15 GB now run as "medium":

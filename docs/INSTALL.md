@@ -61,6 +61,7 @@ What happens, in order:
    | Redis | built-in | you have your own Redis |
    | External ports | 80 / 443 / 2222 | those ports are taken |
    | Language, time zone | English, the server's time zone | |
+   | Face recognition | yes | you do not want face sign-in (it can be switched on later, see section 12) |
 
 3. **Sign-in to the image registry.** The XPAM images are private, so the installer asks for a
    GitHub user name and then for a password: paste the `read:packages` token there (nothing is
@@ -569,7 +570,8 @@ for the MFA part, and a camera in the user's browser (HTTPS is required for the 
 
 **Switch it on**
 
-1. In `config.txt` set `FACE_RECOGNITION_ENABLED=true`, then run `xpamctl start`. The installer starts
+1. New installations ask for it (default yes). Otherwise, in `config.txt` set `FACE_RECOGNITION_ENABLED=true`,
+   then run `xpamctl restart` (all of XPAM: see step 2). The installer starts
    `xpam_facelive` (an XPAM image, nothing is downloaded at run time), and the gateway routes
    `/ws/facelive/` to it. `FACELIVE_ENABLED=0` keeps the container off even then; `=1` starts it without the
    core setting.

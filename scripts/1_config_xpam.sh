@@ -262,6 +262,14 @@ function set_others() {
   read_from_input timezone "$(gettext 'Please enter timezone')" "" "${timezone}"
   set_config TZ "${timezone}"
 
+  # XPAM: face sign-in and face checks on assets (the facelive container); later: FACE_RECOGNITION_ENABLED in
+  # config.txt, then xpamctl restart
+  if [[ -z "$(get_config FACE_RECOGNITION_ENABLED)" ]]; then
+    face="y"
+    read_from_input face "Enable face recognition (face sign-in and face checks on assets)?" "y/n" "${face}"
+    if [[ "${face}" == "y" ]]; then set_config FACE_RECOGNITION_ENABLED true; else set_config FACE_RECOGNITION_ENABLED false; fi
+  fi
+
   host_ip=$(get_host_ip)
   set_config HOST_IP "${host_ip}"
 }

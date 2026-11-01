@@ -1,5 +1,14 @@
 # XPAM release notes
 
+## 5.1.33 — every console label in words; current desktop client
+
+- **Fix:** 132 labels of the console showed their internal name instead of text ("LogoIndex", "AccentColor" on the
+  Interface page, the log shipment page, report and page titles, sign-in method summaries...). All have their
+  English text now.
+- **Fix:** the download page offered desktop client 5.0.0; it offers 5.1.28 (Windows, macOS, Linux), the current
+  release.
+- **Tests:** the JIT functional tests build their Linux SSH target when it is missing.
+
 ## 5.1.32 — account automations work again
 
 - **Fix:** since 5.1.27 every automation that uses an account — just-in-time accounts (create and remove), account

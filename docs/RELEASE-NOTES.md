@@ -1,5 +1,14 @@
 # XPAM release notes
 
+## 5.1.34 — the desktop client matches; logos that always show
+
+- **Fix:** the desktop client warned "The client version does not match… use the v5.0.0 client": the server
+  answered its version check with upstream's list, which ended at 5.0.0. The client the download page offers is
+  now part of it.
+- **Fix:** a damaged logo image showed as a broken picture in the console. Uploads must now be complete images of
+  at least 16×16 pixels, and a damaged logo already stored is replaced by the default one.
+- **Desktop client and workspace:** messages say XPAM instead of JumpServer (in the next client build).
+
 ## 5.1.33 — every console label in words; current desktop client
 
 - **Fix:** 132 labels of the console showed their internal name instead of text ("LogoIndex", "AccentColor" on the

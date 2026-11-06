@@ -1,5 +1,24 @@
 # XPAM release notes
 
+## 5.1.35 — reliability and safety fixes across all components
+
+- **Fix:** accounts that read their password from an existing vault could not be saved (error 500).
+- **Fix:** when the disk was full of other data, the recording clean-up deleted every old recording; it now only
+  deletes when that frees enough space (a warning otherwise).
+- **Fix:** log shipment keeps sending after a database restart; UDP destinations always receive logs.
+- **Console:** the Protection and Vault status cards show again; HA, Interface and Log shipment are super-admin
+  only; 25 error messages show text instead of their internal name; plain choice columns are no longer empty.
+- **Web database connector:** host names with "_" and SQL Server host\INSTANCE, database names in any language;
+  CSV export keeps negative numbers.
+- **AI:** waits for core while it starts instead of restarting again and again.
+- **Face recognition:** frame size limits, attempt limit, clear message when the check has expired, reconnects
+  to core by itself.
+- **Installer:** `xpamctl restart` checks the images before stopping anything (a missing image no longer leaves
+  XPAM down); upgrades load the images before the database backup; offline packages contain every optional
+  image; a service switched off is removed; the AI health pages are no longer public.
+- **Desktop client (next client build):** adding a site keeps you signed in, new Windows versions replace the old
+  one, sign-in links work on Linux.
+
 ## 5.1.34 — the desktop client matches; logos that always show
 
 - **Fix:** the desktop client warned "The client version does not match… use the v5.0.0 client": the server

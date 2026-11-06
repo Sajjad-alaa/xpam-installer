@@ -285,6 +285,26 @@ function stop_disabled_video_worker() {
   fi
 }
 
+# XPAM: an optional service that was switched off keeps running after a restart (compose down/up only touch the
+# services of the current file list): remove its container, as stop_disabled_video_worker does
+function stop_disabled_optional_services() {
+  local pair service container enabled container_id
+  enabled=" $(get_enabled_services) "
+  for pair in koko:xpam_secureconnection chen:xpam_webconnector kael:xpam_ai browser:xpam_browser facelive:xpam_facelive; do
+    service=${pair%%:*}
+    container=${pair#*:}
+    [[ "${enabled}" == *" ${service} "* ]] && continue
+    container_id=$(docker ps -a -q \
+      --filter "name=^/${container}\$" \
+      --filter "label=com.docker.compose.project=${COMPOSE_PROJECT_NAME:-xpam}" \
+      --filter "label=com.docker.compose.service=${service}") || return 1
+    if [[ -n "${container_id}" ]]; then
+      echo "${service} is switched off: removing ${container}"
+      docker container rm -f "${container_id}" >/dev/null || return 1
+    fi
+  done
+}
+
 function prepare_video_worker_volume() {
   local volume_dir data_dir image user_spec owner
   if ! video_worker_can_start; then
@@ -542,7 +562,7 @@ function show_xpam_version() {
   local name image id
 
   echo "XPAM $(get_xpam_version)"
-  for name in core gateway web workspace secureconnection webconnector ai; do
+  for name in core gateway web workspace secureconnection webconnector ai facelive browser postgresql-ha; do
     image="$(get_xpam_namespace)/${name}:$(get_xpam_version)"
     id=$(docker image inspect -f '{{.Id}}' "${image}" 2>/dev/null | cut -c8-19)
     printf '  %-18s %s\n' "${name}" "${id:-not downloaded}"

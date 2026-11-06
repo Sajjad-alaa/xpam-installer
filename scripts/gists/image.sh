@@ -198,7 +198,7 @@ function get_image_mappings() {
   if [[ -n "${db_image}" ]]; then
     emit_image_mapping "${db_image}" "${db_image}"
   fi
-  if is_ha_enabled; then
+  if is_ha_enabled || [[ "${INCLUDE_HA_IMAGES:-}" == "1" ]]; then
     emit_image_mapping "gcr.io/etcd-development/etcd:v3.5.21" "gcr.io/etcd-development/etcd:v3.5.21"
     # XPAM high availability: PostgreSQL under Patroni is an XPAM image
     if [[ -n "${xpam_registry}" ]]; then

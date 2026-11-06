@@ -135,11 +135,14 @@ function ensure_images_present() {
 }
 
 function start() {
-  ensure_images_present || return 1
+  # A failed download must not leave the server down: start what is already here (a service whose image is
+  # missing is reported by compose; the others come up)
+  ensure_images_present || echo_yellow "Some images could not be downloaded: starting the services whose images are present"
   set_openbao || return 1
   configure_jdmc || return 1
   gen_safe_config >/dev/null
   stop_disabled_video_worker || return 1
+  stop_disabled_optional_services || return 1
   prepare_video_worker_volume || return 1
   prepare_facelive_volume || return 1
   retire_legacy_project || return 1
@@ -211,11 +214,15 @@ function restart() {
     restart_jdmc
     return
   fi
+  # Images first: when a download fails nothing has been stopped yet
+  ensure_images_present || {
+    log_error "Some images could not be downloaded: nothing was stopped"
+    return 1
+  }
   stop || return 1
   echo -e "\n"
 
   if [[ -n "${target}" && "${target}" != "ignore_db" ]]; then
-    ensure_images_present || return 1
     ${EXE} up -d "${target}" || return 1
     remove_stopped_openbao_init_container
     return

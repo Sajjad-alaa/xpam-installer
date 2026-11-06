@@ -68,6 +68,9 @@ folder. `XPAM_CONFIG_DIR` overrides the configuration folder.
 | secureconnection (SSH, RDP, remote desktop) | `xpam_secureconnection` | `xpam/secureconnection` | `/secureconnection/` |
 | webconnector (database web client) | `xpam_webconnector` | `xpam/webconnector` | `/webconnector/` |
 | ai (assistant) | `xpam_ai` | `xpam/ai` | `/ai/` |
+| facelive (face recognition, optional) | `xpam_facelive` | `xpam/facelive` | not published |
+| browser (remote browser, optional) | `xpam_browser` | `xpam/browser` | not published |
+| postgresql-ha (high availability only) | `xpam_postgresql` | `xpam/postgresql-ha` | not published |
 | database, cache | `xpam_postgresql`, `xpam_redis` | `postgres`, `redis` | not published |
 
 Each part runs in its own container. Stopping or replacing one does not affect the others: the
@@ -78,7 +81,7 @@ again within about ten seconds of its return.
 
 The installer downloads `<registry>/<name>:<version>` and refreshes it on every install and
 upgrade, so a server never keeps running an older build with the same tag. The defaults are in
-`static.env`: registry `ghcr.io/sajjad-alaa/xpam`, version `v5.1.17`.
+`static.env`: registry `ghcr.io/sajjad-alaa/xpam`, version `XPAM_DEFAULT_VERSION`.
 
 `config.txt` can override this:
 

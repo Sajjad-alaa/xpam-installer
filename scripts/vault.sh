@@ -292,7 +292,7 @@ cmd_connect_run() {
   fi
   docker ps --format '{{.Names}}' | grep -qx xpam_core || { log_error "XPAM must be running (xpamctl start)"; return 1; }
   local unsupported
-  unsupported=$(docker ps --format '{{.Names}}' | grep -E '^xpam_(video_worker|nec|magnus|razor|xrdp)$' | tr '\n' ' ')
+  unsupported=$(docker ps --format '{{.Names}}' | grep -E '^xpam_(video-worker|nec|magnus|razor|xrdp)$' | tr '\n' ' ')
   if [[ -n "${unsupported}" ]]; then
     log_error "These components cannot take their secrets from Vault yet: ${unsupported}(disable them first)"; return 1
   fi

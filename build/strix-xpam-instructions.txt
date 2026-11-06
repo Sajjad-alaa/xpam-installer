@@ -1,0 +1,40 @@
+XPAM is a fork of JumpServer v5 (a privileged-access / bastion product). The target is the
+Django backend source in ./xpam-core (apps/* are Django apps). This is a white-box source
+review — read the code, do not assume a running server.
+
+Focus, in priority order:
+
+1. Authorization / privilege escalation
+   - RBAC: rbac/ app, RoleBinding, BuiltinRole, system vs org scope. Look for places a non-admin
+     could gain system_admin or org_admin, or act outside their member orgs.
+   - Org isolation (orgs/ app, current_org, tmp_to_org): any API that leaks or writes data across
+     organizations, or where org is taken from user-controlled input without a membership check.
+   - Object-level permission bypass in DRF viewsets (check_object_permissions missing, queryset not
+     scoped to the user/org).
+
+2. Authentication & MFA
+   - authentication/ app: MFA flows (OTP, Face, Passkey), the face-recognition engine callbacks
+     (authentication/api/face.py), SSO/OAuth backends. Look for auth bypass, replay, confirmation
+     tokens that are predictable or not bound to the session, and face/MFA lockout bypass.
+   - Login-confirmation tickets and any endpoint reachable without authentication.
+
+3. Ticket / approval flows (tickets/ app)
+   - Self-approval: can an applicant approve their own access request? Any way to force a ticket
+     open without a valid approver.
+
+4. Injection & unsafe sinks
+   - SQL (raw(), extra(), .raw, f-string SQL), command execution (subprocess, os.system, ansible
+     runner inputs), SSRF (outbound requests built from user input), path traversal, template
+     injection, unsafe deserialization (pickle, yaml.load).
+
+5. Secrets & disclosure
+   - Hardcoded secrets/keys, secrets written to logs (SMS/one-time codes), version/info disclosed
+     to anonymous users, overly verbose errors.
+
+6. WebSocket / CSRF
+   - WebSocket origin checks (jumpserver/routing.py), CSRF on state-changing GET endpoints.
+
+For each finding give: file path and line, the exact vulnerable code, who can reach it (anonymous /
+any authenticated user / org member / admin), a concrete exploitation path, and a fix. Prefer a
+small number of high-confidence, exploitable findings over a long list of theoretical ones. Ignore
+vendored/third-party code and generated migrations unless the bug is XPAM's own.

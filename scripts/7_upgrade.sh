@@ -504,14 +504,15 @@ function main() {
     fi
   fi
 
-  echo_yellow "\n3. $(gettext 'Backup database')"
-  backup_db
-
-  echo_yellow "\n4. $(gettext 'Loading Docker Image')"
+  # XPAM: the images come first: the backup may have to start the database with the new tag (stopped server, HA standby)
+  echo_yellow "\n3. $(gettext 'Loading Docker Image')"
   if ! bash "${BASE_DIR}/3_load_images.sh"; then
     log_error "$(gettext 'Failed to load Docker images')"
     exit 1
   fi
+
+  echo_yellow "\n4. $(gettext 'Backup database')"
+  backup_db
 
   echo_yellow "\n5. $(gettext 'Update Configuration File')"
   UPGRADE_CONFIG_CHANGED=1

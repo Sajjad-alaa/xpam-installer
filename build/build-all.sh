@@ -61,7 +61,7 @@ build_secureconnection() {
       cp -r /ro /src && cd /src
       go test ./pkg/httpd/ ./pkg/lion/... ./pkg/common/ ./pkg/config/ ./pkg/sshd/ >/dev/null
       KEY=$(head -c 100 /dev/urandom | base64 | tr -dc A-Za-z0-9 | head -c 32)
-      go build -trimpath -ldflags "-X main.Version=v5.1.34-xpam -X github.com/jumpserver/koko/pkg/config.CipherKey=$KEY -w -s" -o /out/koko ./cmd/koko/'
+      go build -trimpath -ldflags "-X main.Version='"$TAG"'-xpam -X github.com/jumpserver/koko/pkg/config.CipherKey=$KEY -w -s" -o /out/koko ./cmd/koko/'
   say "secureconnection: database client"
   [[ -d "$CACHE/usql-src/.git" ]] || git clone -q "$USQL_REPO" "$CACHE/usql-src"
   git -C "$CACHE/usql-src" checkout -q "$USQL_COMMIT"
@@ -105,7 +105,7 @@ build_ai() {
     -v "$CACHE/gomod:/go/pkg/mod" -e CGO_ENABLED=0 -e GOFLAGS=-buildvcs=false "$GO_IMAGE" sh -ec '
       cp -r /ro /src && cd /src
       go test ./... >/dev/null
-      go build -trimpath -ldflags "-s -w -X main.Version=v5.1.34-xpam" -o /out/kael ./cmd/kael'
+      go build -trimpath -ldflags "-s -w -X main.Version='"$TAG"'-xpam" -o /out/kael ./cmd/kael'
   say "ai: image"
   docker build -q --build-arg APT_REFRESH="$APT_REFRESH" -f "$HERE/ai.Dockerfile" -t "$NS/ai:$TAG" "$CACHE/ai-out"
 }

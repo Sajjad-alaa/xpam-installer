@@ -104,10 +104,14 @@ list_targets | xargs -0 -P "$JOBS" -I{} sh -c '
   fi
 ' _ {}
 
-# Drop bytecode caches so only the .so (or a kept .py) is importable, and the setuptools build/
-# temp dir that cythonize -i leaves in the working directory (duplicate .so copies, build bloat).
+# Drop bytecode caches so only the .so (or a kept .py) is importable, and every setuptools build/
+# directory that cythonize -i leaves behind (duplicate .so copies, build bloat). Sub-packages that
+# carry their own setup.py (vendored vault SDKs, demos, endpoint applets) get a nested build/ too,
+# so remove any directory named build that holds setuptools output (lib.*/temp.*), at any depth.
 find . -name '__pycache__' -type d -prune -exec rm -rf {} + 2>/dev/null || true
-rm -rf "$ROOT/build"
+find . -type d -name build | while IFS= read -r d; do
+  if ls -d "$d"/lib.* >/dev/null 2>&1 || ls -d "$d"/temp.* >/dev/null 2>&1; then rm -rf "$d"; fi
+done
 
 # Strip debug symbols from the compiled modules (cuts their size by ~70%); harmless if strip absent.
 if command -v strip >/dev/null 2>&1; then

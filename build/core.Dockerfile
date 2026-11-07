@@ -38,5 +38,25 @@ RUN echo "${XPAM_BUILD_ID}" > /opt/jumpserver/BUILD_ID
 # Compile the Python sources once at build time: faster first start, and the interpreter's
 # warnings about old-style escape sequences do not show up in installation and upgrade logs
 RUN /opt/py3/bin/python -W ignore -m compileall -q -j 0 /opt/jumpserver/apps >/dev/null 2>&1 || true
+# Compile the Python application to native extension modules (.so) so the image ships no readable
+# source for the proprietary code (licence, protection, xpack and the XPAM overlay). The build
+# toolchain is installed and removed inside one layer so it leaves nothing behind; files Cython
+# cannot compile, package markers, migrations and settings are kept as source (see compile_py.sh).
+# Toggle with --build-arg XPAM_COMPILE=0 to ship readable source (e.g. for debugging a build).
+ARG XPAM_COMPILE=1
+COPY --from=xpamscripts compile_py.sh /tmp/compile_py.sh
+RUN set -e; \
+    if [ "$XPAM_COMPILE" = "1" ]; then \
+      find /etc/apt -type f \( -name '*.sources' -o -name '*.list' \) -exec \
+        sed -i -E 's#https?://mirrors\.(cloud\.)?aliyun(cs)?\.com#http://deb.debian.org#g' {} + 2>/dev/null || true; \
+      apt-get update >/dev/null && apt-get -y --no-install-recommends install gcc binutils >/dev/null; \
+      /usr/local/bin/uv pip install --python /opt/py3/bin/python -q Cython setuptools; \
+      JOBS="$(nproc)" PYBIN=/opt/py3/bin/python sh /tmp/compile_py.sh /opt/jumpserver/apps; \
+      /usr/local/bin/uv pip uninstall --python /opt/py3/bin/python Cython >/dev/null 2>&1 || true; \
+      apt-get -y purge gcc binutils >/dev/null && apt-get -y autoremove >/dev/null; \
+      apt-get clean && rm -rf /var/lib/apt/lists/*; \
+      /opt/py3/bin/python -W ignore -m compileall -q -j 0 /opt/jumpserver/apps >/dev/null 2>&1 || true; \
+    fi; \
+    rm -f /tmp/compile_py.sh
 # The health check script under the name the worker container uses
 RUN ln -sf check_celery.sh /opt/jumpserver/utils/check_worker.sh

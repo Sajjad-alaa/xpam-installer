@@ -23,8 +23,9 @@ say() { printf '\n==> %s\n' "$*"; }
 
 build_core() {
   say "core"
-  docker build -q --build-arg APT_REFRESH="$APT_REFRESH" \
+  docker build -q --build-arg APT_REFRESH="$APT_REFRESH" --build-arg XPAM_COMPILE="${XPAM_COMPILE:-1}" \
     --build-arg XPAM_BUILD_ID="$TAG-$(git -C "$SRC/xpam-core" rev-parse --short HEAD 2>/dev/null || echo x)-$(date +%s)" \
+    --build-context xpamscripts="$HERE" \
     -f "$HERE/core.Dockerfile" -t "$NS/core:$TAG" "$SRC/xpam-core"
 }
 
@@ -90,7 +91,8 @@ build_webconnector() {
 
 build_browser() {
   say "browser"
-  docker build -q --build-arg APT_REFRESH="$APT_REFRESH" -f "$HERE/browser.Dockerfile" -t "$NS/browser:$TAG" "$SRC/xpam-secureconnection/browser"
+  docker build -q --build-arg APT_REFRESH="$APT_REFRESH" --build-arg XPAM_COMPILE="${XPAM_COMPILE:-1}" \
+    -f "$HERE/browser.Dockerfile" -t "$NS/browser:$TAG" "$SRC/xpam-secureconnection/browser"
 }
 
 build_postgresql-ha() {
@@ -113,7 +115,8 @@ build_ai() {
 build_facelive() {
   say "facelive"
   # the models are downloaded inside the build and checked against pinned SHA-256 values
-  docker build -q --build-arg APT_REFRESH="$APT_REFRESH" -f "$HERE/facelive.Dockerfile" -t "$NS/facelive:$TAG" "$SRC/xpam-facelive"
+  docker build -q --build-arg APT_REFRESH="$APT_REFRESH" --build-arg XPAM_COMPILE="${XPAM_COMPILE:-1}" \
+    --build-context xpamscripts="$HERE" -f "$HERE/facelive.Dockerfile" -t "$NS/facelive:$TAG" "$SRC/xpam-facelive"
 }
 
 targets=("$@"); [[ ${#targets[@]} -gt 0 ]] || targets=(core gateway web workspace secureconnection webconnector ai facelive browser postgresql-ha)

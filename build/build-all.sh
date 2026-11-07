@@ -92,7 +92,7 @@ build_webconnector() {
 build_browser() {
   say "browser"
   docker build -q --build-arg APT_REFRESH="$APT_REFRESH" --build-arg XPAM_COMPILE="${XPAM_COMPILE:-1}" \
-    -f "$HERE/browser.Dockerfile" -t "$NS/browser:$TAG" "$SRC/xpam-secureconnection/browser"
+    --build-context xpamscripts="$HERE" -f "$HERE/browser.Dockerfile" -t "$NS/browser:$TAG" "$SRC/xpam-secureconnection/browser"
 }
 
 build_postgresql-ha() {

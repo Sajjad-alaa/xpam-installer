@@ -19,13 +19,14 @@ COPY tools ./tools
 # and __main__.py stay as source so `python -m facelive` still works. --build-arg XPAM_COMPILE=0 skips it.
 ARG XPAM_COMPILE=1
 COPY --from=xpamscripts compile_py.sh /tmp/compile_py.sh
+COPY --from=xpamscripts strip_docstrings.py /tmp/strip_docstrings.py
 RUN if [ "$XPAM_COMPILE" = "1" ]; then set -e; \
       apt-get update >/dev/null \
       && apt-get -y --no-install-recommends install gcc binutils libc6-dev >/dev/null; \
       /opt/venv/bin/pip install -q --retries 10 --timeout 180 Cython setuptools; \
       JOBS="$(nproc)" PYBIN=/opt/venv/bin/python sh /tmp/compile_py.sh /opt/facelive/facelive; \
       /opt/venv/bin/pip uninstall -y -q Cython >/dev/null 2>&1 || true; \
-    fi; rm -f /tmp/compile_py.sh
+    fi; rm -f /tmp/compile_py.sh /tmp/strip_docstrings.py
 RUN /opt/venv/bin/python tools/fetch_models.py /opt/facelive/models
 
 # --- runtime stage

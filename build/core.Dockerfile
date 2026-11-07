@@ -45,6 +45,7 @@ RUN /opt/py3/bin/python -W ignore -m compileall -q -j 0 /opt/jumpserver/apps >/d
 # Toggle with --build-arg XPAM_COMPILE=0 to ship readable source (e.g. for debugging a build).
 ARG XPAM_COMPILE=1
 COPY --from=xpamscripts compile_py.sh /tmp/compile_py.sh
+COPY --from=xpamscripts strip_docstrings.py /tmp/strip_docstrings.py
 RUN set -e; \
     if [ "$XPAM_COMPILE" = "1" ]; then \
       find /etc/apt -type f \( -name '*.sources' -o -name '*.list' \) -exec \
@@ -57,6 +58,6 @@ RUN set -e; \
       apt-get clean && rm -rf /var/lib/apt/lists/*; \
       /opt/py3/bin/python -W ignore -m compileall -q -j 0 /opt/jumpserver/apps >/dev/null 2>&1 || true; \
     fi; \
-    rm -f /tmp/compile_py.sh
+    rm -f /tmp/compile_py.sh /tmp/strip_docstrings.py
 # The health check script under the name the worker container uses
 RUN ln -sf check_celery.sh /opt/jumpserver/utils/check_worker.sh

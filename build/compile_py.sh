@@ -22,6 +22,14 @@ PYBIN=${PYBIN:-/opt/py3/bin/python}
 CYTHONIZE=${CYTHONIZE:-${PYBIN%/python}/cythonize}
 JOBS=${JOBS:-$(nproc 2>/dev/null || echo 4)}
 
+# Build the C extensions optimized (-O2) and with exploit-mitigation hardening: stack canaries,
+# fortified libc calls, and full/immediate RELRO on the shared object. These harden the native code
+# against memory-corruption bugs at negligible runtime cost; no application safety check is disabled
+# (we deliberately do NOT pass Cython's boundscheck/nonecheck-off "fast" directives, which would
+# trade memory/None safety for speed). setuptools honours CFLAGS/LDFLAGS when building each module.
+export CFLAGS="${CFLAGS:-} -O2 -fstack-protector-strong -U_FORTIFY_SOURCE -D_FORTIFY_SOURCE=2 -fPIC"
+export LDFLAGS="${LDFLAGS:-} -Wl,-z,relro,-z,now"
+
 cd "$ROOT"
 
 list_targets() {
@@ -42,6 +50,19 @@ list_targets() {
 
 TOTAL=$(list_targets | tr -d -c '\0' | wc -c)
 echo "compile_py: $TOTAL modules to compile under $ROOT (jobs=$JOBS)"
+
+# Hardening: remove docstrings from the modules about to be compiled. Cython embeds docstrings into
+# the .so otherwise, and for this code they describe the licence/protection algorithm in plain prose.
+# Function/class names still remain (Python needs them), but the explanatory text no longer ships.
+# STRIP_DOCSTRINGS=0 disables it. The helper sits next to this script.
+STRIP_DOCSTRINGS=${STRIP_DOCSTRINGS:-1}
+SELF_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+DS_SCRIPT=${STRIP_DOCSTRINGS_SCRIPT:-$SELF_DIR/strip_docstrings.py}
+if [ "$STRIP_DOCSTRINGS" = "1" ] && [ -f "$DS_SCRIPT" ]; then
+  list_targets | xargs -0 "$PYBIN" "$DS_SCRIPT" | tail -1
+elif [ "$STRIP_DOCSTRINGS" = "1" ]; then
+  echo "compile_py: WARNING strip_docstrings.py not found at $DS_SCRIPT; docstrings will remain" >&2
+fi
 
 # Cython derives a module's fully-qualified name by walking UP the directory tree while an
 # __init__.py exists. The source root is on sys.path (apps are imported top-level, e.g. "orgs"),

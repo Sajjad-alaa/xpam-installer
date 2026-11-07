@@ -13,13 +13,17 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 WORKDIR /opt/xpam-browser
 COPY server.py .
+COPY --from=xpamscripts strip_docstrings.py /tmp/strip_docstrings.py
 ARG XPAM_COMPILE=1
 RUN if [ "$XPAM_COMPILE" = "1" ]; then set -e; \
+      export CFLAGS="-O2 -fstack-protector-strong -U_FORTIFY_SOURCE -D_FORTIFY_SOURCE=2 -fPIC"; \
+      export LDFLAGS="-Wl,-z,relro,-z,now"; \
+      python3 /tmp/strip_docstrings.py server.py; \
       python3 -m Cython.Build.Cythonize -i -3 server.py; \
       ls server.*.so >/dev/null; \
       strip --strip-unneeded server.*.so; \
       rm -f server.py server.c; \
-    fi
+    fi; rm -f /tmp/strip_docstrings.py
 
 # --- runtime stage
 FROM debian:bookworm-slim

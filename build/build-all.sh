@@ -24,6 +24,7 @@ say() { printf '\n==> %s\n' "$*"; }
 build_core() {
   say "core"
   docker build -q --build-arg APT_REFRESH="$APT_REFRESH" --build-arg XPAM_COMPILE="${XPAM_COMPILE:-1}" \
+    --build-arg XPAM_REPORT_PDF="${XPAM_REPORT_PDF:-1}" \
     --build-arg XPAM_BUILD_ID="$TAG-$(git -C "$SRC/xpam-core" rev-parse --short HEAD 2>/dev/null || echo x)-$(date +%s)" \
     --build-context xpamscripts="$HERE" \
     -f "$HERE/core.Dockerfile" -t "$NS/core:$TAG" "$SRC/xpam-core"

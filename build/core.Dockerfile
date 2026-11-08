@@ -18,6 +18,34 @@ RUN /usr/local/bin/uv pip install --python /opt/py3/bin/python "oracledb==3.4.2"
 # removal, discovery and just-in-time accounts (libs/ansible/modules_utils/network_device.py)
 RUN /usr/local/bin/uv pip install --python /opt/py3/bin/python "netmiko==4.5.0"
 
+# Reports > Export PDF / Send by e-mail (apps/reports/views.py): Playwright renders the report page in
+# its headless Chromium; pdf2image turns the PDF into images for the e-mail (poppler's pdftoppm).
+# Only the libraries the headless shell links are installed (playwright's --with-deps would add a
+# desktop/X stack) plus fonts for Latin, Arabic and CJK text. About 700 MB, mostly Chromium, the
+# Playwright driver and the Mesa/LLVM stack Debian's libgbm1 requires. --build-arg XPAM_REPORT_PDF=0
+# leaves it out (report export then answers with an error, nothing else changes).
+ARG XPAM_REPORT_PDF=1
+ENV PLAYWRIGHT_BROWSERS_PATH=/opt/playwright
+RUN set -e; \
+    if [ "$XPAM_REPORT_PDF" = "1" ]; then \
+      find /etc/apt -type f \( -name '*.sources' -o -name '*.list' \) -exec \
+          sed -i -E 's#https?://mirrors\.(cloud\.)?aliyun(cs)?\.com#http://deb.debian.org#g' {} +; \
+      apt-get update >/dev/null; \
+      DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+        libasound2t64 libatk-bridge2.0-0t64 libatk1.0-0t64 libatspi2.0-0t64 libdbus-1-3 libdrm2 libgbm1 \
+        libnspr4 libnss3 libx11-6 libxcb1 libxcomposite1 libxdamage1 libxext6 libxfixes3 libxi6 \
+        libxkbcommon0 libxrandr2 libxrender1 \
+        fontconfig-config fonts-liberation fonts-dejavu-core fonts-wqy-zenhei poppler-utils >/dev/null; \
+      /usr/local/bin/uv pip install --python /opt/py3/bin/python "playwright==1.64.1"; \
+      /opt/py3/bin/python -m playwright install --only-shell chromium; \
+      shell="$(find "$PLAYWRIGHT_BROWSERS_PATH" -name chrome-headless-shell -type f)"; \
+      if [ -z "$shell" ] || ldd "$shell" | grep -q 'not found'; then \
+        echo "chrome-headless-shell missing or lacks libraries"; ldd "$shell" | grep 'not found'; exit 1; \
+      fi; \
+      rm -rf "$PLAYWRIGHT_BROWSERS_PATH"/ffmpeg-* /root/.cache; \
+      apt-get clean && rm -rf /var/lib/apt/lists/*; \
+    fi
+
 # Security updates for the OS packages inherited from the upstream image (same Debian release)
 # (the upstream image points apt at a mirror that is only reachable inside Alibaba Cloud)
 # a new build date re-runs the system upgrade (otherwise the cached layer keeps old packages). It comes after the
@@ -30,6 +58,14 @@ RUN find /etc/apt -type f \( -name '*.sources' -o -name '*.list' \) -exec \
     && DEBIAN_FRONTEND=noninteractive apt-get -y --no-install-recommends upgrade \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 
+# The application code comes only from this repository: COPY adds and overwrites but never removes,
+# so files XPAM deleted would otherwise linger from the base image (dead code, old templates, even the
+# OIDC helper a security fix replaced). Keep only the data files the repository does not carry: the
+# IP location databases, the leaked-password list and the compiled translations.
+RUN cd /opt/jumpserver/apps \
+    && find . -type f ! -name '*.mo' ! -name 'leak_passwords.db' \
+         ! -name 'GeoLite2-City.mmdb' ! -name 'ipipfree.ipdb' -delete \
+    && find . -mindepth 1 -depth -type d -empty -delete
 COPY apps /opt/jumpserver/apps
 # XPAM: the start script (quick start when nothing changed) and this build's identity
 COPY jms /opt/jumpserver/jms

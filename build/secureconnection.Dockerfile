@@ -14,6 +14,8 @@ RUN find /etc/apt -type f \( -name '*.sources' -o -name '*.list' \) -exec \
     && DEBIAN_FRONTEND=noninteractive apt-get -y --no-install-recommends upgrade \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 COPY koko /opt/koko/koko
+# XPAM is English only: drop the base image's other terminal translations
+RUN find /opt/koko/locale -mindepth 1 -maxdepth 1 -type d ! -name en -exec rm -rf {} + && ls /opt/koko/locale
 # Database command-line client rebuilt from the same source release with a current Go toolchain
 # and current golang.org/x libraries (see build-all.sh)
 COPY --chmod=755 usql /usr/local/bin/usql

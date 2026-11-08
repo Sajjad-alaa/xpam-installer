@@ -46,6 +46,14 @@ RUN set -e; \
       apt-get clean && rm -rf /var/lib/apt/lists/*; \
     fi
 
+# Packages of the base image no XPAM code uses: Alibaba OSS (removed), VMware and HashiCorp SDKs, an old
+# Azure library and a build tool, with the dependencies only they need. pip check fails the build if any
+# remaining package lost a requirement.
+RUN /usr/local/bin/uv pip uninstall --python /opt/py3/bin/python \
+        oss2 aliyun-python-sdk-kms aliyun-python-sdk-core pyvmomi hvac pyhcl msrestazure msrest adal \
+        ansible-builder bindep \
+    && /usr/local/bin/uv pip check --python /opt/py3/bin/python
+
 # Security updates for the OS packages inherited from the upstream image (same Debian release)
 # (the upstream image points apt at a mirror that is only reachable inside Alibaba Cloud)
 # a new build date re-runs the system upgrade (otherwise the cached layer keeps old packages). It comes after the
@@ -61,9 +69,10 @@ RUN find /etc/apt -type f \( -name '*.sources' -o -name '*.list' \) -exec \
 # The application code comes only from this repository: COPY adds and overwrites but never removes,
 # so files XPAM deleted would otherwise linger from the base image (dead code, old templates, even the
 # OIDC helper a security fix replaced). Keep only the data files the repository does not carry: the
-# IP location databases, the leaked-password list and the compiled translations.
+# IP location databases, the leaked-password list and the compiled English translations (XPAM is
+# English only; the base image's other languages are dropped too).
 RUN cd /opt/jumpserver/apps \
-    && find . -type f ! -name '*.mo' ! -name 'leak_passwords.db' \
+    && find . -type f ! -path './i18n/core/en/LC_MESSAGES/*.mo' ! -name 'leak_passwords.db' \
          ! -name 'GeoLite2-City.mmdb' ! -name 'ipipfree.ipdb' -delete \
     && find . -mindepth 1 -depth -type d -empty -delete
 COPY apps /opt/jumpserver/apps

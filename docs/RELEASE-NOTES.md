@@ -1,5 +1,24 @@
 # XPAM release notes
 
+## 5.1.36 — compiled, trimmed to what XPAM uses, English only
+
+- **Compiled images:** the Python code of core, face recognition and the browser service ships as native
+  modules (no readable source), built with exploit mitigations; the web database connector ships without
+  debug information. Behaviour is unchanged (same tests and checks as the source build).
+- **Fix:** Reports > Export PDF and Send by e-mail work again (upstream had dropped the PDF renderer). The core
+  image is about 700 MB larger for it; a build with `XPAM_REPORT_PDF=0` leaves it out.
+- **Fix:** Azure Key Vault: an error while updating a secret's metadata is logged instead of failing.
+- **Fix:** the SMS provider list in the settings no longer fails.
+- **Removed (not used by XPAM):** Alibaba, Tencent, Huawei and CMPP SMS (custom SMS stays); WeCom, DingTalk,
+  FeiShu, Lark and Slack sign-in and messages; UKey; Alibaba OSS, Huawei OBS and Tencent COS recording storage;
+  the Dameng database type; the user agreement and privacy policy pages; Cloud Sync; the JDMC device manager;
+  links to the upstream project in the Help menu and About pages. Existing database columns stay; the built-in
+  Dameng platform is removed when no asset uses it. XPAM's Teams / Slack / Telegram approval messages stay.
+- **English only:** core, the terminal and the database console; the other translations are removed.
+- **Security:** the core image no longer carries code that XPAM deleted (it lingered from the base image,
+  among it an OIDC helper a security fix had replaced); a changed password is no longer kept in memory for the
+  removed JDMC sync; SDKs no code uses are removed.
+
 ## 5.1.35 — reliability and safety fixes across all components
 
 - **Fix:** accounts that read their password from an existing vault could not be saved (error 500).

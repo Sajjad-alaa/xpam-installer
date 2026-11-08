@@ -15,6 +15,13 @@
 #   - jumpserver/settings/*.py     (settings are read and sometimes exec'd dynamically)
 #   - manage.py, asgi.py, wsgi.py  (entry points)
 #   - conftest.py / tests          (not sensitive; excluded from compilation)
+#   - code used as SOURCE outside this Python process (the core; the paths exist nowhere else):
+#       libs/ansible/*                 Ansible ships its modules to targets / the isolated ansible
+#                                      container as source; modules_utils is imported there too
+#       terminal/applets/*             RemoteApp applets, deployed to and run on Windows hosts
+#       accounts/demos/*               SDK sample code shown to users as text
+#       ops/ansible/serialized_ssh.py  copied as the ssh/scp/sftp wrapper script of automations
+#       add_to_leak_password.py        admin command-line script (python add_to_leak_password.py <file>)
 #
 # ROOT_IS_PACKAGE: how the modules are named. 0 (default, the core): <root-dir> itself is on sys.path
 # and its children are imported top-level ("orgs.models"); a stray <root-dir>/__init__.py is moved
@@ -60,6 +67,11 @@ list_targets() {
     ! -name 'tests.py' \
     ! -name 'test_*.py' \
     ! -path '*/tests/*' \
+    ! -path './libs/ansible/*' \
+    ! -path './terminal/applets/*' \
+    ! -path './accounts/demos/*' \
+    ! -path './ops/ansible/serialized_ssh.py' \
+    ! -name 'add_to_leak_password.py' \
     -print0
 }
 
@@ -72,10 +84,16 @@ echo "compile_py: $TOTAL modules to compile under $ROOT (jobs=$JOBS)"
 # STRIP_DOCSTRINGS=0 disables it. The helper sits next to this script.
 STRIP_DOCSTRINGS=${STRIP_DOCSTRINGS:-1}
 DS_SCRIPT=${STRIP_DOCSTRINGS_SCRIPT:-$SELF_DIR/strip_docstrings.py}
-if [ "$STRIP_DOCSTRINGS" = "1" ] && [ -f "$DS_SCRIPT" ]; then
-  list_targets | xargs -0 "$PYBIN" "$DS_SCRIPT" | tail -1
-elif [ "$STRIP_DOCSTRINGS" = "1" ]; then
-  echo "compile_py: WARNING strip_docstrings.py not found at $DS_SCRIPT; docstrings will remain" >&2
+# The same pass lists files Cython would compile into something that fails at run time (a zero-argument
+# super() inside a comprehension); the worker below keeps those as source. It runs even without stripping.
+UNSAFE_LIST="$ROOT/.compile_py_unsafe"
+: > "$UNSAFE_LIST"
+if [ -f "$DS_SCRIPT" ]; then
+  if [ "$STRIP_DOCSTRINGS" = "1" ]; then NOSTRIP=""; else NOSTRIP="--no-strip"; fi
+  # shellcheck disable=SC2086 # NOSTRIP is empty or one option
+  list_targets | xargs -0 "$PYBIN" "$DS_SCRIPT" $NOSTRIP --unsafe-list "$UNSAFE_LIST" | tail -1
+else
+  echo "compile_py: WARNING strip_docstrings.py not found at $DS_SCRIPT; docstrings remain, unsafe files are not detected" >&2
 fi
 
 # Cython derives a module's fully-qualified name by walking UP the directory tree while an
@@ -95,15 +113,20 @@ restore_root_init() {
   if [ -n "$ROOT_INIT" ] && [ -f "$ROOT/__init__.py.compilebak" ]; then
     mv "$ROOT/__init__.py.compilebak" "$ROOT_INIT"
   fi
+  rm -f "$UNSAFE_LIST"
 }
 trap restore_root_init EXIT
 trap 'restore_root_init; exit 130' INT TERM
 
 # Per-file worker: cythonize -i produces <name>.<abi>.so next to the source (correct ABI name) and
 # leaves a <name>.c. On success remove the .py and the .c; on failure keep the .py, clean partials.
-export CYTHONIZE CYTHON_OPTS
+export CYTHONIZE CYTHON_OPTS UNSAFE_LIST
 list_targets | xargs -0 -P "$JOBS" -I{} sh -c '
   f="$1"; base="${f%.py}"
+  if [ -s "$UNSAFE_LIST" ] && grep -Fxq "$f" "$UNSAFE_LIST"; then
+    echo "KEEP(super-in-comprehension): $f"
+    exit 0
+  fi
   # Cython cannot compile a @staticmethod/@classmethod that is also @abstractmethod: abc tries to set
   # __isabstractmethod__ on the C-level descriptor and the module fails to import. Keep such files as
   # source (detected here so the rule is self-healing if more are added later).

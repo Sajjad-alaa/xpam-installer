@@ -18,7 +18,11 @@ ARG XPAM_COMPILE=1
 RUN if [ "$XPAM_COMPILE" = "1" ]; then set -e; \
       export CFLAGS="-O2 -fstack-protector-strong -U_FORTIFY_SOURCE -D_FORTIFY_SOURCE=2 -fPIC"; \
       export LDFLAGS="-Wl,-z,relro,-z,now"; \
-      python3 /tmp/strip_docstrings.py server.py; \
+      python3 /tmp/strip_docstrings.py --unsafe-list /tmp/unsafe server.py; \
+      if [ -s /tmp/unsafe ]; then \
+        echo "server.py: a zero-argument super() inside a comprehension fails once compiled; write super(Class, self)"; \
+        exit 1; \
+      fi; \
       python3 -m Cython.Build.Cythonize -i -3 -X annotation_typing=False server.py; \
       ls server.*.so >/dev/null; \
       strip --strip-unneeded server.*.so; \

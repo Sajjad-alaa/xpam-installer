@@ -15,12 +15,27 @@
 #   - jumpserver/settings/*.py     (settings are read and sometimes exec'd dynamically)
 #   - manage.py, asgi.py, wsgi.py  (entry points)
 #   - conftest.py / tests          (not sensitive; excluded from compilation)
+#
+# ROOT_IS_PACKAGE: how the modules are named. 0 (default, the core): <root-dir> itself is on sys.path
+# and its children are imported top-level ("orgs.models"); a stray <root-dir>/__init__.py is moved
+# aside during the compile so it is not baked into the names. 1 (facelive): <root-dir> is a package
+# imported by its directory name ("facelive.config"); its __init__.py stays so the names keep it.
 set -eu
 
 ROOT=${1:?usage: compile_py.sh <root-dir>}
+# absolute paths: the script changes into ROOT below, so relative ones would no longer resolve
+ROOT=$(CDPATH= cd -- "$ROOT" && pwd)
+SELF_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 PYBIN=${PYBIN:-/opt/py3/bin/python}
 CYTHONIZE=${CYTHONIZE:-${PYBIN%/python}/cythonize}
 JOBS=${JOBS:-$(nproc 2>/dev/null || echo 4)}
+ROOT_IS_PACKAGE=${ROOT_IS_PACKAGE:-0}
+
+# Cython options. annotation_typing=False is essential: by default Cython turns Python type hints into
+# runtime type checks and conversions that plain Python never does - "x: list" rejects a Django
+# QuerySet, "x: str" rejects None and lazy translation strings, "x: dict" rejects OrderedDict,
+# "x: float" turns a Decimal into a float. With it off the compiled module behaves like the source.
+CYTHON_OPTS="-3 -X annotation_typing=False"
 
 # Build the C extensions optimized (-O2) and with exploit-mitigation hardening: stack canaries,
 # fortified libc calls, and full/immediate RELRO on the shared object. These harden the native code
@@ -56,7 +71,6 @@ echo "compile_py: $TOTAL modules to compile under $ROOT (jobs=$JOBS)"
 # Function/class names still remain (Python needs them), but the explanatory text no longer ships.
 # STRIP_DOCSTRINGS=0 disables it. The helper sits next to this script.
 STRIP_DOCSTRINGS=${STRIP_DOCSTRINGS:-1}
-SELF_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 DS_SCRIPT=${STRIP_DOCSTRINGS_SCRIPT:-$SELF_DIR/strip_docstrings.py}
 if [ "$STRIP_DOCSTRINGS" = "1" ] && [ -f "$DS_SCRIPT" ]; then
   list_targets | xargs -0 "$PYBIN" "$DS_SCRIPT" | tail -1
@@ -70,17 +84,24 @@ fi
 # into every module (e.g. "work.orgs.models"), which breaks Django's app_label lookup. Move the
 # root __init__.py aside for the duration of the compile and restore it afterwards (it is kept as
 # source either way). Nested app packages keep their __init__.py, so names stay correct.
+# With ROOT_IS_PACKAGE=1 the root __init__.py is the package's own and stays in place.
 ROOT_INIT=""
-if [ -f "$ROOT/__init__.py" ]; then
+if [ "$ROOT_IS_PACKAGE" != "1" ] && [ -f "$ROOT/__init__.py" ]; then
   ROOT_INIT="$ROOT/__init__.py"
   mv "$ROOT_INIT" "$ROOT/__init__.py.compilebak"
 fi
-restore_root_init() { [ -n "$ROOT_INIT" ] && [ -f "$ROOT/__init__.py.compilebak" ] && mv "$ROOT/__init__.py.compilebak" "$ROOT_INIT"; }
-trap restore_root_init EXIT INT TERM
+# (an if, not an && chain: with set -e a false test as the function's last status would abort the script)
+restore_root_init() {
+  if [ -n "$ROOT_INIT" ] && [ -f "$ROOT/__init__.py.compilebak" ]; then
+    mv "$ROOT/__init__.py.compilebak" "$ROOT_INIT"
+  fi
+}
+trap restore_root_init EXIT
+trap 'restore_root_init; exit 130' INT TERM
 
 # Per-file worker: cythonize -i produces <name>.<abi>.so next to the source (correct ABI name) and
 # leaves a <name>.c. On success remove the .py and the .c; on failure keep the .py, clean partials.
-export CYTHONIZE
+export CYTHONIZE CYTHON_OPTS
 list_targets | xargs -0 -P "$JOBS" -I{} sh -c '
   f="$1"; base="${f%.py}"
   # Cython cannot compile a @staticmethod/@classmethod that is also @abstractmethod: abc tries to set
@@ -96,7 +117,8 @@ list_targets | xargs -0 -P "$JOBS" -I{} sh -c '
     echo "KEEP(abstract-static): $f"
     exit 0
   fi
-  if "$CYTHONIZE" -i -3 "$f" >/dev/null 2>&1 && ls "$base".*.so >/dev/null 2>&1; then
+  # shellcheck disable=SC2086 # CYTHON_OPTS is a list of options
+  if "$CYTHONIZE" -i $CYTHON_OPTS "$f" >/dev/null 2>&1 && ls "$base".*.so >/dev/null 2>&1; then
     rm -f "$f" "$base.c"
   else
     rm -f "$base.c"

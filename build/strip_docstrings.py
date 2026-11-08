@@ -35,7 +35,7 @@ def main(paths):
         try:
             src = open(path, encoding="utf-8").read()
             tree = ast.parse(src)
-        except (OSError, SyntaxError):
+        except (OSError, SyntaxError, ValueError):  # ValueError: not UTF-8 / null bytes
             continue
         new = DocstringStripper().visit(tree)
         ast.fix_missing_locations(new)

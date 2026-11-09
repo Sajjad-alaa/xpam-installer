@@ -1,5 +1,13 @@
 # XPAM release notes
 
+## 5.1.38 — face engine shows online in Components
+
+- **Fix:** the face engine (facelive) always appeared **OFFLINE** on the console's Components page. It
+  registered with core and served face sign-in normally, but it never sent the periodic status
+  heartbeat the other components send, so core had no recent sign of life for it. It now reports its
+  status every 60 seconds (active captures and CPU/memory/disk use), so it shows online like the rest.
+  Face sign-in itself was unaffected by this.
+
 ## 5.1.37 — face sign-in fix; face engine hardened
 
 - **Fix (face sign-in):** a face login could pass the check and then show "expired". The one-time login

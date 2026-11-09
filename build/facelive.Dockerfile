@@ -55,8 +55,10 @@ COPY NOTICE /opt/facelive/NOTICE
 ENV PATH=/opt/venv/bin:$PATH PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 \
     FACELIVE_MODEL_DIR=/opt/facelive/models FACELIVE_PORT=8085 OMP_NUM_THREADS=2
 WORKDIR /opt/facelive
-# fail the build if OpenCV or the models do not load
-RUN python -m facelive --check
+# fail the build if OpenCV or the models do not load, then drop the bytecode cache the check writes
+# (only __init__.pyc, the version string) so the image ships no .pyc at all
+RUN python -m facelive --check \
+    && find /opt/facelive -name '__pycache__' -type d -prune -exec rm -rf {} + 2>/dev/null; true
 USER 10001:10001
 EXPOSE 8085
 HEALTHCHECK --interval=10s --timeout=5s --retries=3 --start-period=60s \

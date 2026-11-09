@@ -1,12 +1,14 @@
 services:
   core:
-    image: ${XPAM_NAMESPACE:-xpam}/core:${XPAM_VERSION:-${XPAM_DEFAULT_VERSION:-v5.1.38}}
+    image: ${XPAM_NAMESPACE:-xpam}/core:${XPAM_VERSION:-${XPAM_DEFAULT_VERSION:-v5.1.39}}
     pull_policy: never  # XPAM images come from xpamctl (never Docker Hub)
     container_name: xpam_core
     hostname: xpam_core
     ulimits:
       core: 0
     restart: always
+    security_opt:
+      - no-new-privileges:true
     command: start web
     env_file:
       - ${CONFIG_FILE}
@@ -15,7 +17,7 @@ services:
       # (the desktop client on the download page: CLIENT_VERSION in config.txt overrides the release's)
       CLIENT_VERSION: ${CLIENT_VERSION:-${XPAM_CLIENT_VERSION:-5.1.28}}
     volumes:
-      - ${CONFIG_DIR}/certs:/opt/jumpserver/data/certs
+      - ${CONFIG_DIR}/certs:/opt/jumpserver/data/certs:ro
       - ${VOLUME_DIR}/core/data:/opt/jumpserver/data
     healthcheck:
       test: "check http://localhost:8080/api/health/"

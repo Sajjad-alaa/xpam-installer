@@ -2,6 +2,7 @@
 # The API attack matrix (tests/security/api_matrix.py) on a throwaway database: Postgres, Redis and a core container
 # of the given image with this core tree mounted (nothing of the live system is used).
 #   tests/security/api_matrix_run.sh [core-image] [core-apps-dir]     output: $OUT (default /tmp/xpam-api-matrix.log)
+# core-apps-dir "image" tests the image's own (compiled) code instead of mounting a source tree over it.
 set -uo pipefail
 IMAGE=${1:-xpam/core:v5.1.24}
 APPS=${2:-/opt/xpam-core/apps}
@@ -18,7 +19,9 @@ sleep 8
 ENV=(-e SECRET_KEY=test-only-not-secret-0123456789abcdef -e BOOTSTRAP_TOKEN=testtoken0123456 -e DB_ENGINE=postgresql
      -e DB_HOST=xam-pg -e DB_PORT=5432 -e DB_USER=postgres -e DB_PASSWORD=testonly -e DB_NAME=jumpserver
      -e REDIS_HOST=xam-redis -e XPACK_ENABLED=true)
-docker run --rm --network "$NET" "${ENV[@]}" -v "$APPS":/opt/jumpserver/apps:ro -v "$HERE/api_matrix.py":/tmp/api_matrix.py:ro \
+MOUNT=(-v "$APPS":/opt/jumpserver/apps:ro)
+[ "$APPS" = "image" ] && MOUNT=()
+docker run --rm --network "$NET" "${ENV[@]}" "${MOUNT[@]}" -v "$HERE/api_matrix.py":/tmp/api_matrix.py:ro \
   --entrypoint bash "$IMAGE" -c 'cd /opt/jumpserver/apps && timeout 900 python manage.py migrate --noinput >/tmp/m.log 2>&1;
     echo "migrate: $(grep -c "Applying" /tmp/m.log) applied, last: $(tail -1 /tmp/m.log | cut -c1-100)";
     timeout 3000 python manage.py shell < /tmp/api_matrix.py 2>/tmp/err.log; echo "matrix exit $?"; grep -vE "DEBU|INFO|Warning|warn\(" /tmp/err.log | tail -25;

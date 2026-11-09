@@ -16,16 +16,16 @@ COPY server.py .
 COPY --from=xpamscripts strip_docstrings.py /tmp/strip_docstrings.py
 ARG XPAM_COMPILE=1
 RUN if [ "$XPAM_COMPILE" = "1" ]; then set -e; \
-      export CFLAGS="-O2 -fstack-protector-strong -U_FORTIFY_SOURCE -D_FORTIFY_SOURCE=2 -fPIC"; \
-      export LDFLAGS="-Wl,-z,relro,-z,now"; \
+      export CFLAGS="-O2 -g0 -fvisibility=hidden -ffunction-sections -fdata-sections -fstack-protector-strong -U_FORTIFY_SOURCE -D_FORTIFY_SOURCE=2 -fPIC"; \
+      export LDFLAGS="-g0 -Wl,--build-id=none -Wl,--gc-sections -Wl,-s -Wl,-z,relro,-z,now"; \
       python3 /tmp/strip_docstrings.py --unsafe-list /tmp/unsafe server.py; \
       if [ -s /tmp/unsafe ]; then \
         echo "server.py: a zero-argument super() inside a comprehension fails once compiled; write super(Class, self)"; \
         exit 1; \
       fi; \
-      python3 -m Cython.Build.Cythonize -i -3 -X annotation_typing=False server.py; \
+      python3 -m Cython.Build.Cythonize -i -3 -X annotation_typing=False -X emit_code_comments=False server.py; \
       ls server.*.so >/dev/null; \
-      strip --strip-unneeded server.*.so; \
+      strip --strip-all --remove-section=.comment --remove-section=.note.gnu.build-id --remove-section=.note.gnu.property server.*.so; \
       rm -f server.py server.c; \
     fi; rm -f /tmp/strip_docstrings.py
 

@@ -1,7 +1,7 @@
 # XPAM core: official JumpServer v5.0.0 release image + XPAM code overlay.
 # Build:  docker build -f core.Dockerfile -t xpam/core:<tag> /opt/xpam-core
 # Official JumpServer v5.0.0-ce image, pinned by digest (same image on every build host)
-FROM jumpserver/core@sha256:902c58566c5248f3752309c8fb34c2f61b1ba39bde54a7439b36115afb7fd16d
+FROM jumpserver/core@sha256:902c58566c5248f3752309c8fb34c2f61b1ba39bde54a7439b36115afb7fd16d AS base
 
 # Security upgrades for critical Python dependencies (FIX-08)
 RUN /usr/local/bin/uv pip install --python /opt/py3/bin/python \
@@ -75,20 +75,13 @@ RUN cd /opt/jumpserver/apps \
     && find . -type f ! -path './i18n/core/en/LC_MESSAGES/*.mo' ! -name 'leak_passwords.db' \
          ! -name 'GeoLite2-City.mmdb' ! -name 'ipipfree.ipdb' -delete \
     && find . -mindepth 1 -depth -type d -empty -delete
-COPY apps /opt/jumpserver/apps
-# XPAM: the start script (quick start when nothing changed) and this build's identity
-COPY jms /opt/jumpserver/jms
-ARG XPAM_BUILD_ID=dev
-RUN echo "${XPAM_BUILD_ID}" > /opt/jumpserver/BUILD_ID
-# Compile the Python sources once at build time: faster first start, and the interpreter's
-# warnings about old-style escape sequences do not show up in installation and upgrade logs
-RUN /opt/py3/bin/python -W ignore -m compileall -q -j 0 /opt/jumpserver/apps >/dev/null 2>&1 || true
-# Compile the Python application to native extension modules (.so) so the image ships no readable
-# source for the proprietary code (licence, protection, xpack and the XPAM overlay). The build
-# toolchain is installed and removed inside one layer so it leaves nothing behind; files Cython
-# cannot compile, package markers, migrations and settings are kept as source (see compile_py.sh).
-# Toggle with --build-arg XPAM_COMPILE=0 to ship readable source (e.g. for debugging a build).
+
+# --- build stage: compile the Python application to native extension modules (.so) in a discarded
+# stage so that plaintext .py sources, intermediate .pyc files, and the gcc/Cython toolchain never
+# enter any layer of the final runtime image.
+FROM base AS build
 ARG XPAM_COMPILE=1
+COPY apps /opt/jumpserver/apps
 COPY --from=xpamscripts compile_py.sh /tmp/compile_py.sh
 COPY --from=xpamscripts strip_docstrings.py /tmp/strip_docstrings.py
 RUN set -e; \
@@ -98,11 +91,17 @@ RUN set -e; \
       apt-get update >/dev/null && apt-get -y --no-install-recommends install gcc binutils >/dev/null; \
       /usr/local/bin/uv pip install --python /opt/py3/bin/python -q Cython setuptools; \
       JOBS="$(nproc)" PYBIN=/opt/py3/bin/python sh /tmp/compile_py.sh /opt/jumpserver/apps; \
-      /usr/local/bin/uv pip uninstall --python /opt/py3/bin/python Cython >/dev/null 2>&1 || true; \
-      apt-get -y purge gcc binutils >/dev/null && apt-get -y autoremove >/dev/null; \
-      apt-get clean && rm -rf /var/lib/apt/lists/*; \
+      /opt/py3/bin/python -W ignore -m compileall -q -j 0 /opt/jumpserver/apps >/dev/null 2>&1 || true; \
+    else \
       /opt/py3/bin/python -W ignore -m compileall -q -j 0 /opt/jumpserver/apps >/dev/null 2>&1 || true; \
     fi; \
     rm -f /tmp/compile_py.sh /tmp/strip_docstrings.py
-# The health check script under the name the worker container uses
-RUN ln -sf check_celery.sh /opt/jumpserver/utils/check_worker.sh
+
+# --- runtime stage
+FROM base
+COPY --from=build /opt/jumpserver/apps /opt/jumpserver/apps
+# XPAM: the start script (quick start when nothing changed) and this build's identity
+COPY jms /opt/jumpserver/jms
+ARG XPAM_BUILD_ID=dev
+RUN echo "${XPAM_BUILD_ID}" > /opt/jumpserver/BUILD_ID \
+    && ln -sf check_celery.sh /opt/jumpserver/utils/check_worker.sh

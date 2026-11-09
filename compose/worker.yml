@@ -1,7 +1,7 @@
 services:
   # The background worker: scheduled jobs, account automation, notifications. Same image as core.
   worker:
-    image: ${XPAM_NAMESPACE:-xpam}/core:${XPAM_VERSION:-${XPAM_DEFAULT_VERSION:-v5.1.38}}
+    image: ${XPAM_NAMESPACE:-xpam}/core:${XPAM_VERSION:-${XPAM_DEFAULT_VERSION:-v5.1.39}}
     pull_policy: never  # XPAM images come from xpamctl (never Docker Hub)
     container_name: xpam_worker
     hostname: xpam_worker
@@ -10,13 +10,15 @@ services:
     restart: always
     # Off by default. WORKER_PRIVILEGED=true (or the older CELERY_PRIVILEGED) turns it back on.
     privileged: ${WORKER_PRIVILEGED:-${CELERY_PRIVILEGED:-false}}
+    security_opt:
+      - no-new-privileges:true
     command: start task
     env_file:
       - ${CONFIG_FILE}
     environment:
       LC_ALL: C.UTF-8
     volumes:
-      - ${CONFIG_DIR}/certs:/opt/jumpserver/data/certs
+      - ${CONFIG_DIR}/certs:/opt/jumpserver/data/certs:ro
       - ${VOLUME_DIR}/core/data:/opt/jumpserver/data
     healthcheck:
       test: "bash /opt/jumpserver/utils/check_worker.sh"

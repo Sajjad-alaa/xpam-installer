@@ -1,5 +1,25 @@
 # XPAM release notes
 
+## 5.1.39 — security review fixes; core image no longer carries its source
+
+- **Security (images):** the core image copied the application source into its own layer before compiling
+  it, so every compiled core image still held the full readable source (and its bytecode) in a lower
+  layer that `docker save` recovers. Core is now built in two stages: only the compiled result enters the
+  image. Unit tests are no longer shipped; the compiled modules of core and the browser service carry no
+  compiler fingerprint, build id or embedded source comments. **Older core images on the registry still
+  hold the source; remove them once every server runs 5.1.39.**
+- **Security (vaults):** "Test connection" for the vault and for the SSH CA no longer sends the stored
+  token to an address typed into the form; it is only reused for the configured address. Changing a vault
+  connection's address asks for its secret again.
+- **Security:** the dashboard's `days` parameter is limited to 365 (large or invalid values caused
+  errors); just-in-time policy matching only looks up users of the current organization; `/api/health/`
+  reports status only and answers 503 when the database or Redis is down; the components' own health
+  pages are no longer reachable through the gateway.
+- **Fix:** SSH CA certificates — signing, the public key and the connection test failed with an error
+  since 5.1.27 (only when the SSH CA is enabled).
+- **Hardening:** core, worker, the connectors and AI run with `no-new-privileges`; the certificate
+  folder is mounted read-only.
+
 ## 5.1.38 — face engine shows online in Components
 
 - **Fix:** the face engine (facelive) always appeared **OFFLINE** on the console's Components page. It

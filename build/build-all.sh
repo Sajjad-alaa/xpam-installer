@@ -3,11 +3,11 @@
 #   ./build-all.sh                 build everything
 #   ./build-all.sh core web        build only the named images
 # Images: core gateway web workspace secureconnection webconnector ai facelive browser postgresql-ha
-# Environment: SRC (repos folder, default /opt), NS (default xpam), TAG (default v5.1.38).
+# Environment: SRC (repos folder, default /opt), NS (default xpam), TAG (default v5.1.39).
 # Needs: docker with BuildKit, and for the web and workspace images node 24 with the repos' node_modules installed.
 set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-SRC=${SRC:-/opt}; NS=${NS:-xpam}; TAG=${TAG:-v5.1.38}
+SRC=${SRC:-/opt}; NS=${NS:-xpam}; TAG=${TAG:-v5.1.39}
 # system packages are refreshed once a day (security updates such as libexpat)
 APT_REFRESH=${APT_REFRESH:-$(date +%Y%m%d)}
 CACHE="$HERE/.cache"; mkdir -p "$CACHE"

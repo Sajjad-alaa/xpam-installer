@@ -1,12 +1,14 @@
 services:
   chen:
-    image: ${XPAM_NAMESPACE:-xpam}/webconnector:${XPAM_VERSION:-${XPAM_DEFAULT_VERSION:-v5.1.38}}
+    image: ${XPAM_NAMESPACE:-xpam}/webconnector:${XPAM_VERSION:-${XPAM_DEFAULT_VERSION:-v5.1.39}}
     pull_policy: never  # XPAM images come from xpamctl (never Docker Hub)
     container_name: xpam_webconnector
     hostname: xpam_webconnector
     ulimits:
       core: 0
     restart: always
+    security_opt:
+      - no-new-privileges:true
     env_file:
       - ${CONFIG_SAFE_FILE}
     environment:
@@ -14,7 +16,7 @@ services:
       BOOTSTRAP_TOKEN: ${BOOTSTRAP_TOKEN}
     volumes:
       - ${VOLUME_DIR}/chen/data:/opt/chen/data
-      - ${CONFIG_DIR}/certs:/opt/chen/data/certs
+      - ${CONFIG_DIR}/certs:/opt/chen/data/certs:ro
     healthcheck:
       test: "check http://localhost:8082/webconnector/healthy"
       interval: 10s

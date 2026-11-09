@@ -1,6 +1,6 @@
 services:
   koko:
-    image: ${XPAM_NAMESPACE:-xpam}/secureconnection:${XPAM_VERSION:-${XPAM_DEFAULT_VERSION:-v5.1.38}}
+    image: ${XPAM_NAMESPACE:-xpam}/secureconnection:${XPAM_VERSION:-${XPAM_DEFAULT_VERSION:-v5.1.39}}
     pull_policy: never  # XPAM images come from xpamctl (never Docker Hub)
     container_name: xpam_secureconnection
     hostname: xpam_secureconnection
@@ -10,6 +10,8 @@ services:
     # Full host privileges are only needed for Kubernetes sessions (kubectl is isolated with
     # "unshare"). Off by default; set KOKO_PRIVILEGED=true in config.txt if you use them.
     privileged: ${KOKO_PRIVILEGED:-false}
+    security_opt:
+      - no-new-privileges:true
     env_file:
       - ${CONFIG_SAFE_FILE}
     environment:
@@ -28,7 +30,7 @@ services:
       - ${KOKO_SSH_PORT:-2222}:2222
       - ${KOKO_WEB_PROXY_PORT:-5001}:5001
     volumes:
-      - ${CONFIG_DIR}/certs:/opt/koko/data/certs
+      - ${CONFIG_DIR}/certs:/opt/koko/data/certs:ro
       - ${VOLUME_DIR}/koko/data:/opt/koko/data
     healthcheck:
       test: "check http://localhost:5000/secureconnection/health/"

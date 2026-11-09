@@ -52,22 +52,27 @@ CYTHON_OPTS="-3 -X annotation_typing=False"
 export CFLAGS="${CFLAGS:-} -O2 -fstack-protector-strong -U_FORTIFY_SOURCE -D_FORTIFY_SOURCE=2 -fPIC"
 export LDFLAGS="${LDFLAGS:-} -Wl,-z,relro,-z,now"
 
-# HARDEN_MAX=1 (opt-in; a whole self-contained component such as facelive, not the core) makes the
-# compiled modules give up as little as possible to someone inspecting the .so:
+# Binary hardening (default on: HARDEN_BINARY=1) makes the compiled modules give up as little as
+# possible to someone inspecting the .so:
 #   - emit_code_comments=False     Cython writes no "/* original Python */" comments into the C, so no
 #                                  Python snippets end up embedded in the binary
 #   - -fvisibility=hidden          only PyInit_<module> is exported; every internal function is local
 #   - -g0, no build-id, --gc-sections, strip at link, remove .comment  — no debug info, no compiler
 #                                  fingerprint, no unused sections, no build identifier
-# It cannot hide the Python-level names (class/function/keyword names) that CPython must resolve at
-# run time, and native code can always be disassembled; this only raises the cost.
-if [ "${HARDEN_MAX:-0}" = "1" ]; then
+if [ "${HARDEN_BINARY:-1}" = "1" ] || [ "${HARDEN_MAX:-0}" = "1" ]; then
   CYTHON_OPTS="$CYTHON_OPTS -X emit_code_comments=False"
   export CFLAGS="$CFLAGS -g0 -fvisibility=hidden -ffunction-sections -fdata-sections"
   export LDFLAGS="$LDFLAGS -g0 -Wl,--build-id=none -Wl,--gc-sections -Wl,-s"
 fi
 
 cd "$ROOT"
+
+# Remove the unit tests so they never ship in an image (DELETE_TESTS=0 keeps them). Nothing at run time
+# imports them. accounts/demos stays: the integration-application page serves those files as SDK examples.
+if [ "${DELETE_TESTS:-1}" = "1" ]; then
+  find . \( -name 'tests.py' -o -name 'test_*.py' -o -name 'conftest.py' -o -path '*/tests/*' \) \
+    ! -path './accounts/demos/*' -exec rm -rf {} + 2>/dev/null || true
+fi
 
 list_targets() {
   find . -name '*.py' \
@@ -107,6 +112,10 @@ if [ -f "$DS_SCRIPT" ]; then
   if [ "$STRIP_DOCSTRINGS" = "1" ]; then NOSTRIP=""; else NOSTRIP="--no-strip"; fi
   # shellcheck disable=SC2086 # NOSTRIP is empty or one option
   list_targets | xargs -0 "$PYBIN" "$DS_SCRIPT" $NOSTRIP --unsafe-list "$UNSAFE_LIST" | tail -1
+  if [ "$STRIP_DOCSTRINGS" = "1" ]; then
+    find . -name '__init__.py' ! -path '*/migrations/*' ! -path './libs/ansible/*' ! -path './terminal/applets/*' -print0 \
+      | xargs -0 "$PYBIN" "$DS_SCRIPT" >/dev/null 2>&1 || true
+  fi
 else
   echo "compile_py: WARNING strip_docstrings.py not found at $DS_SCRIPT; docstrings remain, unsafe files are not detected" >&2
 fi
@@ -174,10 +183,10 @@ find . -type d -name build | while IFS= read -r d; do
 done
 
 # Strip debug symbols from the compiled modules (cuts their size by ~70%); harmless if strip absent.
-# With HARDEN_MAX, strip everything and drop the compiler fingerprint (.comment), build id and notes,
+# Hardened (the default), strip everything and drop the compiler fingerprint (.comment), build id and notes,
 # leaving only what the loader needs (dynamic symbols, which are just PyInit_<module>).
 if command -v strip >/dev/null 2>&1; then
-  if [ "${HARDEN_MAX:-0}" = "1" ]; then
+  if [ "${HARDEN_BINARY:-1}" = "1" ] || [ "${HARDEN_MAX:-0}" = "1" ]; then
     find . -name '*.so' -exec strip --strip-all \
       --remove-section=.comment --remove-section=.note.gnu.build-id --remove-section=.note.gnu.property \
       {} + 2>/dev/null || true

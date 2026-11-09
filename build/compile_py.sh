@@ -52,6 +52,21 @@ CYTHON_OPTS="-3 -X annotation_typing=False"
 export CFLAGS="${CFLAGS:-} -O2 -fstack-protector-strong -U_FORTIFY_SOURCE -D_FORTIFY_SOURCE=2 -fPIC"
 export LDFLAGS="${LDFLAGS:-} -Wl,-z,relro,-z,now"
 
+# HARDEN_MAX=1 (opt-in; a whole self-contained component such as facelive, not the core) makes the
+# compiled modules give up as little as possible to someone inspecting the .so:
+#   - emit_code_comments=False     Cython writes no "/* original Python */" comments into the C, so no
+#                                  Python snippets end up embedded in the binary
+#   - -fvisibility=hidden          only PyInit_<module> is exported; every internal function is local
+#   - -g0, no build-id, --gc-sections, strip at link, remove .comment  — no debug info, no compiler
+#                                  fingerprint, no unused sections, no build identifier
+# It cannot hide the Python-level names (class/function/keyword names) that CPython must resolve at
+# run time, and native code can always be disassembled; this only raises the cost.
+if [ "${HARDEN_MAX:-0}" = "1" ]; then
+  CYTHON_OPTS="$CYTHON_OPTS -X emit_code_comments=False"
+  export CFLAGS="$CFLAGS -g0 -fvisibility=hidden -ffunction-sections -fdata-sections"
+  export LDFLAGS="$LDFLAGS -g0 -Wl,--build-id=none -Wl,--gc-sections -Wl,-s"
+fi
+
 cd "$ROOT"
 
 list_targets() {
@@ -159,8 +174,20 @@ find . -type d -name build | while IFS= read -r d; do
 done
 
 # Strip debug symbols from the compiled modules (cuts their size by ~70%); harmless if strip absent.
+# With HARDEN_MAX, strip everything and drop the compiler fingerprint (.comment), build id and notes,
+# leaving only what the loader needs (dynamic symbols, which are just PyInit_<module>).
 if command -v strip >/dev/null 2>&1; then
-  find . -name '*.so' -exec strip --strip-unneeded {} + 2>/dev/null || true
+  if [ "${HARDEN_MAX:-0}" = "1" ]; then
+    find . -name '*.so' -exec strip --strip-all \
+      --remove-section=.comment --remove-section=.note.gnu.build-id --remove-section=.note.gnu.property \
+      {} + 2>/dev/null || true
+    # objcopy drops any remaining notes/comment if strip left them (older binutils); best-effort
+    if command -v objcopy >/dev/null 2>&1; then
+      find . -name '*.so' -exec objcopy --remove-section=.comment {} \; 2>/dev/null || true
+    fi
+  else
+    find . -name '*.so' -exec strip --strip-unneeded {} + 2>/dev/null || true
+  fi
 fi
 
 restore_root_init

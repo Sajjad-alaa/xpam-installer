@@ -11,12 +11,19 @@ ENV PIP_DISABLE_PIP_VERSION_CHECK=1 PIP_NO_CACHE_DIR=1
 RUN python -m venv /opt/venv
 COPY requirements.txt /tmp/requirements.txt
 RUN /opt/venv/bin/pip install --no-compile -r /tmp/requirements.txt
-WORKDIR /opt/facelive
+# Build the package under a short, neutral directory (/b) so the only path Cython bakes into the
+# modules (the C file name, seen in a traceback) is "/b/facelive/<module>.c" — no product or install
+# path. The runtime copies the compiled package to /opt/facelive/facelive below; module names stay
+# facelive.* either way (the package directory is named facelive).
+WORKDIR /b
 COPY facelive ./facelive
 COPY tools ./tools
-# Compile the engine's Python to native modules (.so) so the image ships no readable source. This
-# runs in the (discarded) build stage, so the toolchain never reaches the runtime image; __init__.py
-# and __main__.py stay as source so `python -m facelive` still works. --build-arg XPAM_COMPILE=0 skips it.
+# Compile the engine's Python to native modules (.so) so the image ships no readable source, with
+# HARDEN_MAX so each .so gives up as little as possible to inspection (no debug info, no compiler
+# fingerprint, no embedded Python snippets, only PyInit_<module> exported; see compile_py.sh). This
+# runs in the (discarded) build stage, so the toolchain never reaches the runtime image. __main__.py
+# is a thin launcher and __init__.py only the version string; all logic is in compiled modules.
+# --build-arg XPAM_COMPILE=0 skips compilation (readable source, for debugging a build).
 ARG XPAM_COMPILE=1
 COPY --from=xpamscripts compile_py.sh /tmp/compile_py.sh
 COPY --from=xpamscripts strip_docstrings.py /tmp/strip_docstrings.py
@@ -24,10 +31,10 @@ RUN if [ "$XPAM_COMPILE" = "1" ]; then set -e; \
       apt-get update >/dev/null \
       && apt-get -y --no-install-recommends install gcc binutils libc6-dev >/dev/null; \
       /opt/venv/bin/pip install -q --retries 10 --timeout 180 Cython setuptools; \
-      JOBS="$(nproc)" PYBIN=/opt/venv/bin/python ROOT_IS_PACKAGE=1 sh /tmp/compile_py.sh /opt/facelive/facelive; \
+      JOBS="$(nproc)" PYBIN=/opt/venv/bin/python ROOT_IS_PACKAGE=1 HARDEN_MAX=1 sh /tmp/compile_py.sh /b/facelive; \
       /opt/venv/bin/pip uninstall -y -q Cython >/dev/null 2>&1 || true; \
     fi; rm -f /tmp/compile_py.sh /tmp/strip_docstrings.py
-RUN /opt/venv/bin/python tools/fetch_models.py /opt/facelive/models
+RUN /opt/venv/bin/python tools/fetch_models.py /b/models
 
 # --- runtime stage
 FROM python:3.11-slim-bookworm@sha256:94a8fee35252d06ab75856f15f12c7bae67b10e8a6da93c7fded82b2610926cd
@@ -41,8 +48,8 @@ RUN groupadd --gid 10001 facelive \
     && useradd --uid 10001 --gid 10001 --no-create-home --home-dir /opt/facelive --shell /usr/sbin/nologin facelive \
     && mkdir -p /opt/facelive/data/keys && chown -R 10001:10001 /opt/facelive/data && chmod 700 /opt/facelive/data/keys
 COPY --from=build /opt/venv /opt/venv
-COPY --from=build /opt/facelive/facelive /opt/facelive/facelive
-COPY --from=build /opt/facelive/models /opt/facelive/models
+COPY --from=build /b/facelive /opt/facelive/facelive
+COPY --from=build /b/models /opt/facelive/models
 COPY --chmod=755 entrypoint.sh /opt/facelive/entrypoint.sh
 COPY NOTICE /opt/facelive/NOTICE
 ENV PATH=/opt/venv/bin:$PATH PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 \

@@ -1,5 +1,17 @@
 # XPAM release notes
 
+## 5.1.37 — face sign-in fix; face engine hardened
+
+- **Fix (face sign-in):** a face login could pass the check and then show "expired". The one-time login
+  token lived only 3 minutes and was not refreshed while you retried (camera permission, a failed
+  liveness, another attempt), so a later success was rejected. The token now lasts 10 minutes and its
+  timer resets each time the camera reopens, so an active attempt never expires mid-flow. It stays
+  single-use and tied to your session; the per-capture limits are unchanged.
+- **Face engine (facelive) hardened:** the startup logic that used to ship as readable Python is now a
+  compiled module; the compiled modules carry no debug info, no compiler fingerprint and no embedded
+  source comments, and expose only their module entry point. No readable source and no secrets ship in
+  the image. (Face recognition behaviour is unchanged.)
+
 ## 5.1.36 — compiled, trimmed to what XPAM uses, English only
 
 - **Compiled images:** the Python code of core, face recognition and the browser service ships as native

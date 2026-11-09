@@ -34,7 +34,7 @@ RUN if [ "$XPAM_COMPILE" = "1" ]; then set -e; \
       JOBS="$(nproc)" PYBIN=/opt/venv/bin/python ROOT_IS_PACKAGE=1 HARDEN_MAX=1 sh /tmp/compile_py.sh /b/facelive; \
       /opt/venv/bin/pip uninstall -y -q Cython >/dev/null 2>&1 || true; \
     fi; rm -f /tmp/compile_py.sh /tmp/strip_docstrings.py
-RUN /opt/venv/bin/python tools/fetch_models.py /b/models
+RUN /opt/venv/bin/python -B tools/fetch_models.py /b/models
 
 # --- runtime stage
 FROM python:3.11-slim-bookworm@sha256:94a8fee35252d06ab75856f15f12c7bae67b10e8a6da93c7fded82b2610926cd
@@ -53,11 +53,12 @@ COPY --from=build /b/models /opt/facelive/models
 COPY --chmod=755 entrypoint.sh /opt/facelive/entrypoint.sh
 COPY NOTICE /opt/facelive/NOTICE
 ENV PATH=/opt/venv/bin:$PATH PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 \
-    FACELIVE_MODEL_DIR=/opt/facelive/models FACELIVE_PORT=8085 OMP_NUM_THREADS=2
+    FACELIVE_MODEL_DIR=/opt/facelive/models FACELIVE_PORT=8085 OMP_NUM_THREADS=2 \
+    OPENCV_IO_MAX_IMAGE_WIDTH=1920 OPENCV_IO_MAX_IMAGE_HEIGHT=1920 OPENCV_IO_MAX_IMAGE_PIXELS=3686400
 WORKDIR /opt/facelive
 # fail the build if OpenCV or the models do not load, then drop the bytecode cache the check writes
 # (only __init__.pyc, the version string) so the image ships no .pyc at all
-RUN python -m facelive --check \
+RUN python -B -m facelive --check \
     && find /opt/facelive -name '__pycache__' -type d -prune -exec rm -rf {} + 2>/dev/null; true
 USER 10001:10001
 EXPOSE 8085

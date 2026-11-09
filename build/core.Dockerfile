@@ -70,11 +70,20 @@ RUN find /etc/apt -type f \( -name '*.sources' -o -name '*.list' \) -exec \
 # so files XPAM deleted would otherwise linger from the base image (dead code, old templates, even the
 # OIDC helper a security fix replaced). Keep only the data files the repository does not carry: the
 # IP location databases, the leaked-password list and the compiled English translations (XPAM is
-# English only; the base image's other languages are dropped too).
+# English only; the base image's other languages are dropped too). Also remove upstream's leftover
+# utils/* scripts, docs, readmes, requirements, ui, and source-map (.map) files. LICENSE stays: JumpServer is
+# GPLv3, and the licence text must ship with the software built on it.
 RUN cd /opt/jumpserver/apps \
     && find . -type f ! -path './i18n/core/en/LC_MESSAGES/*.mo' ! -name 'leak_passwords.db' \
          ! -name 'GeoLite2-City.mmdb' ! -name 'ipipfree.ipdb' -delete \
-    && find . -mindepth 1 -depth -type d -empty -delete
+    && find . -mindepth 1 -depth -type d -empty -delete \
+    && rm -rf /opt/jumpserver/utils /opt/jumpserver/docs /opt/jumpserver/readmes \
+         /opt/jumpserver/requirements /opt/jumpserver/ui /opt/jumpserver/Dockerfile* \
+         /opt/jumpserver/*.md /opt/jumpserver/config_example.yml \
+         /opt/jumpserver/pyproject.toml /opt/jumpserver/uv.lock \
+         /opt/jumpserver/.dockerignore /opt/jumpserver/.git* /opt/jumpserver/.isort.cfg \
+         /opt/jumpserver/.prettierrc /opt/jumpserver/.pylintrc \
+    && find /opt/jumpserver/.venv -name '*.map' -delete 2>/dev/null || true
 
 # --- build stage: compile the Python application to native extension modules (.so) in a discarded
 # stage so that plaintext .py sources, intermediate .pyc files, and the gcc/Cython toolchain never
@@ -90,7 +99,9 @@ RUN set -e; \
         sed -i -E 's#https?://mirrors\.(cloud\.)?aliyun(cs)?\.com#http://deb.debian.org#g' {} + 2>/dev/null || true; \
       apt-get update >/dev/null && apt-get -y --no-install-recommends install gcc binutils >/dev/null; \
       /usr/local/bin/uv pip install --python /opt/py3/bin/python -q Cython setuptools; \
-      JOBS="$(nproc)" PYBIN=/opt/py3/bin/python sh /tmp/compile_py.sh /opt/jumpserver/apps; \
+      mv /opt/jumpserver/apps /b; \
+      JOBS="$(nproc)" PYBIN=/opt/py3/bin/python sh /tmp/compile_py.sh /b; \
+      mv /b /opt/jumpserver/apps; \
       /opt/py3/bin/python -W ignore -m compileall -q -j 0 /opt/jumpserver/apps >/dev/null 2>&1 || true; \
     else \
       /opt/py3/bin/python -W ignore -m compileall -q -j 0 /opt/jumpserver/apps >/dev/null 2>&1 || true; \
@@ -100,8 +111,12 @@ RUN set -e; \
 # --- runtime stage
 FROM base
 COPY --from=build /opt/jumpserver/apps /opt/jumpserver/apps
-# XPAM: the start script (quick start when nothing changed) and this build's identity
+# XPAM: the start script (quick start when nothing changed), runtime utils, and this build's identity
 COPY jms /opt/jumpserver/jms
+COPY utils/check_celery.sh /opt/jumpserver/utils/check_celery.sh
+COPY utils/start_celery_beat.py /opt/jumpserver/utils/start_celery_beat.py
 ARG XPAM_BUILD_ID=dev
 RUN echo "${XPAM_BUILD_ID}" > /opt/jumpserver/BUILD_ID \
+    && sed -i '/^[[:space:]]*#[^!]/d' /opt/jumpserver/entrypoint.sh \
+    && chmod +x /opt/jumpserver/jms /opt/jumpserver/utils/check_celery.sh \
     && ln -sf check_celery.sh /opt/jumpserver/utils/check_worker.sh

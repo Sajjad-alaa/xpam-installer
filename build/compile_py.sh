@@ -12,13 +12,13 @@
 #   - every __init__.py            (package markers; keeping them as source avoids edge cases where
 #                                    a package initializer must be plain source)
 #   - */migrations/*.py            (Django reads and rewrites migration source)
-#   - jumpserver/settings/*.py     (settings are read and sometimes exec'd dynamically)
 #   - manage.py, asgi.py, wsgi.py  (entry points)
 #   - conftest.py / tests          (not sensitive; excluded from compilation)
 #   - code used as SOURCE outside this Python process (the core; the paths exist nowhere else):
 #       libs/ansible/*                 Ansible ships its modules to targets / the isolated ansible
 #                                      container as source; modules_utils is imported there too
-#       terminal/applets/*             RemoteApp applets, deployed to and run on Windows hosts
+#       terminal/applets/*/*           RemoteApp applets, deployed to and run on Windows hosts (the package's
+#                                      own module, terminal/applets/_install.py, runs in core and is compiled)
 #       accounts/demos/*               SDK sample code shown to users as text
 #       ops/ansible/serialized_ssh.py  copied as the ssh/scp/sftp wrapper script of automations
 #       add_to_leak_password.py        admin command-line script (python add_to_leak_password.py <file>)
@@ -67,11 +67,16 @@ fi
 
 cd "$ROOT"
 
-# Remove the unit tests so they never ship in an image (DELETE_TESTS=0 keeps them). Nothing at run time
-# imports them. accounts/demos stays: the integration-application page serves those files as SDK examples.
+# Remove the unit tests and files nothing reads, so they never ship in an image (DELETE_TESTS=0 keeps them):
+# the .po translation sources (the English .mo comes from the base image and matches them; jms does not
+# compile messages), common/README.md, and the applets' ChangeLog and test data.
+# Kept on purpose: accounts/demos (the integration-application page serves those files as SDK examples) and
+# the applets' README*.md (the Applets page shows them: terminal/models/applet/applet.py, terminal/mixin.py).
 if [ "${DELETE_TESTS:-1}" = "1" ]; then
+  rm -rf ./common/README.md ./i18n/core/en/LC_MESSAGES/*.po \
+    ./terminal/applets/*/ChangeLog ./terminal/applets/*/test_data_example.json
   find . \( -name 'tests.py' -o -name 'test_*.py' -o -name 'conftest.py' -o -path '*/tests/*' \) \
-    ! -path './accounts/demos/*' -exec rm -rf {} + 2>/dev/null || true
+    ! -path './accounts/demos/*' -prune -exec rm -rf {} + 2>/dev/null || true
 fi
 
 list_targets() {
@@ -83,12 +88,11 @@ list_targets() {
     ! -name 'wsgi.py' \
     ! -name 'conftest.py' \
     ! -path '*/migrations/*' \
-    ! -path './jumpserver/settings/*' \
     ! -name 'tests.py' \
     ! -name 'test_*.py' \
     ! -path '*/tests/*' \
     ! -path './libs/ansible/*' \
-    ! -path './terminal/applets/*' \
+    ! -path './terminal/applets/*/*' \
     ! -path './accounts/demos/*' \
     ! -path './ops/ansible/serialized_ssh.py' \
     ! -name 'add_to_leak_password.py' \
@@ -113,8 +117,10 @@ if [ -f "$DS_SCRIPT" ]; then
   # shellcheck disable=SC2086 # NOSTRIP is empty or one option
   list_targets | xargs -0 "$PYBIN" "$DS_SCRIPT" $NOSTRIP --unsafe-list "$UNSAFE_LIST" | tail -1
   if [ "$STRIP_DOCSTRINGS" = "1" ]; then
-    find . -name '__init__.py' ! -path '*/migrations/*' ! -path './libs/ansible/*' ! -path './terminal/applets/*' -print0 \
-      | xargs -0 "$PYBIN" "$DS_SCRIPT" >/dev/null 2>&1 || true
+    # also the files kept as source (package markers, migrations, Ansible modules, applets: comments and
+    # docstrings removed, Ansible DOCUMENTATION/EXAMPLES/RETURN emptied — modules do not read them when they
+    # run), except the SDK demos: their comments are part of the examples shown to users
+    find . -name '*.py' ! -path './accounts/demos/*' -print0 | xargs -0 "$PYBIN" "$DS_SCRIPT" >/dev/null 2>&1 || true
   fi
 else
   echo "compile_py: WARNING strip_docstrings.py not found at $DS_SCRIPT; docstrings remain, unsafe files are not detected" >&2

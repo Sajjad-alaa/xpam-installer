@@ -14,8 +14,16 @@ RUN find /etc/apt -type f \( -name '*.sources' -o -name '*.list' \) -exec \
     && DEBIAN_FRONTEND=noninteractive apt-get -y --no-install-recommends upgrade \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 COPY koko /opt/koko/koko
-# XPAM is English only: drop the base image's other terminal translations
-RUN find /opt/koko/locale -mindepth 1 -maxdepth 1 -type d ! -name en -exec rm -rf {} + && ls /opt/koko/locale
+# XPAM is English only: drop the base image's other terminal translations and unused dev/doc files
+# (the bundled libraries' licence files stay: libssh2's BSD licence must ship with the binaries)
+RUN find /opt/koko/locale -mindepth 1 -maxdepth 1 -type d ! -name en -exec rm -rf {} + \
+    && rm -rf /opt/koko/config_example.yml /opt/guacamole/include /opt/guacamole/lib/cmake \
+         /opt/guacamole/lib/pkgconfig /opt/guacamole/lib/*.a /opt/guacamole/lib/*.la \
+         /opt/guacamole/share/man /opt/guacamole/DEPENDENCIES \
+    && find /opt/guacamole/share/doc -type f ! -iname 'COPYING*' ! -iname 'LICENSE*' ! -iname 'NOTICE*' -delete \
+    && find /opt/guacamole/share/doc -depth -type d -empty -delete \
+    && sed -i '/jumpserver\.com/d; /^[[:space:]]*#[^!]/d' /opt/koko/entrypoint.sh \
+    && ls /opt/koko/locale
 # Database command-line client rebuilt from the same source release with a current Go toolchain
 # and current golang.org/x libraries (see build-all.sh)
 COPY --chmod=755 usql /usr/local/bin/usql

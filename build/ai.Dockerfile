@@ -18,4 +18,5 @@ RUN rm -rf /usr/local/lib/node_modules/npm /usr/local/lib/node_modules/corepack 
         /usr/local/bin/npm /usr/local/bin/npx /usr/local/bin/corepack /usr/local/bin/yarn /usr/local/bin/yarnpkg \
     && node --version && codex --version
 COPY kael /opt/kael/kael
+RUN rm -f /opt/kael/config_example.yml
 HEALTHCHECK --interval=10s --timeout=5s --retries=3 CMD check http://localhost:8083/ai/health/ready

@@ -2,6 +2,8 @@
 *
 !apps
 !jms
+!utils/check_celery.sh
+!utils/start_celery_beat.py
 apps/**/__pycache__
 **/*.pyc
 **/*.pem

@@ -107,7 +107,9 @@ def login_today(c, org):
     st, body = get(c, '/api/v1/index/?dates_metrics=1&days=7', org)
     data = json.loads(body) if st == 200 else {}
     key = next((k for k in data if 'login' in k and k.startswith('dates_metrics')), None)
-    return st, (data.get(key) or [None])[-1], key
+    # the whole 7-day series: the dashboard buckets days in UTC while "today" is the local date, so between
+    # 16:00 and 24:00 UTC (TIME_ZONE Asia/Shanghai) today's logins sit in another bucket
+    return st, (sum(x or 0 for x in data.get(key)) if key and data.get(key) else None), key
 
 
 seen_any = False
@@ -117,11 +119,11 @@ for who, c in (('org admin', OA), ('org auditor', AUD)):
         print(f'INFO dashboard: {who} of org A may not read /api/v1/index/ (403)', flush=True)
         continue
     seen_any = True
-    check(f'dashboard {who} A: today counts only org A logins (1)', st == 200 and today_a == 1, (st, key, today_a))
+    check(f'dashboard {who} A: 7-day logins count only org A (1)', st == 200 and today_a == 1, (st, key, today_a))
 if not seen_any:
     print('INFO dashboard: no org-scoped role reads the dashboard; the cross-org count is not reachable', flush=True)
 st, today_root, key = login_today(ADMIN, 'ROOT')
-check('dashboard root admin: today counts every login (>=4)', st == 200 and (today_root or 0) >= 4, (st, key, today_root))
+check('dashboard root admin: 7-day logins count every org (>=4)', st == 200 and (today_root or 0) >= 4, (st, key, today_root))
 
 # ---------------------------------------------------------------- global search
 st, body = get(OA, f'/api/v1/search/?q=zzcanaryb{R}', org_a.id)

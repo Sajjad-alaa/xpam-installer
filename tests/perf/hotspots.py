@@ -14,12 +14,12 @@ for name, path in (('users-list', '/api/v1/users/users/?limit=50&offset=0'),
     for _ in range(10):
         c.get(path, HTTP_X_JMS_ORG=str(org.id))
     pr.disable()
-    s = io.StringIO(); st = pstats.Stats(pr, stream=s); st.sort_stats('cumulative').print_stats('/opt/jumpserver/apps', 22)
+    s = io.StringIO(); st = pstats.Stats(pr, stream=s); st.sort_stats('cumulative').print_stats('/opt/core/apps', 22)
     print(f'HOT ===== {name} (10 calls): application functions by cumulative time')
     for l in s.getvalue().splitlines():
-        if '/opt/jumpserver/apps' in l or 'cumtime' in l:
-            print('HOT', l.replace('/opt/jumpserver/apps/', '')[:160])
+        if '/opt/core/apps' in l or 'cumtime' in l:
+            print('HOT', l.replace('/opt/core/apps/', '')[:160])
     s = io.StringIO(); st = pstats.Stats(pr, stream=s); st.sort_stats('cumulative').print_stats('Cryptodome|encrypt|decrypt', 6)
     for l in s.getvalue().splitlines():
         if 'crypt' in l.lower() and 'percall' not in l:
-            print('HOT crypto', l.replace('/opt/jumpserver/apps/', '')[:160])
+            print('HOT crypto', l.replace('/opt/core/apps/', '')[:160])

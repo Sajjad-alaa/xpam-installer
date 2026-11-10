@@ -35,7 +35,7 @@ measure() { # label [extra env]
   [[ -n "${2:-}" ]] && extra=(-e "$2")
   docker rm -f tscore >/dev/null 2>&1
   t0=$(date +%s)
-  docker run -d --name tscore --network $NET --env-file "$W/env" "${extra[@]}" -v tsdata:/opt/jumpserver/data "xpam/core:$TAG" start web >/dev/null
+  docker run -d --name tscore --network $NET --env-file "$W/env" "${extra[@]}" -v tsdata:/opt/core/data "xpam/core:$TAG" start web >/dev/null
   for _ in $(seq 1 600); do
     docker exec tscore python3 -c "import urllib.request as u; u.urlopen('http://127.0.0.1:8080/api/health/', timeout=2)" >/dev/null 2>&1 && break
     sleep 1

@@ -32,7 +32,7 @@ fi
 echo "=== $LABEL"
 docker run --rm --network "$NET" "${ENV[@]}" "${MOUNT[@]}" -v "$HERE/seed_profile.py":/tmp/seed_profile.py:ro \
   -v "$HERE/hotspots.py":/tmp/hotspots.py:ro -e BENCH_HOTSPOTS="${BENCH_HOTSPOTS:-0}" \
-  --entrypoint bash "$IMAGE" -c 'cd /opt/jumpserver/apps && python manage.py migrate --noinput >/dev/null 2>&1;
+  --entrypoint bash "$IMAGE" -c 'cd /opt/core/apps && python manage.py migrate --noinput >/dev/null 2>&1;
     { cat /tmp/seed_profile.py; [ "$BENCH_HOTSPOTS" = 1 ] && cat /tmp/hotspots.py; } > /tmp/run.py;
     python manage.py shell < /tmp/run.py 2>/tmp/err.log | grep -E "^(SEED|PROFILE|HOT)";
     grep -E "Traceback|Error" /tmp/err.log | grep -vE "DEBU|Warning" | tail -5'

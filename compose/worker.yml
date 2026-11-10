@@ -18,10 +18,10 @@ services:
     environment:
       LC_ALL: C.UTF-8
     volumes:
-      - ${CONFIG_DIR}/certs:/opt/jumpserver/data/certs:ro
-      - ${VOLUME_DIR}/core/data:/opt/jumpserver/data
+      - ${CONFIG_DIR}/certs:/opt/core/data/certs:ro
+      - ${VOLUME_DIR}/core/data:/opt/core/data
     healthcheck:
-      test: "bash /opt/jumpserver/utils/check_worker.sh"
+      test: "bash /opt/core/utils/check_worker.sh"
       interval: 10s
       timeout: 5s
       retries: 3

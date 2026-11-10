@@ -45,4 +45,4 @@ for _ in $(seq 1 150); do
   sleep 3
 done
 docker cp "$HERE/$TEST" acccore:/tmp/$TEST
-docker exec -e ROOT_PASSWORD="$ROOT_PASSWORD" -e TARGET_PG_PASSWORD="$TARGET_PG_PASSWORD" -w /opt/jumpserver/apps acccore python /tmp/$TEST 2>&1 | grep -vE "^\s*$|Warning|warn\(" | tail -60
+docker exec -e ROOT_PASSWORD="$ROOT_PASSWORD" -e TARGET_PG_PASSWORD="$TARGET_PG_PASSWORD" -w /opt/core/apps acccore python /tmp/$TEST 2>&1 | grep -vE "^\s*$|Warning|warn\(" | tail -60

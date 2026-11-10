@@ -16,7 +16,7 @@ cleanup() { docker rm -f xkcx >/dev/null 2>&1; docker volume rm xkcx-docker >/de
 [[ "${KEEP:-}" == "1" ]] || trap cleanup EXIT
 cleanup
 MIN="XPAM_VAULT_MODE=none KOKO_ENABLED=0 CHEN_ENABLED=0 KAEL_ENABLED=0 BROWSER_ENABLED=0 WORKSPACE_ENABLED=0 WORKER_ENABLED=0 SERVER_SIZE=small XPAM_IMAGE_REGISTRY=local XPAM_VERSION=$TAG"
-CORE_SHELL="docker exec -i xpam_core bash -c 'cd /opt/jumpserver/apps && python manage.py shell 2>/dev/null'"
+CORE_SHELL="docker exec -i xpam_core bash -c 'cd /opt/core/apps && python manage.py shell 2>/dev/null'"
 cfg() { on xkcx "grep -E '^$1=' /opt/xpam/config/config.txt | tail -1 | cut -d= -f2-"; }
 ready() { wait_for "on xkcx 'docker ps --format \"{{.Names}} {{.Status}}\"' | grep -q '^xpam_core .*(healthy)'" "${1:-40}"; }
 

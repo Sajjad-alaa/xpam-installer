@@ -18,7 +18,7 @@ set -o pipefail
 BASE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" &>/dev/null && pwd)"
 . "${BASE_DIR}/utils.sh"
 
-function core_shell() { docker exec -i xpam_core bash -c "cd /opt/jumpserver/apps && python manage.py shell" >/dev/null 2>&1; }
+function core_shell() { docker exec -i xpam_core bash -c "cd /opt/core/apps && python manage.py shell" >/dev/null 2>&1; }
 
 function wait_core() {
   local i
@@ -77,7 +77,7 @@ function rotate_keep_sessions() {
   oneoff_args
   # the command runs with the previous key as SECRET_KEY and the new one in NEW_SECRET_KEY (by name only)
   if SECRET_KEY="${old_key}" NEW_SECRET_KEY="${new_key}" docker run --rm --network xpam_net "${ONEOFF[@]}" \
-      --env SECRET_KEY --env NEW_SECRET_KEY -w /opt/jumpserver/apps --entrypoint /opt/py3/bin/python "${image}" \
+      --env SECRET_KEY --env NEW_SECRET_KEY -w /opt/core/apps --entrypoint /opt/py3/bin/python "${image}" \
       manage.py rotate_secret_key; then
     set_config XPAM_KEY_ROTATION_PENDING ""
     echo_green "\nSECRET_KEY rotated; nobody was signed out (the previous key stays valid until the next rotation)."
@@ -117,7 +117,7 @@ PY
   oneoff_args
   # the key reaches the container by name only (--env NAME): it never appears in a process list
   if NEW_SECRET_KEY="${new_key}" docker run --rm --network xpam_net "${ONEOFF[@]}" --env NEW_SECRET_KEY \
-      -w /opt/jumpserver/apps --entrypoint /opt/py3/bin/python "${image}" manage.py rotate_secret_key; then
+      -w /opt/core/apps --entrypoint /opt/py3/bin/python "${image}" manage.py rotate_secret_key; then
     set_config SECRET_KEY "${new_key}" || {
       log_error "Saving the new key failed: restore ${config_backup} and the database backup"
       return 1

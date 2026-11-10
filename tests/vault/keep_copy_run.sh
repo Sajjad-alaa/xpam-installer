@@ -57,7 +57,7 @@ docker run -d --name kccore --network $NET --env-file "$W/env" "xpam/core:$TAG" 
 rm -rf "$W"
 healthy || { docker logs kccore 2>&1 | tail -20; exit 1; }
 docker cp "$HERE/keep_copy_test.py" kccore:/tmp/keep_copy_test.py
-run() { docker exec -w /opt/jumpserver/apps kccore python /tmp/keep_copy_test.py "$1" 2>&1 | grep -vE '^\s*$|Warning|warn\(' | tail -40; }
+run() { docker exec -w /opt/core/apps kccore python /tmp/keep_copy_test.py "$1" 2>&1 | grep -vE '^\s*$|Warning|warn\(' | tail -40; }
 rc=0
 run setup || rc=1
 docker pause kcvault >/dev/null

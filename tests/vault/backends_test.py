@@ -12,8 +12,8 @@ import os
 import sys
 import uuid
 
-sys.path.insert(0, '/opt/jumpserver/apps')
-os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'jumpserver.settings')
+sys.path.insert(0, '/opt/core/apps')
+os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'xpam.settings')
 import django  # noqa: E402
 
 django.setup()

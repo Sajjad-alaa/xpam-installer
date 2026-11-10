@@ -3,7 +3,7 @@ follows each change, is encrypted with the local data key, is read only when Vau
 option off removes the copies, on fills them from Vault; bringing a secret back from Vault drops its copy.
   python keep_copy_test.py setup|down|live|up      (keep_copy_run.sh pauses Vault between the phases)"""
 import json, os, secrets, sys, time
-sys.path.insert(0, '/opt/jumpserver/apps'); os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'jumpserver.settings')
+sys.path.insert(0, '/opt/core/apps'); os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'xpam.settings')
 import django; django.setup()
 from django.conf import settings
 from django.db import connection

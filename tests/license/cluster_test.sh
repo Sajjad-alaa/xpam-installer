@@ -38,7 +38,7 @@ for _ in $(seq 1 120); do
   sleep 3
 done
 docker cp "$GENERATOR" lctcore:/tmp/gen.py
-docker exec -i lctcore bash -c 'cd /opt/jumpserver/apps && python manage.py shell 2>/dev/null' <<'PY'
+docker exec -i lctcore bash -c 'cd /opt/core/apps && python manage.py shell 2>/dev/null' <<'PY'
 import base64, json, subprocess, sys
 from unittest import mock
 from cryptography.hazmat.primitives import serialization

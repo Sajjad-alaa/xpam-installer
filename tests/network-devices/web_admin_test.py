@@ -3,7 +3,7 @@ emulator login page), with the stored account, a wrong password, certificate che
 The browser request is built exactly like Lion builds it (pkg/lion/session/xpambrowser.go)."""
 import json, os, secrets, ssl, sys, time, traceback, urllib.request
 from urllib.parse import urlsplit
-sys.path.insert(0, '/opt/jumpserver/apps'); os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'jumpserver.settings')
+sys.path.insert(0, '/opt/core/apps'); os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'xpam.settings')
 import django; django.setup()
 from django.conf import settings
 settings.ALLOWED_HOSTS = list(settings.ALLOWED_HOSTS) + ['testserver']

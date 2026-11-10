@@ -3,7 +3,7 @@ offered, the JIT APIs refuse, and a "JIT only" rule still hides the standing acc
 closed); a failed licence check keeps the last answer instead of switching JIT off.
   run with tests/jit/access_run.sh (TEST=tickets_gate_test.py)"""
 import os, sys, traceback
-sys.path.insert(0, '/opt/jumpserver/apps'); os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'jumpserver.settings')
+sys.path.insert(0, '/opt/core/apps'); os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'xpam.settings')
 import django; django.setup()
 from django.conf import settings
 from django.utils import timezone

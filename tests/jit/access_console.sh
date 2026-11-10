@@ -20,7 +20,7 @@ cleanup
 mkdir -p "$OUT" "$PW"; chmod 777 "$OUT" "$PW"
 MIN="XPAM_VAULT_MODE=none KOKO_ENABLED=0 CHEN_ENABLED=0 KAEL_ENABLED=0 BROWSER_ENABLED=0 WORKER_ENABLED=0 SERVER_SIZE=small XPAM_IMAGE_REGISTRY=local XPAM_VERSION=$TAG"
 NODE_IMAGE=xpam-test/rocky-docker:9
-CORE_SHELL="docker exec -i xpam_core bash -c 'cd /opt/jumpserver/apps && python manage.py shell 2>/dev/null'"
+CORE_SHELL="docker exec -i xpam_core bash -c 'cd /opt/core/apps && python manage.py shell 2>/dev/null'"
 
 say "server with XPAM $TAG"
 docker network create --subnet 172.31.6.0/24 "$NET" >/dev/null
@@ -62,7 +62,7 @@ c = Client(HTTP_HOST='localhost'); c.force_login(User.objects.get(username='admi
 print('cookies', json.dumps({'session': [settings.SESSION_COOKIE_NAME, c.cookies[settings.SESSION_COOKIE_NAME].value]}))" \
   | on xacx "$CORE_SHELL" | grep '^cookies ' | tail -1 | cut -d' ' -f2-)
 # (the tickets feature needs a licence with tickets: the test server's trial has none — let the console have it)
-on xacx "docker exec xpam_core sh -c \"sed -i 's/^def has_ticket_license():/def has_ticket_license():\\n    return True\\ndef _orig_has_ticket_license():/' /opt/jumpserver/apps/xpack/utils.py\" && docker restart xpam_core >/dev/null"
+on xacx "docker exec xpam_core sh -c \"sed -i 's/^def has_ticket_license():/def has_ticket_license():\\n    return True\\ndef _orig_has_ticket_license():/' /opt/core/apps/xpack/utils.py\" && docker restart xpam_core >/dev/null"
 wait_for "on xacx 'docker ps --format \"{{.Names}} {{.Status}}\"' | grep -q '^xpam_core .*(healthy)'" 40
 cat > "$PW/check.js" <<'JS'
 const { chromium } = require('playwright');

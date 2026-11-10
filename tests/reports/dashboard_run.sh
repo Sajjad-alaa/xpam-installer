@@ -36,4 +36,4 @@ for _ in $(seq 1 150); do
   sleep 3
 done
 docker cp "$HERE/dashboard_test.py" cdcore:/tmp/dashboard_test.py
-docker exec -w /opt/jumpserver/apps cdcore python /tmp/dashboard_test.py 2>&1 | grep -vE "^\s*$|Warning|warn\(|\[DEBU\]|\[INFO\]" | tail -60
+docker exec -w /opt/core/apps cdcore python /tmp/dashboard_test.py 2>&1 | grep -vE "^\s*$|Warning|warn\(|\[DEBU\]|\[INFO\]" | tail -60

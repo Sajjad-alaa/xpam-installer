@@ -24,7 +24,7 @@ if [ -n "$APPS" ]; then
   source "$HERE/data_mounts.sh" "$IMAGE" "$APPS"; MOUNT=("${APPS_MOUNT[@]}")
 fi
 docker run --rm --network "$NET" "${ENV[@]}" "${MOUNT[@]}" -v "$HERE/attack_test.py":/tmp/attack_test.py:ro \
-  --entrypoint bash "$IMAGE" -c 'cd /opt/jumpserver/apps && timeout 900 python manage.py migrate --noinput >/tmp/m.log 2>&1;
+  --entrypoint bash "$IMAGE" -c 'cd /opt/core/apps && timeout 900 python manage.py migrate --noinput >/tmp/m.log 2>&1;
     echo "migrate: $(grep -c "Applying" /tmp/m.log) applied";
     timeout 900 python manage.py shell < /tmp/attack_test.py 2>/tmp/err.log; echo "test exit $?";
     grep -E "Traceback|Error" /tmp/err.log | grep -vE "DEBU|INFO|Warning" | tail -15'

@@ -43,7 +43,7 @@ docker run -d --name tvpg --network $NET -e POSTGRES_PASSWORD="$DB_PASSWORD" -e 
 docker run -d --name tvredis --network $NET redis:7.4.10-bookworm redis-server --requirepass "$REDIS_PASSWORD" >/dev/null
 sleep 5
 docker run --rm --network $NET --env-file "$W/core.env" --entrypoint sh "xpam/core:$TAG" \
-  -c 'cd /opt/jumpserver/apps && python manage.py migrate >/dev/null 2>&1 && echo migrated' | tail -1
+  -c 'cd /opt/core/apps && python manage.py migrate >/dev/null 2>&1 && echo migrated' | tail -1
 
 say "mock Delinea and Google servers"
 openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 -out "$W/gcp.key" 2>/dev/null
@@ -144,7 +144,7 @@ say "backends"
 run() { # extra env...
   docker rm -f tvcore >/dev/null 2>&1
   local src=()
-  [[ -n "${CORE_SRC:-}" ]] && src=(-v "$CORE_SRC/apps/accounts/backends:/opt/jumpserver/apps/accounts/backends:ro")
+  [[ -n "${CORE_SRC:-}" ]] && src=(-v "$CORE_SRC/apps/accounts/backends:/opt/core/apps/accounts/backends:ro")
   docker run --rm --name tvcore --network $NET --ip $CORE_IP --env-file "$W/core.env" -e VAULT_ENABLED=true "${src[@]}" "$@" \
     -v "$HERE/backends_test.py:/t/backends_test.py:ro" -v "$W/vc:/vc:ro" -v "$W:/w:ro" \
     --entrypoint /opt/py3/bin/python "xpam/core:$TAG" /t/backends_test.py 2>&1 | grep -E '^(PASS|FAIL|RESULT)|Error|Traceback'
@@ -192,7 +192,7 @@ for mode in transit local; do
     # (its own database: values of the transit stage cannot be opened without Vault)
     docker exec tvpg createdb -U postgres jumpserver_local 2>/dev/null
     docker run --rm --network $NET --env-file "$W/core.env" -e DB_NAME=jumpserver_local --entrypoint sh "xpam/core:$TAG" \
-      -c 'cd /opt/jumpserver/apps && python manage.py migrate >/dev/null 2>&1'
+      -c 'cd /opt/core/apps && python manage.py migrate >/dev/null 2>&1'
     extra=(-e XPAM_DATA_KEY=local -e DB_NAME=jumpserver_local)
   fi
   docker rm -f tvcore >/dev/null 2>&1
@@ -205,8 +205,8 @@ say "what the vendors saw"
 docker exec tvmock python3 -c "import urllib.request,json; print('delinea', json.load(urllib.request.urlopen('http://localhost:8301/_state'))['calls'], 'calls;', 'google', json.load(urllib.request.urlopen('http://localhost:8302/_state'))['calls'], 'calls')" 2>/dev/null
 echo "a wrong Conjur key / Delinea password / Google key is refused:"
 docker run --rm --network $NET --env-file "$W/core.env" -v "$W:/w:ro" --entrypoint /opt/py3/bin/python "xpam/core:$TAG" -c "
-import sys; sys.path.insert(0, '/opt/jumpserver/apps')
-import os; os.environ['DJANGO_SETTINGS_MODULE'] = 'jumpserver.settings'
+import sys; sys.path.insert(0, '/opt/core/apps')
+import os; os.environ['DJANGO_SETTINGS_MODULE'] = 'xpam.settings'
 import django; django.setup()
 from accounts.backends.cyberark.service import ConjurClient
 from accounts.backends.delinea.service import DelineaClient

@@ -2,7 +2,7 @@
 protocols and actions, the request choosing among them, the granted access enforcing them; the ticket's access
 (state, accounts, sessions), the list's Access column, the requester ending it and an approver revoking it."""
 import os, sys, time, traceback
-sys.path.insert(0, '/opt/jumpserver/apps'); os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'jumpserver.settings')
+sys.path.insert(0, '/opt/core/apps'); os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'xpam.settings')
 import django; django.setup()
 from django.conf import settings
 settings.ALLOWED_HOSTS = list(settings.ALLOWED_HOSTS) + ['testserver']

@@ -21,7 +21,7 @@ mkdir -p "$OUT" "$PW"; chmod 777 "$OUT" "$PW"
 MIN="XPAM_VAULT_MODE=none KOKO_ENABLED=0 CHEN_ENABLED=0 KAEL_ENABLED=0 BROWSER_ENABLED=0 WORKSPACE_ENABLED=0 WORKER_ENABLED=0 SERVER_SIZE=small XPAM_IMAGE_REGISTRY=local XPAM_VERSION=$TAG"
 NODE_IMAGE=rockylinux/rockylinux:9-ubi-init
 docker image inspect xpam-test/rocky-docker:9 >/dev/null 2>&1 && NODE_IMAGE=xpam-test/rocky-docker:9
-CORE_SHELL="docker exec -i xpam_core bash -c 'cd /opt/jumpserver/apps && python manage.py shell 2>/dev/null'"
+CORE_SHELL="docker exec -i xpam_core bash -c 'cd /opt/core/apps && python manage.py shell 2>/dev/null'"
 
 say "server"
 docker network create --subnet 172.31.5.0/24 "$NET" >/dev/null
@@ -54,7 +54,7 @@ on xvcx "cd /opt/xpam-installer && timeout 1500 bash ./xpamctl.sh vault local > 
 check 'local Vault connected' "on xvcx 'grep -q \"secrets are in Vault\" /root/local.log'"
 FAKE_DLN=$(head -c 24 /dev/urandom | od -An -tx1 | tr -d ' \n')  # (a made-up vendor password: the console must never show it)
 printf '{"VAULT_DELINEA_URL": "https://ss.example.com/SecretServer", "VAULT_DELINEA_USERNAME": "xpam-app", "VAULT_DELINEA_PASSWORD": "%s", "VAULT_DELINEA_FOLDER_ID": "7", "VAULT_DELINEA_TEMPLATE_ID": "6003"}' "$FAKE_DLN" \
-  | on xvcx "docker exec -i xpam_core bash -c 'cd /opt/jumpserver/apps && python manage.py xpam_vault_connection add --name delinea-prod --type delinea'" >/dev/null 2>&1
+  | on xvcx "docker exec -i xpam_core bash -c 'cd /opt/core/apps && python manage.py xpam_vault_connection add --name delinea-prod --type delinea'" >/dev/null 2>&1
 printf '%s\n' "from orgs.utils import set_current_org; from orgs.models import Organization; set_current_org(Organization.default())
 from accounts.models import VaultConnection, VaultStorageRule
 VaultStorageRule.objects.get_or_create(name='network devices', defaults={'priority': 10, 'username': 'net_*', 'connection': VaultConnection.objects.get(name='delinea-prod')})" \

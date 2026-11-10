@@ -342,7 +342,7 @@ def core_healthy():
 
 def notify_primary(conf, peer_ok):
     """Tell the administrators (site message, e-mail) that XPAM moved to this server."""
-    code, out = run(['docker', 'exec', '-w', '/opt/jumpserver/apps', 'xpam_core', 'python', 'manage.py',
+    code, out = run(['docker', 'exec', '-w', '/opt/core/apps', 'xpam_core', 'python', 'manage.py',
                      'xpam_ha_event', '--node', conf['HA_NODE_NAME'], '--ip', conf['HA_NODE_IP'],
                      '--peer', ','.join(peers(conf)), '--peer-reachable', '1' if peer_ok else '0'], 180)
     if code:

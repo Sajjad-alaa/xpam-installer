@@ -1,6 +1,6 @@
 """Isolated test stack, XPAM 5.1.9: network device push / discovery / change secret / remove / JIT, per vendor."""
 import os, sys, time, traceback
-sys.path.insert(0, '/opt/jumpserver/apps'); os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'jumpserver.settings')
+sys.path.insert(0, '/opt/core/apps'); os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'xpam.settings')
 import django; django.setup()
 from django.conf import settings
 settings.ALLOWED_HOSTS = list(settings.ALLOWED_HOSTS) + ['testserver']

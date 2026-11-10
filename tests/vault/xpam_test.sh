@@ -27,7 +27,7 @@ export XPAM_VAULT_BUNDLE_PASSPHRASE="Bundle-$(head -c 32 /dev/urandom | tr -dc A
 export XPAM_VAULT_RECOVERY_PASSPHRASE="Recovery-$(head -c 32 /dev/urandom | tr -dc A-Za-z0-9 | head -c 20)"
 PW="XPAM_VAULT_PASSPHRASE=$XPAM_VAULT_PASSPHRASE XPAM_VAULT_BUNDLE_PASSPHRASE=$XPAM_VAULT_BUNDLE_PASSPHRASE XPAM_VAULT_RECOVERY_PASSPHRASE=$XPAM_VAULT_RECOVERY_PASSPHRASE XPAM_VAULT_ALLOW_SWAP=1"
 MIN="XPAM_VAULT_MODE=none CHEN_ENABLED=0 KAEL_ENABLED=0 BROWSER_ENABLED=0 WORKSPACE_ENABLED=0 WEB_ENABLED=0 WORKER_ENABLED=0 SERVER_SIZE=small XPAM_IMAGE_REGISTRY=local XPAM_VERSION=$TAG"
-CORE_SHELL="docker exec -i xpam_core bash -c 'cd /opt/jumpserver/apps && python manage.py shell 2>/dev/null'"
+CORE_SHELL="docker exec -i xpam_core bash -c 'cd /opt/core/apps && python manage.py shell 2>/dev/null'"
 
 # the Vault image: from the host (VAULT_FS_TAR, `docker export` of a hashicorp/vault:2.1.2 container) or pulled
 load_vault() {

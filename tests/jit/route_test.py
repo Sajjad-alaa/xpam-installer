@@ -3,7 +3,7 @@
 (Workspace and console), the note on a request that waits ("Not approved automatically: ... Approval: level 1 ..."),
 the approvers' inbox flag, and requests from the console's form going through the same decision."""
 import os, sys, traceback
-sys.path.insert(0, '/opt/jumpserver/apps'); os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'jumpserver.settings')
+sys.path.insert(0, '/opt/core/apps'); os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'xpam.settings')
 import django; django.setup()
 from django.conf import settings
 from django.utils import timezone

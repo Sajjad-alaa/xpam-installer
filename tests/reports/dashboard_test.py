@@ -2,7 +2,7 @@
 auditors or users), who sees which (shared with people, groups, the whole organization, or private), organizations
 kept apart, and widgets checked against the catalog."""
 import os, sys, traceback
-sys.path.insert(0, '/opt/jumpserver/apps'); os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'jumpserver.settings')
+sys.path.insert(0, '/opt/core/apps'); os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'xpam.settings')
 import django; django.setup()
 from django.conf import settings
 settings.ALLOWED_HOSTS = list(settings.ALLOWED_HOSTS) + ['testserver']

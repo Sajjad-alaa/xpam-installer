@@ -24,10 +24,10 @@ if [ "$APPS" != "image" ]; then
   source "$HERE/data_mounts.sh" "$IMAGE" "$APPS"; MOUNT=("${APPS_MOUNT[@]}")
 fi
 docker run --rm --network "$NET" "${ENV[@]}" "${MOUNT[@]}" -v "$HERE/api_matrix.py":/tmp/api_matrix.py:ro \
-  --entrypoint bash "$IMAGE" -c 'cd /opt/jumpserver/apps && timeout 900 python manage.py migrate --noinput >/tmp/m.log 2>&1;
+  --entrypoint bash "$IMAGE" -c 'cd /opt/core/apps && timeout 900 python manage.py migrate --noinput >/tmp/m.log 2>&1;
     echo "migrate: $(grep -c "Applying" /tmp/m.log) applied, last: $(tail -1 /tmp/m.log | cut -c1-100)";
     timeout 3000 python manage.py shell < /tmp/api_matrix.py 2>/tmp/err.log; echo "matrix exit $?"; grep -vE "DEBU|INFO|Warning|warn\(" /tmp/err.log | tail -25;
-    echo "== server errors"; grep -A40 "Internal Server Error" /tmp/err.log | grep -E "Internal Server Error|^\S*Error|File \"/opt/jumpserver/apps"' \
+    echo "== server errors"; grep -A40 "Internal Server Error" /tmp/err.log | grep -E "Internal Server Error|^\S*Error|File \"/opt/core/apps"' \
   > "$OUT" 2>&1
 grep -E '^(WORLD|ROUTES|READS|WRITES|DONE|ESCALATION|FUNC|migrate|matrix)' "$OUT"
 echo "findings: $(grep -c '^FINDING' "$OUT")  (in $OUT)"

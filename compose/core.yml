@@ -17,8 +17,8 @@ services:
       # (the desktop client on the download page: CLIENT_VERSION in config.txt overrides the release's)
       CLIENT_VERSION: ${CLIENT_VERSION:-${XPAM_CLIENT_VERSION:-5.1.28}}
     volumes:
-      - ${CONFIG_DIR}/certs:/opt/jumpserver/data/certs:ro
-      - ${VOLUME_DIR}/core/data:/opt/jumpserver/data
+      - ${CONFIG_DIR}/certs:/opt/core/data/certs:ro
+      - ${VOLUME_DIR}/core/data:/opt/core/data
     healthcheck:
       test: "check http://localhost:8080/api/health/"
       interval: 10s

@@ -14,6 +14,6 @@ services:
       REDIS_SENTINEL_USE_REDIS_PASSWORD: "true"
       REDIS_USE_SSL: "true"
       REDIS_SSL_REQUIRED: required
-      REDIS_SSL_CA: /opt/jumpserver/data/certs/ha/ca.crt
-      REDIS_SSL_CERT: /opt/jumpserver/data/certs/ha/app.crt
-      REDIS_SSL_KEY: /opt/jumpserver/data/certs/ha/app.key
+      REDIS_SSL_CA: /opt/core/data/certs/ha/ca.crt
+      REDIS_SSL_CERT: /opt/core/data/certs/ha/app.crt
+      REDIS_SSL_KEY: /opt/core/data/certs/ha/app.key

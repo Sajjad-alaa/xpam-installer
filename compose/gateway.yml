@@ -36,10 +36,10 @@ services:
       DOWNLOAD_FALLBACK: ${DOWNLOAD_FALLBACK:-0}
     volumes:
       # read only, and only what nginx serves (not ansible/celery runtime data or certificates)
-      - ${VOLUME_DIR}/core/data/static:/opt/jumpserver/data/static:ro
-      - ${VOLUME_DIR}/core/data/media:/opt/jumpserver/data/media:ro
-      - ${VOLUME_DIR}/core/data/interface:/opt/jumpserver/data/interface:ro
-      - ${VOLUME_DIR}/core/data/.well-known:/opt/jumpserver/data/.well-known:ro
+      - ${VOLUME_DIR}/core/data/static:/opt/core/data/static:ro
+      - ${VOLUME_DIR}/core/data/media:/opt/core/data/media:ro
+      - ${VOLUME_DIR}/core/data/interface:/opt/core/data/interface:ro
+      - ${VOLUME_DIR}/core/data/.well-known:/opt/core/data/.well-known:ro
       - ${VOLUME_DIR}/nginx/data/logs:/var/log/nginx
       - ${CONFIG_DIR}/nginx/interface_security.conf:/etc/nginx/includes/interface_security.conf:ro
       - ${VOLUME_DIR}/web/download:/opt/download/public:ro

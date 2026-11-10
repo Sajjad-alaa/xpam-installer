@@ -3,11 +3,11 @@
 # JDMC is a mandatory host-side component in Enterprise Edition. Community
 # Edition does not install it. JDMC_SOCK_PATH is kept for Core integration.
 JDMC_SERVICE_NAME=${JDMC_SERVICE_NAME:-jdmc.service}
-JDMC_CORE_SOCKET_PATH=${JDMC_CORE_SOCKET_PATH:-/opt/jumpserver/data/unshare/jdmc.sock}
+JDMC_CORE_SOCKET_PATH=${JDMC_CORE_SOCKET_PATH:-/opt/core/data/unshare/jdmc.sock}
 JDMC_INSTALL_DIR=${JDMC_INSTALL_DIR:-/opt/jdmc}
 JDMC_LEGACY_SERVICE_NAME=${KOTL_SERVICE_NAME:-kotl.service}
 JDMC_LEGACY_INSTALL_DIR=${KOTL_INSTALL_DIR:-/opt/kotl}
-JDMC_LEGACY_CORE_SOCKET_PATH=${KOTL_CORE_SOCKET_PATH:-/opt/jumpserver/data/unshare/kotl.sock}
+JDMC_LEGACY_CORE_SOCKET_PATH=${KOTL_CORE_SOCKET_PATH:-/opt/core/data/unshare/kotl.sock}
 JDMC_HA_CLI=${JDMC_HA_CLI:-${JDMC_INSTALL_DIR}/current/ha/ha.sh}
 JDMC_SYSTEMD_DIRS=${JDMC_SYSTEMD_DIRS:-/etc/systemd/system:/run/systemd/system:/usr/local/lib/systemd/system:/usr/lib/systemd/system:/lib/systemd/system}
 

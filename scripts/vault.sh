@@ -198,7 +198,7 @@ config_value() { # key — from config.txt only (no Vault fallback)
   echo "${value}"
 }
 
-core_exec() { docker exec -i xpam_core bash -c "cd /opt/jumpserver/apps && python manage.py shell" 2>/dev/null; }
+core_exec() { docker exec -i xpam_core bash -c "cd /opt/core/apps && python manage.py shell" 2>/dev/null; }
 
 secrets_left_on_disk() { # files on this server that still hold a SECRET_KEY value
   # (config.txt copies: next to config.txt — .bak-*, .before-ha-* —, in the upgrade / key rotation backups
@@ -591,7 +591,7 @@ cmd_local() { # a hardened Vault on this server (the kit with --local) and XPAM 
 }
 
 core_manage() { # args — manage.py in XPAM's core container (stdin passed on)
-  docker exec -i xpam_core bash -c 'cd /opt/jumpserver/apps && python manage.py "$@" 2>/dev/null' _ "$@"
+  docker exec -i xpam_core bash -c 'cd /opt/core/apps && python manage.py "$@" 2>/dev/null' _ "$@"
 }
 
 cmd_add_connection() { # name type <settings.json | --bundle xpam-vault-IP.enc> — a further vault, managed here
@@ -638,7 +638,7 @@ cmd_rotation() { # daily|weekly|monthly|off — how often the data key rotates (
   esac
   set_config XPAM_DATA_KEY_ROTATION "${period}"
   if [[ "$(get_config XPAM_DATA_KEY)" == transit ]]; then
-    XV_P="${hours}" docker exec -i -e XV_P xpam_core bash -c 'cd /opt/jumpserver/apps && python manage.py shell 2>/dev/null' <<'PY' \
+    XV_P="${hours}" docker exec -i -e XV_P xpam_core bash -c 'cd /opt/core/apps && python manage.py shell 2>/dev/null' <<'PY' \
       || { log_error "Vault did not accept the rotation period"; return 1; }
 import os
 from common.db import datakey
@@ -733,7 +733,7 @@ cmd_verify() { # proves the connection is encrypted and XPAM's access is what it
   # (the key goes to grep through a file descriptor, never on a command line; no -q: grep must read all, or a
   # match would end the pipe early and "pipefail" would turn a found key into a pass)
   v "no container holds SECRET_KEY in its settings" "[[ -n \"\${sk}\" ]] && ! docker ps -q | xargs -r docker inspect | grep -F -f <(printf '%s\\n' \"\${sk}\") >/dev/null"
-  v "XPAM's own client: TLS 1.3, the kit CA only, login and store OK" "[[ \$(docker exec -i xpam_core bash -c 'cd /opt/jumpserver/apps && python manage.py shell' 2>/dev/null <<'PY' | tail -1
+  v "XPAM's own client: TLS 1.3, the kit CA only, login and store OK" "[[ \$(docker exec -i xpam_core bash -c 'cd /opt/core/apps && python manage.py shell' 2>/dev/null <<'PY' | tail -1
 import ssl
 from accounts.backends import vault_client
 vault_client.type

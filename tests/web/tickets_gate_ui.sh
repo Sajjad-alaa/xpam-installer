@@ -20,7 +20,7 @@ cleanup() { docker rm -f xtgx xtgpw >/dev/null 2>&1; docker volume rm xtgx-docke
 cleanup
 mkdir -p "$OUT" "$PW"; chmod 777 "$OUT" "$PW"
 MIN="XPAM_VAULT_MODE=none KOKO_ENABLED=0 CHEN_ENABLED=0 KAEL_ENABLED=0 BROWSER_ENABLED=0 WORKER_ENABLED=0 SERVER_SIZE=small XPAM_IMAGE_REGISTRY=local XPAM_VERSION=$TAG"
-CORE_SHELL="docker exec -i xpam_core bash -c 'cd /opt/jumpserver/apps && python manage.py shell 2>/dev/null'"
+CORE_SHELL="docker exec -i xpam_core bash -c 'cd /opt/core/apps && python manage.py shell 2>/dev/null'"
 
 say "test server"
 docker network create --subnet 172.31.9.0/24 "$NET" >/dev/null
@@ -43,7 +43,7 @@ print('cookies', json.dumps({'session': [settings.SESSION_COOKIE_NAME, c.cookies
 
 # the ticket licence: the trial has none — "licensed" patches the check in the running core, "unlicensed" restores it
 licence() {
-  local f=/opt/jumpserver/apps/xpack/utils.py
+  local f=/opt/core/apps/xpack/utils.py
   if [[ "$1" == on ]]; then
     # (the original is kept aside, so "unlicensed" can put it back exactly)
     on xtgx "docker exec xpam_core sh -c 'test -f $f.orig || cp $f $f.orig'"

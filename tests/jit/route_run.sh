@@ -36,4 +36,4 @@ for _ in $(seq 1 150); do
   sleep 3
 done
 docker cp "$HERE/route_test.py" rtcore:/tmp/route_test.py
-docker exec -w /opt/jumpserver/apps rtcore python /tmp/route_test.py 2>&1 | grep -vE "^\s*$|Warning|warn\(|\[DEBU\]|\[INFO\]" | tail -60
+docker exec -w /opt/core/apps rtcore python /tmp/route_test.py 2>&1 | grep -vE "^\s*$|Warning|warn\(|\[DEBU\]|\[INFO\]" | tail -60

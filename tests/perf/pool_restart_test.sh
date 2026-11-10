@@ -15,7 +15,7 @@ docker run -d --name xp-pg --network "$NET" -e POSTGRES_PASSWORD=testonly -e POS
 sleep 8
 ENV=(-e SECRET_KEY=test-only-not-secret-0123456789abcdef -e BOOTSTRAP_TOKEN=testtoken0123456 -e DB_ENGINE=postgresql
      -e DB_HOST=xp-pg -e DB_PORT=5432 -e DB_USER=postgres -e DB_PASSWORD=testonly -e DB_NAME=jumpserver -e REDIS_HOST=xp-redis)
-docker run --rm --network "$NET" "${ENV[@]}" --entrypoint bash "$IMAGE" -c 'cd /opt/jumpserver/apps && python manage.py migrate --noinput >/dev/null 2>&1
+docker run --rm --network "$NET" "${ENV[@]}" --entrypoint bash "$IMAGE" -c 'cd /opt/core/apps && python manage.py migrate --noinput >/dev/null 2>&1
   echo "from users.models import User; u = User.objects.get(username=\"admin\"); u.set_password(\"Pool-Test-Pass-2026\"); u.is_first_login = False; u.save()" | python manage.py shell >/dev/null 2>&1'
 docker run -d --name xp-core --network "$NET" --network-alias core "${ENV[@]}" "$IMAGE" start web >/dev/null
 for i in $(seq 1 60); do [ "$(docker run --rm --network "$NET" curlimages/curl:8.11.1 -s -o /dev/null -w '%{http_code}' http://core:8080/api/health/)" = 200 ] && break; sleep 3; done

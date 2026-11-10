@@ -11,7 +11,7 @@ function main() {
   local server cluster seed
   server=$(xpam_server_id)
   if docker ps --format '{{.Names}}' | grep -qx xpam_core; then
-    cluster=$(docker exec -i xpam_core bash -c 'cd /opt/jumpserver/apps && python manage.py shell 2>/dev/null' \
+    cluster=$(docker exec -i xpam_core bash -c 'cd /opt/core/apps && python manage.py shell 2>/dev/null' \
       <<<'from xpack.utils import get_cluster_id; print("CLUSTER", get_cluster_id())' | awk '/^CLUSTER /{print $2}' | tail -1)
   fi
   if [[ -z "${cluster}" ]] && docker ps --format '{{.Names}}' | grep -qx xpam_postgresql; then

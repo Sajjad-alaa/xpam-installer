@@ -19,7 +19,7 @@ cleanup() { docker rm -f xfcx >/dev/null 2>&1; docker volume rm xfcx-docker >/de
 [[ "${KEEP:-}" == "1" ]] || trap cleanup EXIT
 cleanup
 MIN="XPAM_VAULT_MODE=none KOKO_ENABLED=0 CHEN_ENABLED=0 KAEL_ENABLED=0 BROWSER_ENABLED=0 WORKSPACE_ENABLED=0 WEB_ENABLED=0 WORKER_ENABLED=0 SERVER_SIZE=small XPAM_IMAGE_REGISTRY=local XPAM_VERSION=$TAG FACE_RECOGNITION_ENABLED=true FACE_LIVENESS_MODE=off"
-CORE_SHELL="docker exec -i xpam_core bash -c 'cd /opt/jumpserver/apps && python manage.py shell 2>/dev/null'"
+CORE_SHELL="docker exec -i xpam_core bash -c 'cd /opt/core/apps && python manage.py shell 2>/dev/null'"
 
 say "test server (the installer of this working tree)"
 docker network create --subnet 172.31.10.0/24 "$NET" >/dev/null

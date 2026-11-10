@@ -35,7 +35,10 @@ docker save "xpam/core:$TAG" "xpam/gateway:$TAG" "xpam/facelive:$TAG" postgres:1
 on xfcx "for kv in $MIN; do echo \$kv >> /opt/xpam/config/config.txt; done; cd /opt/xpam-installer && export $MIN AUTO_INSTALL=1 XPAM_SKIP_SELF_UPDATE=1; timeout 1800 bash ./xpamctl.sh install > /root/install2.log 2>&1"
 check 'XPAM and the face engine run' "wait_for \"on xfcx 'docker ps --format \\\"{{.Names}} {{.Status}}\\\"' | grep -q '^xpam_facelive .*(healthy)'\" 60 && on xfcx 'docker ps --format \"{{.Names}} {{.Status}}\"' | grep -q '^xpam_core .*(healthy)'"
 check 'the engine is a core service account' "wait_for \"on xfcx 'docker logs xpam_facelive 2>&1' | grep -qi 'service account'\" 24"
-check 'the gateway routes /ws/facelive/ to it' "[[ \$(on xfcx 'curl -sk -o /dev/null -w %{http_code} https://127.0.0.1/ws/facelive/health') == 200 ]]"
+# (the engine answers a plain GET of the capture address with 426 Upgrade Required; its health page is not served
+# through the gateway since 5.1.40)
+check 'the gateway routes /ws/facelive/ to it' "[[ \$(on xfcx 'curl -sk -o /dev/null -w %{http_code} https://127.0.0.1/ws/facelive/capture/') == 426 ]]"
+check 'the engine health page is not reachable through the gateway' "[[ \$(on xfcx 'curl -sk -o /dev/null -w %{http_code} https://127.0.0.1/ws/facelive/health') == 404 ]]"
 # the photos and the camera script into the engine: its /tmp is a tmpfs on a read-only image (docker cp would write
 # under the tmpfs, where the container cannot see the files), so they are streamed in — again after each restart
 TO_ENGINE='docker exec xpam_facelive mkdir -p /tmp/photos && for f in /photos/*.jpg; do docker exec -i xpam_facelive sh -c "cat > /tmp/photos/$(basename $f)" < $f; done; test ! -f /root/camera.py || docker exec -i xpam_facelive sh -c "cat > /tmp/camera.py" < /root/camera.py'

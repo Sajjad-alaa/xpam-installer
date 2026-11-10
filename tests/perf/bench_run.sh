@@ -26,7 +26,9 @@ ENV=(-e SECRET_KEY=test-only-not-secret-0123456789abcdef -e BOOTSTRAP_TOKEN=test
      -e DB_HOST=xb-pg -e DB_PORT=5432 -e DB_USER=postgres -e DB_PASSWORD=testonly -e DB_NAME=jumpserver
      -e REDIS_HOST=xb-redis -e XPACK_ENABLED=true -e DEBUG=false)
 MOUNT=()
-[ -n "${BENCH_APPS:-}" ] && MOUNT=(-v "$BENCH_APPS":/opt/jumpserver/apps:ro)
+if [ -n "${BENCH_APPS:-}" ]; then
+  source "$HERE/../security/data_mounts.sh" "$IMAGE" "$BENCH_APPS"; MOUNT=("${APPS_MOUNT[@]}")
+fi
 echo "=== $LABEL"
 docker run --rm --network "$NET" "${ENV[@]}" "${MOUNT[@]}" -v "$HERE/seed_profile.py":/tmp/seed_profile.py:ro \
   -v "$HERE/hotspots.py":/tmp/hotspots.py:ro -e BENCH_HOTSPOTS="${BENCH_HOTSPOTS:-0}" \

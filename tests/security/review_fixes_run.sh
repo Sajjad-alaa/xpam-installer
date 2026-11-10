@@ -20,7 +20,9 @@ ENV=(-e SECRET_KEY=test-only-not-secret-0123456789abcdef -e BOOTSTRAP_TOKEN=test
      -e DB_HOST=xrf-pg -e DB_PORT=5432 -e DB_USER=postgres -e DB_PASSWORD=testonly -e DB_NAME=jumpserver
      -e REDIS_HOST=xrf-redis -e XPACK_ENABLED=true)
 MOUNT=()
-[ -n "$APPS" ] && MOUNT=(-v "$APPS":/opt/jumpserver/apps:ro)
+if [ -n "$APPS" ]; then
+  source "$HERE/data_mounts.sh" "$IMAGE" "$APPS"; MOUNT=("${APPS_MOUNT[@]}")
+fi
 docker run --rm --network "$NET" "${ENV[@]}" "${MOUNT[@]}" -v "$HERE/review_fixes_test.py":/tmp/review_fixes_test.py:ro \
   --entrypoint bash "$IMAGE" -c 'cd /opt/jumpserver/apps && timeout 900 python manage.py migrate --noinput >/tmp/m.log 2>&1;
     echo "migrate: $(grep -c "Applying" /tmp/m.log) applied";

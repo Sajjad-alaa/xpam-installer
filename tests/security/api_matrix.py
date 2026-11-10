@@ -55,6 +55,11 @@ def finding(kind, who, org, method, path, status, detail=''):
 # ------------------------------------------------------------------ the world
 # (the built-in roles' permissions: migrate stops at a missing data file in this throwaway database before it fills
 # them in; without this the User and Auditor roles grant nothing and the low identities are under-tested)
+# (the migration also stops before Django creates every model permission, e.g. connection tokens and tickets: without
+# them the built-in roles miss those rights and the low identities are tested with less than they really have)
+from django.contrib.auth.management import create_permissions as _cp
+for _app in apps.get_app_configs():
+    _cp(_app, verbosity=0)
 BuiltinRole.sync_to_db()
 org_a = Organization.objects.create(name=f'org-a-{R}')
 org_b = Organization.objects.create(name=f'org-b-{R}')

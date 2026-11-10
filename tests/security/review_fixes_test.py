@@ -243,4 +243,11 @@ for lang in ('python', 'curl'):
     check(f'sdk demos ({lang}): readme and code served', st == 200 and data.get('code') and data.get('readme'),
           (st, body[:200]))
 
+# ---------------------------------------------------------------- kill-session input
+for bad in (['not-a-uuid'], 'x', {'a': 1}, [1]):
+    st, body = post(ADMIN, '/api/v1/terminal/tasks/kill-session/', bad, 'ROOT')
+    check(f'kill-session: malformed input {str(bad)[:16]} is a 400, not a 500', st == 400, (st, body[:120]))
+st, body = post(ADMIN, '/api/v1/terminal/tasks/kill-session/', [], 'ROOT')
+check('kill-session: an empty list still works (control)', st == 200, (st, body[:120]))
+
 print(f'DONE {sum(results)}/{len(results)} passed', flush=True)

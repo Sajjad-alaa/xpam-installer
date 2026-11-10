@@ -66,6 +66,14 @@ RUN find /etc/apt -type f \( -name '*.sources' -o -name '*.list' \) -exec \
     && DEBIAN_FRONTEND=noninteractive apt-get -y --no-install-recommends upgrade \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 
+# Performance (tests/perf/bench_run.sh): psycopg 3 and its pool, so each process keeps PostgreSQL connections
+# instead of opening one (~4 ms) per request (settings/base.py, DB_POOL_*; psycopg2 stays for the just-in-time
+# target databases); httptools and uvloop, the C HTTP parser and event loop uvicorn uses when they are installed.
+# (After the system layers: a few MB of wheels, so the large cached layers above are not rebuilt for them.)
+RUN /usr/local/bin/uv pip install --python /opt/py3/bin/python \
+        "psycopg[binary]==3.3.8" "psycopg-pool==3.3.3" "httptools==0.9.0" "uvloop==0.23.0" \
+    && /usr/local/bin/uv pip check --python /opt/py3/bin/python
+
 # The application code comes only from this repository: COPY adds and overwrites but never removes,
 # so files XPAM deleted would otherwise linger from the base image (dead code, old templates, even the
 # OIDC helper a security fix replaced). Keep only the data files the repository does not carry: the

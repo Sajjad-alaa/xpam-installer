@@ -11,7 +11,7 @@ import json
 import sys
 import tarfile
 
-APPS = (sys.argv[1] if len(sys.argv) > 1 else 'opt/jumpserver/apps').strip('/') + '/'
+APPS = (sys.argv[1] if len(sys.argv) > 1 else 'opt/core/apps').strip('/') + '/'
 # files that exist only in XPAM (not in the public upstream JumpServer image): readable copies mean leaked source
 XPAM_ONLY = ('xpack/', 'accounts/jit/')
 

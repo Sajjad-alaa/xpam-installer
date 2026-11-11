@@ -283,7 +283,7 @@ check('redirect: a local next URL is kept (control)', safe_next_url('/ui/#/conso
       safe_next_url('/ui/#/console', request=rq))
 
 # ------------------------------------------------------------------ media path traversal
-for p in ('/media/../jumpserver/settings/base.py', '/media/%2e%2e/%2e%2e/etc/passwd', '/media/..%2f..%2fetc%2fpasswd',
+for p in ('/media/../xpam/settings/base.py', '/media/../jumpserver/settings/base.py', '/media/%2e%2e/%2e%2e/etc/passwd', '/media/..%2f..%2fetc%2fpasswd',
           '/media/xpack/../../config.yml'):
     st, body = req(A, 'GET', p)
     check(f'media: {p} is refused', st in (400, 403, 404) and 'root:' not in body and 'SECRET_KEY' not in body, (st, body[:100]))

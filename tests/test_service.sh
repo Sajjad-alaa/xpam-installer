@@ -101,6 +101,45 @@ TEST_USE_XPACK=1
 docker_calls=()
 printf 'PASS: disabling video-worker removes only the stale container\n'
 
+# containers created under the service names used before the rename (koko, chen, kael) are removed so compose
+# can create them again under the new names; a container already under its new name is left alone
+docker_calls=()
+docker() {
+  if [[ "$1" == 'ps' ]]; then
+    local args="$*"
+    [[ "${args}" == *'com.docker.compose.service=koko'* || "${args}" == *'com.docker.compose.service=kael'* ]] && printf 'old-%s-id\n' "${args##*=}"
+    return 0
+  fi
+  docker_calls+=("$*")
+  return 0
+}
+remove_renamed_service_containers >/dev/null
+assert_eq '2' "${#docker_calls[@]}" 'only the containers under an old service name must be removed'
+assert_eq 'container rm -f old-koko-id' "${docker_calls[0]}" 'the secure connection container under its old service name must be removed'
+assert_eq 'container rm -f old-kael-id' "${docker_calls[1]}" 'the AI container under its old service name must be removed'
+docker() {
+  [[ "$1" == 'ps' ]] && return 0
+  docker_calls+=("$*")
+  return 0
+}
+docker_calls=()
+remove_renamed_service_containers >/dev/null
+assert_eq '0' "${#docker_calls[@]}" 'nothing must be removed once the containers carry the new service names'
+docker() { [[ "$1" == 'ps' ]] && return 1; return 0; }
+if remove_renamed_service_containers >/dev/null 2>&1; then
+  fail 'a failed docker ps must stop the start (no half-renamed stack)'
+fi
+printf 'PASS: containers under the old service names are recreated under the new ones\n'
+
+docker_calls=()
+docker() {
+  if [[ "$1" == 'ps' ]]; then
+    printf 'old-video-worker-id\n'
+    return 0
+  fi
+  docker_calls+=("$*")
+  return 0
+}
 remove_stopped_openbao_init_container
 assert_eq 'container rm xpam_openbao_init' "${docker_calls[0]}" 'completed OpenBao init container must be removed'
 printf 'PASS: completed OpenBao initializer is removed after startup\n'

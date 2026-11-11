@@ -61,9 +61,9 @@ build_secureconnection() {
     -v "$CACHE/sc-out:/out" -v "$CACHE/gocache:/root/.cache/go-build" -v "$CACHE/gomod:/go/pkg/mod" \
     -e CGO_ENABLED=1 -e GOFLAGS=-buildvcs=false -e PKG_CONFIG_PATH=/opt/libghostty-vt/share/pkgconfig "$GO_IMAGE" sh -ec '
       cp -r /ro /src && cd /src
-      go test ./pkg/httpd/ ./pkg/lion/... ./pkg/common/ ./pkg/config/ ./pkg/sshd/ >/dev/null
+      go test ./pkg/httpd/ ./pkg/desktop/... ./pkg/common/ ./pkg/config/ ./pkg/sshd/ >/dev/null
       KEY=$(head -c 100 /dev/urandom | base64 | tr -dc A-Za-z0-9 | head -c 32)
-      go build -trimpath -ldflags "-X main.Version='"$TAG"'-xpam -X github.com/jumpserver/koko/pkg/config.CipherKey=$KEY -w -s" -o /out/secureconnection ./cmd/koko/'
+      go build -trimpath -ldflags "-X main.Version='"$TAG"'-xpam -X xpam/secureconnection/pkg/config.CipherKey=$KEY -w -s" -o /out/secureconnection ./cmd/secureconnection/'
   say "secureconnection: database client"
   [[ -d "$CACHE/usql-src/.git" ]] || git clone -q "$USQL_REPO" "$CACHE/usql-src"
   git -C "$CACHE/usql-src" checkout -q "$USQL_COMMIT"
@@ -75,6 +75,7 @@ build_secureconnection() {
       go build -trimpath -ldflags "-X github.com/xo/usql/text.CommandVersion=$USQL_VERSION -w -s" -o /out/usql main.go run.go'
   say "secureconnection: image"
   rm -f "$CACHE/sc-out/koko"  # (the binary's name before the rename)
+  cp "$SRC/xpam-secureconnection/locale/en/LC_MESSAGES/secureconnection.mo" "$CACHE/sc-out/secureconnection.mo"
   docker build -q --build-arg APT_REFRESH="$APT_REFRESH" --build-arg XPAM_VERSION="$TAG" --build-context xpamscripts="$HERE" \
     -f "$HERE/secureconnection.Dockerfile" -t "$NS/secureconnection:$TAG" "$CACHE/sc-out"
 }
@@ -111,7 +112,7 @@ build_ai() {
     -v "$CACHE/gomod:/go/pkg/mod" -e CGO_ENABLED=0 -e GOFLAGS=-buildvcs=false "$GO_IMAGE" sh -ec '
       cp -r /ro /src && cd /src
       go test ./... >/dev/null
-      go build -trimpath -ldflags "-s -w -X main.Version='"$TAG"'-xpam" -o /out/ai ./cmd/kael
+      go build -trimpath -ldflags "-s -w -X main.Version='"$TAG"'-xpam" -o /out/ai ./cmd/ai
       rm -f /out/kael; cp entrypoint.sh /out/entrypoint.sh'
   say "ai: image"
   docker build -q --build-arg APT_REFRESH="$APT_REFRESH" -f "$HERE/ai.Dockerfile" -t "$NS/ai:$TAG" "$CACHE/ai-out"

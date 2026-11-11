@@ -79,7 +79,7 @@ printf 'PASS: missing XPAM images fail without contacting Docker Hub\n'
 
 rendered=$(
   cd "${TEST_ROOT}"
-  VERSION=${XPAM_DEFAULT_VERSION} command docker compose --env-file /dev/null -f compose/core.yml -f compose/koko.yml -f compose/chen.yml \
+  VERSION=${XPAM_DEFAULT_VERSION} command docker compose --env-file /dev/null -f compose/core.yml -f compose/secureconnection.yml -f compose/webconnector.yml \
     -f compose/ai.yml -f compose/gateway.yml -f compose/web.yml -f compose/workspace.yml -f compose/network.yml config --images 2>/dev/null | sort -u
 ) || true
 if [[ -n "${rendered}" ]]; then

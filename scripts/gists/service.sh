@@ -163,7 +163,6 @@ function get_docker_compose_services() {
   redis_expose_port=$(get_config REDIS_EXPOSE_PORT)
   use_es=$(get_config USE_ES)
   use_minio=$(get_config USE_MINIO)
-  use_loki=$(get_config USE_LOKI)
   ha_mode=$(get_config HA_MODE)
   use_xpack=$(get_config_or_env USE_XPACK)
   services=$(get_enabled_services)
@@ -183,7 +182,6 @@ function get_docker_compose_services() {
 
   [[ "${use_es}" == "1" ]] && services+=" es"
   [[ "${use_minio}" == "1" ]] && services+=" minio"
-  [[ "${use_loki}" == "1" ]] && services+=" loki"
   if is_internal_openbao_enabled; then
     services+=" openbao"
   fi

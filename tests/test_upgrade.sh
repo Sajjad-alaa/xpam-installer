@@ -15,18 +15,46 @@ check_root() { return 1; }
 docker() {
   [[ "${1:-}" == "ps" ]]
 }
-remove_config KOKO_WEB_PROXY_PORT
+remove_config SECURECONNECTION_WEB_PROXY_PORT
 remove_config WEB_PROXY_ALLOWED_HOSTS
 VERSION=v4.0.0-ce
 upgrade_config
-assert_eq '5001' "$(get_config KOKO_WEB_PROXY_PORT)" 'upgrade must add the default Koko Web Proxy port'
+assert_eq '5001' "$(get_config SECURECONNECTION_WEB_PROXY_PORT)" 'upgrade must add the default Web Proxy port'
 assert_eq 'localhost,127.0.0.1' "$(get_config WEB_PROXY_ALLOWED_HOSTS)" 'upgrade must add the safe Web Proxy allowlist'
-set_config KOKO_WEB_PROXY_PORT 15001
+set_config SECURECONNECTION_WEB_PROXY_PORT 15001
 set_config WEB_PROXY_ALLOWED_HOSTS 'example.com,*.example.org,localhost,127.0.0.1'
 upgrade_config
-assert_eq '15001' "$(get_config KOKO_WEB_PROXY_PORT)" 'upgrade must preserve a custom Koko Web Proxy port'
+assert_eq '15001' "$(get_config SECURECONNECTION_WEB_PROXY_PORT)" 'upgrade must preserve a custom Web Proxy port'
 assert_eq 'example.com,*.example.org,localhost,127.0.0.1' "$(get_config WEB_PROXY_ALLOWED_HOSTS)" 'upgrade must preserve a custom Web Proxy allowlist'
-printf 'PASS: upgrade adds and preserves Koko Web Proxy configuration\n'
+printf 'PASS: upgrade adds and preserves Web Proxy configuration\n'
+
+(
+  # a configuration written before the rename: the values move to the XPAM names, an explicit new name wins
+  prepare_xpamctl() { :; }
+  remove_config SECURECONNECTION_WEB_PROXY_PORT
+  remove_config SECURECONNECTION_SSH_PORT
+  remove_config AI_ENABLED
+  set_config KOKO_WEB_PROXY_PORT 15003
+  set_config KOKO_SSH_PORT 2223
+  set_config KAEL_ENABLED 0
+  set_config CHEN_ENABLED 0
+  set_config WEBCONNECTOR_ENABLED 1
+  set_config JUMPSERVER_COLOR_DEPTH 16
+  migrate_config
+  assert_eq '15003' "$(get_config SECURECONNECTION_WEB_PROXY_PORT)" 'the old Web Proxy port must move to the new name'
+  assert_eq '2223' "$(get_config SECURECONNECTION_SSH_PORT)" 'the old SSH port must move to the new name'
+  assert_eq '0' "$(get_config AI_ENABLED)" 'KAEL_ENABLED must move to AI_ENABLED'
+  assert_eq '1' "$(get_config WEBCONNECTOR_ENABLED)" 'an explicit new name must win over the old one'
+  assert_eq '16' "$(get_config XPAM_COLOR_DEPTH)" 'JUMPSERVER_* settings must move to XPAM_*'
+  for old_key in KOKO_WEB_PROXY_PORT KOKO_SSH_PORT KAEL_ENABLED CHEN_ENABLED JUMPSERVER_COLOR_DEPTH; do
+    assert_eq '' "$(get_config "${old_key}")" "the old setting ${old_key} must be removed after the move"
+  done
+  remove_config SECURECONNECTION_SSH_PORT
+  remove_config XPAM_COLOR_DEPTH
+  remove_config WEBCONNECTOR_ENABLED
+  remove_config AI_ENABLED
+)
+printf 'PASS: upgrade moves settings named after upstream components to the XPAM names\n'
 
 (
   docker_calls="${test_dir}/obsolete-docker-calls"

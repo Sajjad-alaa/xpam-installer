@@ -22,9 +22,6 @@ default_config=$(
   . ./scripts/utils.sh
   compose_cmd=$(get_docker_compose_cmd_line)
   assert_contains "${compose_cmd}" 'compose/ai.yml' 'default Compose command must include the AI service'
-  if [[ "${compose_cmd}" == *'compose/ai.yml'* ]]; then
-    fail 'default Compose command must not include the removed AI service'
-  fi
   ${compose_cmd} --env-file "${CONFIG_FILE}" config
 )
 assert_contains "${default_config}" 'xpam_ai' 'rendered Compose config must contain Kael'
@@ -64,12 +61,27 @@ printf 'PASS: CE excludes video-worker and disables KoKo submission\n'
 custom_web_proxy_config=$(
   cd "${TEST_ROOT}"
   export JS_CONFIG_DIR="${test_dir}"
-  export KOKO_WEB_PROXY_PORT=15001
+  export SECURECONNECTION_WEB_PROXY_PORT=15001
   . ./scripts/utils.sh
   compose_cmd=$(get_docker_compose_cmd_line)
   ${compose_cmd} --env-file "${CONFIG_FILE}" config
 )
-assert_contains "${custom_web_proxy_config}" 'published: "15001"' 'KOKO_WEB_PROXY_PORT must override the published Web Proxy port'
+assert_contains "${custom_web_proxy_config}" 'published: "15001"' 'SECURECONNECTION_WEB_PROXY_PORT must override the published Web Proxy port'
+
+# a configuration written before the rename (old setting name only) keeps its port
+legacy_dir="${test_dir}/legacy"
+mkdir -p "${legacy_dir}"
+grep -v '^SECURECONNECTION_WEB_PROXY_PORT=' "${test_dir}/config.txt" > "${legacy_dir}/config.txt"
+echo 'KOKO_WEB_PROXY_PORT=15002' >> "${legacy_dir}/config.txt"
+cp "${legacy_dir}/config.txt" "${legacy_dir}/config_safe.txt"
+legacy_web_proxy_config=$(
+  cd "${TEST_ROOT}"
+  export JS_CONFIG_DIR="${legacy_dir}"
+  . ./scripts/utils.sh
+  compose_cmd=$(get_docker_compose_cmd_line)
+  ${compose_cmd} --env-file "${legacy_dir}/config.txt" config
+)
+assert_contains "${legacy_web_proxy_config}" 'published: "15002"' 'the old KOKO_WEB_PROXY_PORT name must still set the Web Proxy port'
 
 printf '%s\n' \
   'USE_XPACK=1' \
@@ -86,6 +98,10 @@ all_features_config=$(
   . ./scripts/utils.sh
   compose_cmd=$(get_docker_compose_cmd_line)
   assert_contains "${compose_cmd}" 'compose/video-worker.yml'
+  # (Loki was removed; an old configuration with USE_LOKI=1 must still start)
+  if [[ "${compose_cmd}" == *'loki'* ]]; then
+    fail 'USE_LOKI=1 must not add the removed Loki service'
+  fi
   ${compose_cmd} --env-file "${CONFIG_FILE}" config
 )
 assert_contains "${all_features_config}" 'xpam_video-worker' 'rendered compose config must contain video-worker'

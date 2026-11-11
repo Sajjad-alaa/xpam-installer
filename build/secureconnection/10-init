@@ -1,0 +1,39 @@
+#!/command/with-contenv sh
+# XPAM SecureConnection: runs once in the container before the services start.
+set -eu
+
+if [ -n "${CORE_HOST:-}" ]; then
+    until check "${CORE_HOST}/api/health/"; do
+        echo "waiting for core at ${CORE_HOST}"
+        sleep 2
+    done
+fi
+
+if [ -n "${TZ:-}" ] && [ -e "/usr/share/zoneinfo/${TZ}" ]; then
+    ln -sf "/usr/share/zoneinfo/${TZ}" /etc/localtime
+fi
+
+mkdir -p /opt/secureconnection/data/logs/guacd
+
+if [ ! -f /opt/secureconnection/server.key ]; then
+    openssl req -x509 -nodes -days 3650 -newkey rsa:2048 \
+        -keyout /opt/secureconnection/server.key -out /opt/secureconnection/server.crt \
+        -subj "/O=XPAM/OU=SecureConnection/CN=secureconnection" 2>/dev/null
+fi
+
+chmod 700 /opt/secureconnection
+
+: "${LOG_LEVEL:=ERROR}"
+case "${LOG_LEVEL}" in
+    DEBUG) level="debug" ;;
+    INFO) level="info" ;;
+    WARN) level="warning" ;;
+    *) level="error" ;;
+esac
+export GUACD_LOG_LEVEL="${level}"
+printf '%s' "${GUACD_LOG_LEVEL}" > /run/s6/container_environment/GUACD_LOG_LEVEL
+
+echo
+date
+echo "XPAM SecureConnection ${XPAM_VERSION:-}"
+echo

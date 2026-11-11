@@ -1,6 +1,6 @@
 # shellcheck shell=bash
 
-common_services=(core kael worker koko chen gateway web workspace browser)
+common_services=(core ai worker secureconnection webconnector gateway web workspace browser)
 xpack_services=(magnus razor xrdp video-worker nec)
 
 
@@ -17,8 +17,15 @@ function get_enabled_services() {
     key=$(echo "$service" | tr '[:lower:]' '[:upper:]')
     key="${key}_ENABLED"
     key=$(echo "$key" | sed 's/-/_/g')
-    # The worker was the "celery" service before the rename: honour CELERY_ENABLED=0 too
-    if [[ "${service}" == "worker" && "$(get_config_or_env CELERY_ENABLED)" == "0" ]]; then
+    # The switches under the names the services had before are still honoured (CELERY_ENABLED=0, KOKO_ENABLED=0...)
+    case "${service}" in
+      worker) legacy_key=CELERY_ENABLED ;;
+      secureconnection) legacy_key=KOKO_ENABLED ;;
+      webconnector) legacy_key=CHEN_ENABLED ;;
+      ai) legacy_key=KAEL_ENABLED ;;
+      *) legacy_key="" ;;
+    esac
+    if [[ -n "${legacy_key}" && "$(get_config_or_env "${legacy_key}")" == "0" ]]; then
       continue
     fi
     if [[ "$(get_config_or_env "${key}")" != "0" ]]; then
@@ -290,7 +297,7 @@ function stop_disabled_video_worker() {
 function stop_disabled_optional_services() {
   local pair service container enabled container_id
   enabled=" $(get_enabled_services) "
-  for pair in koko:xpam_secureconnection chen:xpam_webconnector kael:xpam_ai browser:xpam_browser facelive:xpam_facelive; do
+  for pair in secureconnection:xpam_secureconnection webconnector:xpam_webconnector ai:xpam_ai browser:xpam_browser facelive:xpam_facelive; do
     service=${pair%%:*}
     container=${pair#*:}
     [[ "${enabled}" == *" ${service} "* ]] && continue
@@ -607,4 +614,23 @@ function wait_xpam_healthy() {
   done
   [[ -n "${pending// /}" ]] && echo "Not ready: ${pending}"
   return 1
+}
+
+# XPAM: the Compose services koko, chen and kael were renamed (secureconnection, webconnector, ai) and keep their
+# container names. A container created under the old service name would collide with the new service ("name
+# already in use"): remove it first; the next "up" creates it again from the same data folders.
+function remove_renamed_service_containers() {
+  local pair old container container_id
+  for pair in koko:xpam_secureconnection chen:xpam_webconnector kael:xpam_ai; do
+    old=${pair%%:*}
+    container=${pair#*:}
+    container_id=$(docker ps -a -q \
+      --filter "name=^/${container}\$" \
+      --filter "label=com.docker.compose.project=${COMPOSE_PROJECT_NAME:-xpam}" \
+      --filter "label=com.docker.compose.service=${old}") || return 1
+    if [[ -n "${container_id}" ]]; then
+      echo "${container}: created under the service name used before (${old}); it is created again under the new one"
+      docker container rm -f "${container_id}" >/dev/null || return 1
+    fi
+  done
 }

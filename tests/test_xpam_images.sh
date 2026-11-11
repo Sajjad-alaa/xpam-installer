@@ -80,7 +80,7 @@ printf 'PASS: missing XPAM images fail without contacting Docker Hub\n'
 rendered=$(
   cd "${TEST_ROOT}"
   VERSION=${XPAM_DEFAULT_VERSION} command docker compose --env-file /dev/null -f compose/core.yml -f compose/koko.yml -f compose/chen.yml \
-    -f compose/kael.yml -f compose/gateway.yml -f compose/web.yml -f compose/workspace.yml -f compose/network.yml config --images 2>/dev/null | sort -u
+    -f compose/ai.yml -f compose/gateway.yml -f compose/web.yml -f compose/workspace.yml -f compose/network.yml config --images 2>/dev/null | sort -u
 ) || true
 if [[ -n "${rendered}" ]]; then
   for image in core gateway web workspace secureconnection webconnector ai; do

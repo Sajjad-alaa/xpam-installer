@@ -1,7 +1,9 @@
-# XPAM core: official JumpServer v5.0.0 release image + XPAM code overlay.
+# XPAM core: built on the official JumpServer v5.0.0 release image (its Python environment and system packages),
+# with XPAM's own code, names and paths. Stages: prep (packages; moved to /opt/core) -> base (one clean layer,
+# no upstream layers, history or labels) -> build (compile) -> the runtime image.
 # Build:  docker build -f core.Dockerfile -t xpam/core:<tag> /opt/xpam-core
 # Official JumpServer v5.0.0-ce image, pinned by digest (same image on every build host)
-FROM jumpserver/core@sha256:902c58566c5248f3752309c8fb34c2f61b1ba39bde54a7439b36115afb7fd16d AS base
+FROM jumpserver/core@sha256:902c58566c5248f3752309c8fb34c2f61b1ba39bde54a7439b36115afb7fd16d AS prep
 
 # Security upgrades for critical Python dependencies (FIX-08)
 RUN /usr/local/bin/uv pip install --python /opt/py3/bin/python \
@@ -54,11 +56,62 @@ RUN /usr/local/bin/uv pip uninstall --python /opt/py3/bin/python \
         ansible-builder bindep \
     && /usr/local/bin/uv pip check --python /opt/py3/bin/python
 
-# Security updates for the OS packages inherited from the upstream image (same Debian release)
-# (the upstream image points apt at a mirror that is only reachable inside Alibaba Cloud)
-# a new build date re-runs the system upgrade (otherwise the cached layer keeps old packages). It comes after the
-# pinned Python packages: those layers stay the same from one release to the next, so an upgrade downloads
-# the system updates and the code, not ~200 MB of unchanged packages again.
+# Performance (tests/perf/bench_run.sh): psycopg 3 and its pool, so each process keeps PostgreSQL connections
+# instead of opening one (~4 ms) per request (settings/base.py, DB_POOL_*; psycopg2 stays for the just-in-time
+# target databases); httptools and uvloop, the C HTTP parser and event loop uvicorn uses when they are installed.
+RUN /usr/local/bin/uv pip install --python /opt/py3/bin/python \
+        "psycopg[binary]==3.3.8" "psycopg-pool==3.3.3" "httptools==0.9.0" "uvloop==0.23.0" \
+    && /usr/local/bin/uv pip check --python /opt/py3/bin/python
+
+# The installation folder is /opt/core (the upstream image uses /opt/jumpserver), and the application code comes
+# only from this repository: of the upstream tree only the data files the repository does not carry are kept — the
+# IP location databases, the leaked-password list and the compiled English messages (XPAM is English only). The
+# upstream start scripts, utils, docs and build files go; LICENSE stays (JumpServer is GPLv3: the licence text
+# ships with the software built on it). Everything that names the old folder follows the move: the virtual
+# environment (script shebangs, activate scripts, prompt; its bytecode is rebuilt so no old path is embedded) and
+# Ansible's module library path. The step fails if the old folder is still named anywhere outside package data.
+RUN set -e; \
+    cd /opt/jumpserver/apps; \
+    find . -type f ! -path './i18n/core/en/LC_MESSAGES/*.mo' ! -name 'leak_passwords.db' \
+         ! -name 'GeoLite2-City.mmdb' ! -name 'ipipfree.ipdb' -delete; \
+    find . -mindepth 1 -depth -type d -empty -delete; \
+    cd /; \
+    rm -rf /opt/jumpserver/utils /opt/jumpserver/docs /opt/jumpserver/readmes /opt/jumpserver/requirements \
+         /opt/jumpserver/ui /opt/jumpserver/Dockerfile* /opt/jumpserver/*.md /opt/jumpserver/config_example.yml \
+         /opt/jumpserver/pyproject.toml /opt/jumpserver/uv.lock /opt/jumpserver/.dockerignore /opt/jumpserver/.git* \
+         /opt/jumpserver/.isort.cfg /opt/jumpserver/.prettierrc /opt/jumpserver/.pylintrc \
+         /opt/jumpserver/jms /opt/jumpserver/entrypoint.sh /opt/jumpserver/BUILD_ID; \
+    find /opt/jumpserver/.venv -name '*.map' -delete 2>/dev/null || true; \
+    mv /opt/jumpserver /opt/core; \
+    ln -sfn /opt/core/.venv /opt/py3; \
+    grep -rIl '/opt/jumpserver' /opt/core/.venv/bin /opt/core/.venv/pyvenv.cfg /etc /root /usr/local/bin 2>/dev/null \
+      | xargs -r sed -i 's#/opt/jumpserver#/opt/core#g'; \
+    sed -i 's#^prompt = .*#prompt = xpam#' /opt/core/.venv/pyvenv.cfg; \
+    grep -rIl --include='*.pth' --include='direct_url.json' --include='RECORD' '/opt/jumpserver' /opt/core/.venv/lib 2>/dev/null \
+      | xargs -r sed -i 's#/opt/jumpserver#/opt/core#g'; \
+    find /opt/core/.venv -name '*.pyc' -delete; \
+    /opt/py3/bin/python -W ignore -m compileall -q -j 0 /opt/py3/lib >/dev/null 2>&1 || true; \
+    /opt/py3/bin/python -c "import django, ansible, celery, gunicorn; print('environment ok after the move')"; \
+    /opt/py3/bin/gunicorn --version; /opt/py3/bin/celery --version; \
+    grep -q '/opt/core/apps/libs/ansible/modules' /etc/ansible/ansible.cfg; \
+    if grep -rIl '/opt/jumpserver' /etc /root /usr/local/bin /opt/core --exclude-dir=site-packages 2>/dev/null | grep .; then \
+      echo 'the old folder is still named in the files above'; exit 1; \
+    fi; \
+    if grep -rl '/opt/jumpserver' /opt/core/.venv --include='*.pyc' 2>/dev/null | head -3 | grep .; then \
+      echo 'bytecode still embeds the old folder'; exit 1; \
+    fi
+
+# --- base: the prepared system as one clean layer. Nothing of the upstream image's layers, build history or labels
+# is carried over; this layer stays the same from one release to the next (an upgrade downloads only what follows).
+FROM scratch AS base
+COPY --from=prep / /
+ENV PATH=/opt/py3/bin:/usr/local/bin:/usr/local/sbin:/usr/sbin:/usr/bin:/sbin:/bin \
+    LANG=en_US.UTF-8 \
+    PLAYWRIGHT_BROWSERS_PATH=/opt/playwright
+WORKDIR /opt/core
+
+# Security updates for the OS packages (same Debian release). A new build date re-runs the upgrade (otherwise the
+# cached layer keeps old packages). (The upstream image points apt at a mirror only reachable inside Alibaba Cloud.)
 ARG APT_REFRESH=0
 RUN find /etc/apt -type f \( -name '*.sources' -o -name '*.list' \) -exec \
         sed -i -E 's#https?://mirrors\.(cloud\.)?aliyun(cs)?\.com#http://deb.debian.org#g' {} + \
@@ -66,65 +119,41 @@ RUN find /etc/apt -type f \( -name '*.sources' -o -name '*.list' \) -exec \
     && DEBIAN_FRONTEND=noninteractive apt-get -y --no-install-recommends upgrade \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 
-# Performance (tests/perf/bench_run.sh): psycopg 3 and its pool, so each process keeps PostgreSQL connections
-# instead of opening one (~4 ms) per request (settings/base.py, DB_POOL_*; psycopg2 stays for the just-in-time
-# target databases); httptools and uvloop, the C HTTP parser and event loop uvicorn uses when they are installed.
-# (After the system layers: a few MB of wheels, so the large cached layers above are not rebuilt for them.)
-RUN /usr/local/bin/uv pip install --python /opt/py3/bin/python \
-        "psycopg[binary]==3.3.8" "psycopg-pool==3.3.3" "httptools==0.9.0" "uvloop==0.23.0" \
-    && /usr/local/bin/uv pip check --python /opt/py3/bin/python
-
-# The application code comes only from this repository: COPY adds and overwrites but never removes,
-# so files XPAM deleted would otherwise linger from the base image (dead code, old templates, even the
-# OIDC helper a security fix replaced). Keep only the data files the repository does not carry: the
-# IP location databases, the leaked-password list and the compiled English translations (XPAM is
-# English only; the base image's other languages are dropped too). Also remove upstream's leftover
-# utils/* scripts, docs, readmes, requirements, ui, and source-map (.map) files. LICENSE stays: JumpServer is
-# GPLv3, and the licence text must ship with the software built on it.
-RUN cd /opt/jumpserver/apps \
-    && find . -type f ! -path './i18n/core/en/LC_MESSAGES/*.mo' ! -name 'leak_passwords.db' \
-         ! -name 'GeoLite2-City.mmdb' ! -name 'ipipfree.ipdb' -delete \
-    && find . -mindepth 1 -depth -type d -empty -delete \
-    && rm -rf /opt/jumpserver/utils /opt/jumpserver/docs /opt/jumpserver/readmes \
-         /opt/jumpserver/requirements /opt/jumpserver/ui /opt/jumpserver/Dockerfile* \
-         /opt/jumpserver/*.md /opt/jumpserver/config_example.yml \
-         /opt/jumpserver/pyproject.toml /opt/jumpserver/uv.lock \
-         /opt/jumpserver/.dockerignore /opt/jumpserver/.git* /opt/jumpserver/.isort.cfg \
-         /opt/jumpserver/.prettierrc /opt/jumpserver/.pylintrc \
-    && find /opt/jumpserver/.venv -name '*.map' -delete 2>/dev/null || true
-
 # --- build stage: compile the Python application to native extension modules (.so) in a discarded
 # stage so that plaintext .py sources, intermediate .pyc files, and the gcc/Cython toolchain never
 # enter any layer of the final runtime image.
 FROM base AS build
 ARG XPAM_COMPILE=1
-COPY apps /opt/jumpserver/apps
+COPY apps /opt/core/apps
 COPY --from=xpamscripts compile_py.sh /tmp/compile_py.sh
 COPY --from=xpamscripts strip_docstrings.py /tmp/strip_docstrings.py
 RUN set -e; \
     if [ "$XPAM_COMPILE" = "1" ]; then \
-      find /etc/apt -type f \( -name '*.sources' -o -name '*.list' \) -exec \
-        sed -i -E 's#https?://mirrors\.(cloud\.)?aliyun(cs)?\.com#http://deb.debian.org#g' {} + 2>/dev/null || true; \
       apt-get update >/dev/null && apt-get -y --no-install-recommends install gcc binutils >/dev/null; \
       /usr/local/bin/uv pip install --python /opt/py3/bin/python -q Cython setuptools; \
-      mv /opt/jumpserver/apps /b; \
+      mv /opt/core/apps /b; \
       JOBS="$(nproc)" PYBIN=/opt/py3/bin/python sh /tmp/compile_py.sh /b; \
-      mv /b /opt/jumpserver/apps; \
-      /opt/py3/bin/python -W ignore -m compileall -q -j 0 /opt/jumpserver/apps >/dev/null 2>&1 || true; \
+      mv /b /opt/core/apps; \
+      /opt/py3/bin/python -W ignore -m compileall -q -j 0 /opt/core/apps >/dev/null 2>&1 || true; \
     else \
-      /opt/py3/bin/python -W ignore -m compileall -q -j 0 /opt/jumpserver/apps >/dev/null 2>&1 || true; \
+      /opt/py3/bin/python -W ignore -m compileall -q -j 0 /opt/core/apps >/dev/null 2>&1 || true; \
     fi; \
     rm -f /tmp/compile_py.sh /tmp/strip_docstrings.py
 
 # --- runtime stage
 FROM base
-COPY --from=build /opt/jumpserver/apps /opt/jumpserver/apps
-# XPAM: the start script (quick start when nothing changed), runtime utils, and this build's identity
-COPY jms /opt/jumpserver/jms
-COPY utils/check_celery.sh /opt/jumpserver/utils/check_celery.sh
-COPY utils/start_celery_beat.py /opt/jumpserver/utils/start_celery_beat.py
+COPY --from=build /opt/core/apps /opt/core/apps
+# The launcher (`python xpam start web|task|all`; quick start when nothing changed), the entry point, the worker's
+# health check and beat starter, and this build's identity
+COPY xpam /opt/core/xpam
+COPY --chmod=755 entrypoint.sh /opt/core/entrypoint.sh
+COPY utils/check_celery.sh utils/start_celery_beat.py /opt/core/utils/
 ARG XPAM_BUILD_ID=dev
-RUN echo "${XPAM_BUILD_ID}" > /opt/jumpserver/BUILD_ID \
-    && sed -i '/^[[:space:]]*#[^!]/d' /opt/jumpserver/entrypoint.sh \
-    && chmod +x /opt/jumpserver/jms /opt/jumpserver/utils/check_celery.sh \
-    && ln -sf check_celery.sh /opt/jumpserver/utils/check_worker.sh
+RUN echo "${XPAM_BUILD_ID}" > /opt/core/BUILD_ID \
+    && chmod +x /opt/core/xpam /opt/core/utils/check_celery.sh \
+    && ln -sf check_celery.sh /opt/core/utils/check_worker.sh \
+    && mkdir -p /opt/core/data /opt/core/tmp
+EXPOSE 8080
+STOPSIGNAL SIGQUIT
+ENTRYPOINT ["./entrypoint.sh"]
+CMD ["start", "all"]

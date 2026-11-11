@@ -1,0 +1,7 @@
+#!/command/with-contenv sh
+# XPAM SecureConnection: the service process (supervised by s6).
+set -eu
+
+cd /opt/secureconnection
+exec 2>&1
+exec /opt/secureconnection/secureconnection

@@ -22,18 +22,12 @@ services:
       GZIP: ${GZIP:-on}
       CLIENT_MAX_BODY_SIZE: ${CLIENT_MAX_BODY_SIZE:-4096m}
       CORE_ENABLED: ${CORE_ENABLED:-1}
-      KOKO_ENABLED: ${KOKO_ENABLED:-1}
-      CHEN_ENABLED: ${CHEN_ENABLED:-1}
-      KAEL_ENABLED: ${KAEL_ENABLED:-1}
-      RAZOR_ENABLED: ${RAZOR_ENABLED:-1}
+      SECURECONNECTION_ENABLED: ${SECURECONNECTION_ENABLED:-${KOKO_ENABLED:-1}}
+      WEBCONNECTOR_ENABLED: ${WEBCONNECTOR_ENABLED:-${CHEN_ENABLED:-1}}
+      AI_ENABLED: ${AI_ENABLED:-${KAEL_ENABLED:-1}}
       # the /ws/facelive/ route: on when face recognition is on (the same rule as scripts/gists/service.sh)
       FACELIVE_ENABLED: ${FACELIVE_ENABLED:-${FACE_RECOGNITION_ENABLED:-0}}
-      # Compatibility for older web images; the value is derived from the
-      # edition and is not a user-configurable JDMC switch.
-      JDMC_ENABLED: ${USE_XPACK:-0}
       BASIC_AUTH_PASSWORD: ${BASIC_AUTH_PASSWORD:-}
-      # 1 = files missing under /download/ are fetched from static.jumpserver.org (off by default)
-      DOWNLOAD_FALLBACK: ${DOWNLOAD_FALLBACK:-0}
     volumes:
       # read only, and only what nginx serves (not ansible/celery runtime data or certificates)
       - ${VOLUME_DIR}/core/data/static:/opt/core/data/static:ro

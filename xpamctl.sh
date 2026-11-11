@@ -22,11 +22,11 @@ if [[ "${target}" == "--skip-jdmc" ]]; then
   esac
 fi
 
-# XPAM names are accepted wherever one service is named (the Compose services keep short names)
+# The names the services had before the rename are still accepted wherever one service is named
 case "${target}" in
-  secureconnection) target=koko ;;
-  webconnector) target=chen ;;
-  ai) target=kael ;;
+  koko) target=secureconnection ;;
+  chen) target=webconnector ;;
+  kael) target=ai ;;
 esac
 
 function check_config_file() {
@@ -143,6 +143,7 @@ function start() {
   gen_safe_config >/dev/null
   stop_disabled_video_worker || return 1
   stop_disabled_optional_services || return 1
+  remove_renamed_service_containers || return 1
   prepare_video_worker_volume || return 1
   prepare_facelive_volume || return 1
   retire_legacy_project || return 1

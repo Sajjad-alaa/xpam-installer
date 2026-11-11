@@ -127,7 +127,7 @@ function setup_vault_after_install() {
 function post_install() {
   local started=$1 ssh_port
 
-  ssh_port=$(get_config KOKO_SSH_PORT 2222)
+  ssh_port=$(get_config SECURECONNECTION_SSH_PORT 2222)
   if [[ "${started}" == "1" ]]; then
     echo_green "\n>>> XPAM is installed and running"
   else

@@ -38,9 +38,9 @@ function get_xpam_image_name() {
     web) echo "web" ;;
     gateway) echo "gateway" ;;
     workspace) echo "workspace" ;;
-    koko) echo "secureconnection" ;;
-    chen) echo "webconnector" ;;
-    kael) echo "ai" ;;
+    secureconnection | koko) echo "secureconnection" ;;
+    webconnector | chen) echo "webconnector" ;;
+    ai | kael) echo "ai" ;;
     facelive) echo "facelive" ;;
     browser) echo "browser" ;;
     *) return 1 ;;
@@ -215,7 +215,7 @@ function get_image_mappings() {
     case "${service}" in
       "" | worker | celery | jdmc | panda)
         ;;
-      core | web | gateway | workspace | koko | chen | kael | facelive | browser)
+      core | web | gateway | workspace | secureconnection | webconnector | ai | facelive | browser)
         xpam_name=$(get_xpam_image_name "${service}")
         if [[ -n "${xpam_registry}" ]]; then
           emit_image_mapping \

@@ -1,7 +1,8 @@
 # Only the apps tree is copied; never ship keys, licenses or caches.
 *
 !apps
-!jms
+!xpam
+!entrypoint.sh
 !utils/check_celery.sh
 !utils/start_celery_beat.py
 apps/**/__pycache__

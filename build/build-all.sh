@@ -63,7 +63,7 @@ build_secureconnection() {
       cp -r /ro /src && cd /src
       go test ./pkg/httpd/ ./pkg/lion/... ./pkg/common/ ./pkg/config/ ./pkg/sshd/ >/dev/null
       KEY=$(head -c 100 /dev/urandom | base64 | tr -dc A-Za-z0-9 | head -c 32)
-      go build -trimpath -ldflags "-X main.Version='"$TAG"'-xpam -X github.com/jumpserver/koko/pkg/config.CipherKey=$KEY -w -s" -o /out/koko ./cmd/koko/'
+      go build -trimpath -ldflags "-X main.Version='"$TAG"'-xpam -X github.com/jumpserver/koko/pkg/config.CipherKey=$KEY -w -s" -o /out/secureconnection ./cmd/koko/'
   say "secureconnection: database client"
   [[ -d "$CACHE/usql-src/.git" ]] || git clone -q "$USQL_REPO" "$CACHE/usql-src"
   git -C "$CACHE/usql-src" checkout -q "$USQL_COMMIT"
@@ -74,7 +74,9 @@ build_secureconnection() {
       go mod tidy 2>/dev/null
       go build -trimpath -ldflags "-X github.com/xo/usql/text.CommandVersion=$USQL_VERSION -w -s" -o /out/usql main.go run.go'
   say "secureconnection: image"
-  docker build -q --build-arg APT_REFRESH="$APT_REFRESH" -f "$HERE/secureconnection.Dockerfile" -t "$NS/secureconnection:$TAG" "$CACHE/sc-out"
+  rm -f "$CACHE/sc-out/koko"  # (the binary's name before the rename)
+  docker build -q --build-arg APT_REFRESH="$APT_REFRESH" --build-arg XPAM_VERSION="$TAG" --build-context xpamscripts="$HERE" \
+    -f "$HERE/secureconnection.Dockerfile" -t "$NS/secureconnection:$TAG" "$CACHE/sc-out"
 }
 
 build_webconnector() {
@@ -84,7 +86,8 @@ build_webconnector() {
     "$MAVEN_IMAGE" sh -ec '
       cp -r /ro/. /work/
       mvn -q -B -s settings.xml clean package -Dmaven.test.skip=true
-      cp backend/web/target/web-*.jar /out/chen.jar'
+      rm -f /out/chen.jar
+      cp backend/web/target/web-*.jar /out/webconnector.jar'
   say "webconnector: image"
   docker build -q --build-arg APT_REFRESH="$APT_REFRESH" -f "$HERE/webconnector.Dockerfile" --build-context jar="$CACHE/wc-out" \
     -t "$NS/webconnector:$TAG" "$SRC/xpam-webconnector"
@@ -108,7 +111,8 @@ build_ai() {
     -v "$CACHE/gomod:/go/pkg/mod" -e CGO_ENABLED=0 -e GOFLAGS=-buildvcs=false "$GO_IMAGE" sh -ec '
       cp -r /ro /src && cd /src
       go test ./... >/dev/null
-      go build -trimpath -ldflags "-s -w -X main.Version='"$TAG"'-xpam" -o /out/kael ./cmd/kael'
+      go build -trimpath -ldflags "-s -w -X main.Version='"$TAG"'-xpam" -o /out/ai ./cmd/kael
+      rm -f /out/kael; cp entrypoint.sh /out/entrypoint.sh'
   say "ai: image"
   docker build -q --build-arg APT_REFRESH="$APT_REFRESH" -f "$HERE/ai.Dockerfile" -t "$NS/ai:$TAG" "$CACHE/ai-out"
 }

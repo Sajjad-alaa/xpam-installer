@@ -97,7 +97,7 @@ function prepare_image_files() {
   # whatever is enabled on this machine (the Vault image is in already; high availability adds etcd and postgresql-ha)
   local OFFLINE_IMAGE_SERVICES INCLUDE_HA_IMAGES=1 offline_service
   OFFLINE_IMAGE_SERVICES=$(get_enabled_services)
-  for offline_service in core web gateway workspace koko chen kael facelive browser; do
+  for offline_service in core web gateway workspace secureconnection webconnector ai facelive browser; do
     [[ " ${OFFLINE_IMAGE_SERVICES} " == *" ${offline_service} "* ]] || OFFLINE_IMAGE_SERVICES+=" ${offline_service}"
   done
   export OFFLINE_IMAGE_SERVICES INCLUDE_HA_IMAGES

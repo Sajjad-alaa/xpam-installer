@@ -1,13 +1,14 @@
 *
 !default.conf
+!https_server.conf
 !common.conf
 !core.conf
 !interface_security.conf
 !secureconnection.conf
 !webconnector.conf
 !ai.conf
-!00-xpam-proto.conf
-!45-xpam-forwarded-proto.sh
-!46-xpam-download-fallback.sh
 !facelive.conf
+!00-xpam-proto.conf
+!40-xpam-init.sh
+!45-xpam-forwarded-proto.sh
 !47-xpam-facelive.sh

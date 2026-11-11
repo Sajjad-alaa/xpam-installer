@@ -224,10 +224,10 @@ function set_redis() {
 function set_service() {
   echo_yellow "\n5. $(gettext 'Configure External Access')"
   http_port=$(get_config HTTP_PORT)
-  web_proxy_port=$(get_config KOKO_WEB_PROXY_PORT "5001")
-  ssh_port=$(get_config KOKO_SSH_PORT)
+  web_proxy_port=$(get_config SECURECONNECTION_WEB_PROXY_PORT "5001")
+  ssh_port=$(get_config SECURECONNECTION_SSH_PORT)
   rdp_port=$(get_config RAZOR_RDP_PORT)
-  koko_enabled=$(get_config_or_env KOKO_ENABLED)
+  koko_enabled=$(get_config_or_env SECURECONNECTION_ENABLED)
   use_xpack=$(get_config_or_env USE_XPACK)
   confirm="n"
   read_from_input confirm "$(gettext 'Do you need to customize the XPAM external port')?" "y/n" "${confirm}"
@@ -237,12 +237,12 @@ function set_service() {
 
     if [[ "${koko_enabled}" != "0" ]]; then
       read_from_input web_proxy_port "$(gettext 'XPAM web proxy port')" "" "${web_proxy_port}"
-      set_config KOKO_WEB_PROXY_PORT "${web_proxy_port}"
+      set_config SECURECONNECTION_WEB_PROXY_PORT "${web_proxy_port}"
     fi
 
     if [[ "${use_xpack}" == "1" ]]; then
       read_from_input ssh_port "$(gettext 'XPAM ssh port')" "" "${ssh_port}"
-      set_config KOKO_SSH_PORT "${ssh_port}"
+      set_config SECURECONNECTION_SSH_PORT "${ssh_port}"
       read_from_input rdp_port "$(gettext 'XPAM rdp port')" "" "${rdp_port}"
       set_config RAZOR_RDP_PORT "${rdp_port}"
     fi

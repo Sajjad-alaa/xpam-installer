@@ -50,7 +50,7 @@ function set_ntp() {
 
 function set_port() {
     use_xpack=$(get_config_or_env USE_XPACK)
-    koko_enabled=$(get_config_or_env KOKO_ENABLED)
+    koko_enabled=$(get_config_or_env SECURECONNECTION_ENABLED)
     magnus_enabled=$(get_config_or_env MAGNUS_ENABLED)
     xrdp_enabled=$(get_config_or_env XRDP_ENABLED)
     razor_enabled=$(get_config_or_env RAZOR_ENABLED)
@@ -69,15 +69,15 @@ function set_port() {
         fi
     fi
     if [[ "${koko_enabled}" != "0" ]]; then
-        web_proxy_port=$(get_config KOKO_WEB_PROXY_PORT "5001")
+        web_proxy_port=$(get_config SECURECONNECTION_WEB_PROXY_PORT "5001")
         read_from_input web_proxy_port "$(gettext 'XPAM web proxy port')" "" "${web_proxy_port}"
-        set_config KOKO_WEB_PROXY_PORT "${web_proxy_port}"
+        set_config SECURECONNECTION_WEB_PROXY_PORT "${web_proxy_port}"
     fi
     if [[ "${use_xpack}" == "1" ]]; then
         if [[ "${koko_enabled}" != "0" ]]; then
-            ssh_port=$(get_config KOKO_SSH_PORT)
+            ssh_port=$(get_config SECURECONNECTION_SSH_PORT)
             read_from_input ssh_port "$(gettext 'Please enter SSH PORT')" "" "${ssh_port}"
-            set_config KOKO_SSH_PORT "${ssh_port}"
+            set_config SECURECONNECTION_SSH_PORT "${ssh_port}"
         fi
         if [[ "${magnus_enabled}" != "0" ]]; then
             magnus_port=$(get_config MAGNUS_PORT)

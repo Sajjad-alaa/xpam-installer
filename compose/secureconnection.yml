@@ -1,5 +1,5 @@
 services:
-  koko:
+  secureconnection:
     image: ${XPAM_NAMESPACE:-xpam}/secureconnection:${XPAM_VERSION:-${XPAM_DEFAULT_VERSION:-v5.1.39}}
     pull_policy: never  # XPAM images come from xpamctl (never Docker Hub)
     container_name: xpam_secureconnection
@@ -8,8 +8,8 @@ services:
       core: 0
     restart: always
     # Full host privileges are only needed for Kubernetes sessions (kubectl is isolated with
-    # "unshare"). Off by default; set KOKO_PRIVILEGED=true in config.txt if you use them.
-    privileged: ${KOKO_PRIVILEGED:-false}
+    # "unshare"). Off by default; set SECURECONNECTION_PRIVILEGED=true in config.txt if you use them.
+    privileged: ${SECURECONNECTION_PRIVILEGED:-${KOKO_PRIVILEGED:-false}}
     security_opt:
       - no-new-privileges:true
     env_file:
@@ -20,18 +20,18 @@ services:
       BROWSER_KEY: ${BROWSER_KEY:-}
       # Redis only for shared rooms (SHARE_ROOM_TYPE=redis, off by default): an account limited to
       # this service's own keys and channels, never XPAM's sessions or job queue
-      REDIS_USERNAME: koko
+      REDIS_USERNAME: secureconnection
       REDIS_PASSWORD: ${REDIS_KOKO_PASSWORD:-}
       WEB_PROXY_BIND_HOST: 0.0.0.0
       WEB_PROXY_PORT: 5001
       WEB_PROXY_ALLOWED_HOSTS: ${WEB_PROXY_ALLOWED_HOSTS:-localhost,127.0.0.1}
       VIDEO_WORKER_HOST: ${VIDEO_WORKER_HOST:-http://video-worker:9000}
     ports:
-      - ${KOKO_SSH_PORT:-2222}:2222
-      - ${KOKO_WEB_PROXY_PORT:-5001}:5001
+      - ${SECURECONNECTION_SSH_PORT:-${KOKO_SSH_PORT:-2222}}:2222
+      - ${SECURECONNECTION_WEB_PROXY_PORT:-${KOKO_WEB_PROXY_PORT:-5001}}:5001
     volumes:
-      - ${CONFIG_DIR}/certs:/opt/koko/data/certs:ro
-      - ${VOLUME_DIR}/koko/data:/opt/koko/data
+      - ${CONFIG_DIR}/certs:/opt/secureconnection/data/certs:ro
+      - ${VOLUME_DIR}/koko/data:/opt/secureconnection/data
     healthcheck:
       test: "check http://localhost:5000/secureconnection/health/"
       interval: 10s

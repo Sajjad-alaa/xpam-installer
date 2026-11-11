@@ -129,8 +129,8 @@ function upgrade_config() {
   check_and_set_config "CURRENT_VERSION" "${VERSION}"
   check_and_set_config "CLIENT_MAX_BODY_SIZE" "4096m"
   check_and_set_config "SERVER_HOSTNAME" "${HOSTNAME}"
-  check_and_set_config "JUMPSERVER_ENABLE_FONT_SMOOTHING" "true"
-  check_and_set_config "KOKO_WEB_PROXY_PORT" "5001"
+  check_and_set_config "XPAM_ENABLE_FONT_SMOOTHING" "true"
+  check_and_set_config "SECURECONNECTION_WEB_PROXY_PORT" "5001"
   check_and_set_config "WEB_PROXY_ALLOWED_HOSTS" "localhost,127.0.0.1"
   migrate_database_expose_config
   check_and_set_config "USE_LB" "1"
@@ -239,12 +239,25 @@ function migrate_config() {
   local component
 
   prepare_xpamctl
-  migrate_compat_config "KOKO_SSH_PORT" "SSH_PORT" "2222"
+  migrate_compat_config "SECURECONNECTION_SSH_PORT" "KOKO_SSH_PORT" ""
+  migrate_compat_config "SECURECONNECTION_SSH_PORT" "SSH_PORT" "2222"
   migrate_compat_config "RAZOR_RDP_PORT" "RDP_PORT" "3389"
   migrate_compat_config "VIDEO_WORKER_ENABLED" "VIDEO_ENABLED" ""
   migrate_compat_config "VIDEO_WORKER_ENABLED" "VIDEO_ENABLE" ""
   for component in CORE AI CELERY KOKO CHEN WEB MAGNUS RAZOR XRDP NEC; do
     migrate_compat_config "${component}_ENABLED" "${component}_ENABLE" ""
+  done
+  # The settings named after the upstream components get XPAM names (the values are kept; the old names are
+  # still honoured if they come back). Secrets keep their names: they never reach a container under them.
+  migrate_compat_config "SECURECONNECTION_WEB_PROXY_PORT" "KOKO_WEB_PROXY_PORT" ""
+  migrate_compat_config "SECURECONNECTION_PRIVILEGED" "KOKO_PRIVILEGED" ""
+  migrate_compat_config "SECURECONNECTION_ENABLED" "KOKO_ENABLED" ""
+  migrate_compat_config "WEBCONNECTOR_ENABLED" "CHEN_ENABLED" ""
+  migrate_compat_config "AI_ENABLED" "KAEL_ENABLED" ""
+  migrate_compat_config "WORKER_ENABLED" "CELERY_ENABLED" ""
+  local old_key
+  for old_key in $(grep -oE "^[[:space:]]*JUMPSERVER_[A-Z0-9_]+=" "${CONFIG_FILE}" 2>/dev/null | tr -d " =" | sort -u); do
+    migrate_compat_config "XPAM_${old_key#JUMPSERVER_}" "${old_key}" ""
   done
 }
 
@@ -346,7 +359,7 @@ function db_migrations() {
   if is_ha_enabled; then
     # high availability: stop XPAM's services only; the database keeps running (the cluster is paused)
     bash "${SCRIPT_DIR}/ha.sh" app-stop || { log_error "Failed to stop XPAM before the database migration"; exit 1; }
-  elif docker ps | grep -E "core|koko"&>/dev/null; then
+  elif docker ps | grep -E "xpam_core|xpam_secureconnection"&>/dev/null; then
     confirm="y"
     read_from_input confirm "$(gettext 'Detected that the XPAM container is running. Do you want to close the container and continue to upgrade')?" "y/n" "${confirm}"
     if [[ "${confirm}" == "y" ]]; then

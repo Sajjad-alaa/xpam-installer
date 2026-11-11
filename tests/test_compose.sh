@@ -21,7 +21,7 @@ default_config=$(
   export JS_CONFIG_DIR="${test_dir}"
   . ./scripts/utils.sh
   compose_cmd=$(get_docker_compose_cmd_line)
-  assert_contains "${compose_cmd}" 'compose/kael.yml' 'default Compose command must include Kael'
+  assert_contains "${compose_cmd}" 'compose/ai.yml' 'default Compose command must include the AI service'
   if [[ "${compose_cmd}" == *'compose/ai.yml'* ]]; then
     fail 'default Compose command must not include the removed AI service'
   fi

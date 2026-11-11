@@ -1,9 +1,9 @@
 # XPAM: secrets from HashiCorp Vault (xpamctl vault connect). The container waits for its own secrets, read
-# from Vault into memory at boot (/run/xpam/secrets/chen, only the ones it uses), and starts with them; they are
+# from Vault into memory at boot (/run/xpam/secrets/webconnector, only the ones it uses), and starts with them; they are
 # never part of its settings (docker inspect) nor of config.txt.
 services:
-  chen:
+  webconnector:
     entrypoint: ["/bin/sh", "-c", "while [ ! -s /run/xpam-secrets/env ]; do sleep 2; done; set -a; . /run/xpam-secrets/env; set +a; exec \"$$@\"", "xpam-secrets", "./entrypoint.sh"]
     volumes:
-      - /run/xpam/secrets/chen:/run/xpam-secrets:ro
+      - /run/xpam/secrets/webconnector:/run/xpam-secrets:ro
     command: ["wisp"]

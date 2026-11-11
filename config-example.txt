@@ -179,10 +179,10 @@ DOMAINS=
 
 # Configure the components that do not need to be started, by default all components will be started, if you do not need a certain component, you can set {component name}_ENABLED to 0 to turn it off
 # CORE_ENABLED=0
-# KAEL_ENABLED=0
-# CELERY_ENABLED=0
-# KOKO_ENABLED=0
-# CHEN_ENABLED=0
+# AI_ENABLED=0
+# WORKER_ENABLED=0
+# SECURECONNECTION_ENABLED=0
+# WEBCONNECTOR_ENABLED=0
 # WEB_ENABLED=0
 # VIDEO_WORKER_ENABLED=0
 # Face recognition (face as a second factor and on asset sign-in). true starts the facelive container
@@ -198,7 +198,7 @@ DOMAINS=
 # FACE_RECOGNITION_COSINE_THRESHOLD=0.40
 # FACE_RECOGNITION_DISTANCE_THRESHOLD=1.0955
 # Containers no longer run with full host privileges by default. Turn it back on only if needed:
-# KOKO_PRIVILEGED=true      # required for Kubernetes sessions in the web terminal
+# SECURECONNECTION_PRIVILEGED=true      # required for Kubernetes sessions in the web terminal
 # WORKER_PRIVILEGED=true
 
 # VIDEO_WORKER_ENABLED only controls the local container. To send recordings
@@ -216,19 +216,19 @@ DOMAINS=
 
 # Koko enables font smoothing to optimize the experience.
 #
-JUMPSERVER_ENABLE_FONT_SMOOTHING=true
+XPAM_ENABLE_FONT_SMOOTHING=true
 
 # Koko Web Proxy external port. Keep this value consistent with the Endpoint Web proxy port.
 # WEB_PROXY_ALLOWED_HOSTS is a comma-separated allowlist of Website asset hosts.
 # Keep localhost and 127.0.0.1 so Koko can access its Web session control API.
 #
-KOKO_WEB_PROXY_PORT=5001
+SECURECONNECTION_WEB_PROXY_PORT=5001
 WEB_PROXY_ALLOWED_HOSTS=localhost,127.0.0.1
 
 ################################# XPack Configuration #################################
 # XPack package, invalid setting in open source version
 #
-KOKO_SSH_PORT=2222
+SECURECONNECTION_SSH_PORT=2222
 RAZOR_RDP_PORT=3389
 MAGNUS_PORT=5525
 
@@ -310,4 +310,4 @@ OPENBAO_UI_PORT=8200
 OPENBAO_CLUSTER_BIND=127.0.0.1
 OPENBAO_CLUSTER_PORT=8201
 
-JUMPSERVER_ENABLE_WALLPAPER=true
+XPAM_ENABLE_WALLPAPER=true

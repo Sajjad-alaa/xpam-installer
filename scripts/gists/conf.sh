@@ -108,6 +108,28 @@ function gen_safe_config() {
     done
     awk -v pat="${CONFIG_SAFE_SECRET_PATTERN}" -F= '/^[[:space:]]*#/ || NF < 2 {print; next}
       {k=$1; gsub(/[[:space:]]/, "", k); if (k !~ pat) print}' "${tmp_file}" > "${tmp_file}.f" && mv -f "${tmp_file}.f" "${tmp_file}"
+    # The containers see the settings under XPAM names only: a name from before the rename still in config.txt is
+    # passed on under its new name (unless the new one is set too), and the settings of upstream enterprise
+    # components XPAM does not ship are not passed on at all.
+    awk -F= '
+      BEGIN {
+        r["KOKO_SSH_PORT"] = "SECURECONNECTION_SSH_PORT"; r["KOKO_WEB_PROXY_PORT"] = "SECURECONNECTION_WEB_PROXY_PORT"
+        r["KOKO_PRIVILEGED"] = "SECURECONNECTION_PRIVILEGED"; r["KOKO_ENABLED"] = "SECURECONNECTION_ENABLED"
+        r["CHEN_ENABLED"] = "WEBCONNECTOR_ENABLED"; r["KAEL_ENABLED"] = "AI_ENABLED"; r["CELERY_ENABLED"] = "WORKER_ENABLED"
+        drop["MAGNUS_PORT"]; drop["MAGNUS_ENABLED"]; drop["RAZOR_RDP_PORT"]; drop["RAZOR_ENABLED"]; drop["XRDP_ENABLED"]
+        drop["XRDP_PORT"]; drop["NEC_ENABLED"]; drop["JDMC_ENABLED"]
+      }
+      { lines[NR] = $0; k = $1; gsub(/[[:space:]]/, "", k); keys[NR] = k; if (!/^[[:space:]]*#/ && NF >= 2) have[k] = 1 }
+      END {
+        for (i = 1; i <= NR; i++) {
+          k = keys[i]; line = lines[i]
+          if (line ~ /^[[:space:]]*#/ || line !~ /=/) { print line; continue }
+          if (k in drop) continue
+          new = (k in r) ? r[k] : (k ~ /^JUMPSERVER_/ ? "XPAM_" substr(k, 12) : "")
+          if (new != "") { if (new in have) continue; sub(/^[[:space:]]*[A-Z0-9_]+=/, new "=", line) }
+          print line
+        }
+      }' "${tmp_file}" > "${tmp_file}.f" && mv -f "${tmp_file}.f" "${tmp_file}"
     if [[ "$(get_config_or_env USE_XPACK)" != "1" ]]; then
       # CE cannot run the local worker. Do not let a stale EE setting make KoKo
       # submit recordings to a worker when the installation is switched to CE.

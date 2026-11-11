@@ -178,6 +178,28 @@ got = sockets['leaver'].read(3)
 check('a user disabled while the page is open gets nothing more and is cut off',
       not ids(got) and sockets['leaver'].closed, (got, sockets['leaver'].closed))
 
+# signing out ends the socket: the next change is not passed on and the socket closes
+out_client = Client(); out_client.force_login(bystander)
+out_cookie = f'{settings.SESSION_COOKIE_NAME}={out_client.cookies[settings.SESSION_COOKIE_NAME].value}'
+out_ws = WS(out_cookie, origin='http://127.0.0.1:8080')
+time.sleep(1)
+out_client.logout()
+by_ticket = Ticket.objects.create(title='rt signed out', type='general', applicant=bystander, org_id=org.id)
+got = out_ws.read(3)
+check('a socket whose login session ended gets nothing more and is cut off',
+      not ids(got) and out_ws.closed, (got, out_ws.closed))
+out_ws.sock.close()
+
+# one user cannot keep sockets open without end (each holds a subscription and a thread in core): past the cap
+# (20 per server process) new ones are refused
+many = [WS(session_cookie(bystander), origin='http://127.0.0.1:8080') for _ in range(90)]
+for w in many:
+    w.read(0.2)
+refused = sum(1 for w in many if w.status != 101 or w.closed)
+check('opening sockets without end is refused past the per-user cap', refused > 0, f'{refused} of {len(many)} refused')
+for w in many:
+    w.sock.close()
+
 for s in sockets.values():
     s.sock.close()
 print(f'\n{sum(results)}/{len(results)} passed', flush=True)

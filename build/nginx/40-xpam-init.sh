@@ -7,6 +7,23 @@ TEMPLATE=/etc/nginx/sites-enabled/https_server.conf
 CONFIG=/etc/nginx/conf.d/https_server.conf
 CERT_DIR=/etc/nginx/cert
 
+# These settings are written into the nginx configuration: a value outside its expected form (a typo, or text
+# that would end an nginx directive or leave the certificate folder) stops the start instead of changing the
+# configuration.
+check_setting() {
+  local name=$1 pattern=$2 value=${!1}
+  if [[ -n "${value}" && ! "${value}" =~ ${pattern} ]]; then
+    echo "Invalid ${name}: ${value}" >&2
+    exit 1
+  fi
+}
+check_setting SERVER_NAME '^[A-Za-z0-9.*_, -]+$'
+check_setting HTTPS_PORT '^[0-9]{1,5}$'
+check_setting CLIENT_MAX_BODY_SIZE '^[0-9]+[kKmMgG]?$'
+check_setting SSL_CERTIFICATE '^[A-Za-z0-9][A-Za-z0-9._-]*$'
+check_setting SSL_CERTIFICATE_KEY '^[A-Za-z0-9][A-Za-z0-9._-]*$'
+check_setting GZIP '^(on|off)$'
+
 config_nginx() {
   if [ "${USE_IPV6}" == "1" ]; then
     sed -i "s@# listen \[::\]:80;@listen \[::\]:80;@g" "${CONFIG}"

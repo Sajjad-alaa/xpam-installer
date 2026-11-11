@@ -27,7 +27,6 @@ services:
       AI_ENABLED: ${AI_ENABLED:-${KAEL_ENABLED:-1}}
       # the /ws/facelive/ route: on when face recognition is on (the same rule as scripts/gists/service.sh)
       FACELIVE_ENABLED: ${FACELIVE_ENABLED:-${FACE_RECOGNITION_ENABLED:-0}}
-      BASIC_AUTH_PASSWORD: ${BASIC_AUTH_PASSWORD:-}
     volumes:
       # read only, and only what nginx serves (not ansible/celery runtime data or certificates)
       - ${VOLUME_DIR}/core/data/static:/opt/core/data/static:ro

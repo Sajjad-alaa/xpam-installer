@@ -7,6 +7,8 @@ services:
     ulimits:
       core: 0
     restart: always
+    # one runaway assistant session (its model runtime processes) must not starve core and the database
+    mem_limit: ${AI_MEM_LIMIT:-2g}
     security_opt:
       - no-new-privileges:true
     env_file:

@@ -13,6 +13,13 @@ services:
     restart: always
     security_opt:
       - no-new-privileges:true
+    # (nginx's master starts as root to bind 80/443 and its workers run as nginx; the capabilities neither uses are dropped)
+    cap_drop:
+      - NET_RAW
+      - MKNOD
+      - AUDIT_WRITE
+      - SETFCAP
+      - SYS_CHROOT
     environment:
       TZ: ${TZ:-UTC}
       HTTP_PORT: 80

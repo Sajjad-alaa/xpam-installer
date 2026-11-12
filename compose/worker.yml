@@ -12,6 +12,14 @@ services:
     privileged: ${WORKER_PRIVILEGED:-${CELERY_PRIVILEGED:-false}}
     security_opt:
       - no-new-privileges:true
+    # (root inside the container; the capabilities it does not use are dropped)
+    cap_drop:
+      - NET_RAW
+      - MKNOD
+      - AUDIT_WRITE
+      - SETFCAP
+      - SYS_CHROOT
+      - NET_BIND_SERVICE
     command: start task
     env_file:
       - ${CONFIG_FILE}

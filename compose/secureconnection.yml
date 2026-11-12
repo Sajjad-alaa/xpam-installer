@@ -12,6 +12,13 @@ services:
     privileged: ${SECURECONNECTION_PRIVILEGED:-${KOKO_PRIVILEGED:-false}}
     security_opt:
       - no-new-privileges:true
+    # (root inside the container: Kubernetes sessions run under their own Linux users, created at the start of each;
+      # the capabilities it does not use are dropped)
+    cap_drop:
+      - NET_RAW
+      - MKNOD
+      - SETFCAP
+      - SYS_CHROOT
     env_file:
       - ${CONFIG_SAFE_FILE}
     environment:

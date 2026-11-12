@@ -18,6 +18,8 @@ from django.db import transaction
 from django.test import Client
 
 settings.ALLOWED_HOSTS = list(settings.ALLOWED_HOSTS) + ['testserver']
+import xpack.utils
+xpack.utils.get_license_user_limit = lambda *a, **k: 100  # (the test needs 8 users; the trial allows 2)
 from orgs.models import Organization
 from orgs.utils import set_current_org
 from rbac.builtin import BuiltinRole
@@ -79,6 +81,14 @@ class WS:
         self.closed = self.status != 101
         self.messages = []
 
+    def pong(self, payload):
+        mask = os.urandom(4)
+        masked = bytes(byte ^ mask[n % 4] for n, byte in enumerate(payload[:125]))
+        try:
+            self.sock.sendall(bytes([0x8A, 0x80 | len(masked)]) + mask + masked)
+        except OSError:
+            self.closed = True
+
     def read(self, seconds=2.0):
         end = time.time() + seconds
         self.sock.settimeout(0.2)
@@ -104,6 +114,8 @@ class WS:
                     self.messages.append(json.loads(payload))
                 elif opcode == 8:
                     self.closed = True
+                elif opcode == 9:  # (the server's keepalive ping: answer it as a browser does)
+                    self.pong(payload)
         got, self.messages = self.messages, []
         return got
 

@@ -97,7 +97,7 @@ RUN set -e; \
     grep -rIl '/opt/jumpserver' /opt/core/.venv/bin /opt/core/.venv/pyvenv.cfg /etc /root /usr/local/bin 2>/dev/null \
       | xargs -r sed -i 's#/opt/jumpserver#/opt/core#g'; \
     sed -i 's#^prompt = .*#prompt = xpam#' /opt/core/.venv/pyvenv.cfg; \
-    sed -i 's#\bjumpserver\b#xpam#g' /opt/core/.venv/bin/activate*; \
+    sed -i 's#jumpserver#xpam#g' /opt/core/.venv/bin/activate*; \
     rm -f /opt/core/data/logs/*.log; \
     grep -rIl --include='*.pth' --include='direct_url.json' --include='RECORD' '/opt/jumpserver' /opt/core/.venv/lib 2>/dev/null \
       | xargs -r sed -i 's#/opt/jumpserver#/opt/core#g'; \

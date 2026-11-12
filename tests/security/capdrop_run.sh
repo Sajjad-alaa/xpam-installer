@@ -8,7 +8,7 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 COMPOSE="$HERE/../../compose"
 NET=xcd
 W=$(mktemp -d)
-cleanup() { docker rm -f xcd-pg xcd-redis xcd-core xcd-worker xcd-sc xcd-gw >/dev/null 2>&1; docker network rm $NET >/dev/null 2>&1; rm -rf "$W"; }
+cleanup() { docker rm -f -v xcd-pg xcd-redis xcd-core xcd-worker xcd-sc xcd-gw >/dev/null 2>&1; docker network rm $NET >/dev/null 2>&1; rm -rf "$W"; }
 trap cleanup EXIT
 cleanup; W=$(mktemp -d)
 # the cap_drop list of a compose file, as docker run arguments

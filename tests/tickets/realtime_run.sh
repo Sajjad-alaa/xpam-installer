@@ -6,7 +6,7 @@ set -uo pipefail
 TAG=${1:-rn}
 HERE=$(cd "$(dirname "$0")" && pwd)
 NET=rtnet
-cleanup() { docker rm -f rtpg rtredis rtcore >/dev/null 2>&1; docker network rm $NET >/dev/null 2>&1; }
+cleanup() { docker rm -f -v rtpg rtredis rtcore >/dev/null 2>&1; docker network rm $NET >/dev/null 2>&1; }
 [[ "${KEEP:-0}" == 1 ]] || trap cleanup EXIT
 cleanup
 rnd() { head -c 24 /dev/urandom | od -An -tx1 | tr -d ' \n'; }

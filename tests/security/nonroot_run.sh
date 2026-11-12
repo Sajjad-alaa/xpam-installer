@@ -8,7 +8,7 @@ set -uo pipefail
 TAG=${1:-rn}
 NET=xnr
 W=$(mktemp -d)
-cleanup() { docker rm -f xnr-pg xnr-redis xnr-core xnr-ai xnr-wc >/dev/null 2>&1; docker network rm $NET >/dev/null 2>&1; rm -rf "$W"; }
+cleanup() { docker rm -f -v xnr-pg xnr-redis xnr-core xnr-ai xnr-wc >/dev/null 2>&1; docker network rm $NET >/dev/null 2>&1; rm -rf "$W"; }
 trap cleanup EXIT
 cleanup; W=$(mktemp -d)
 rnd() { head -c 24 /dev/urandom | od -An -tx1 | tr -d ' \n'; }

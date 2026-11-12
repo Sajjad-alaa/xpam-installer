@@ -246,6 +246,12 @@ SERVER_HOSTNAME=${HOSTNAME}
 # When USE_LB is set to 0, use the configuration proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for
 USE_LB=1
 
+# Rate limits per client address at the gateway (answers 429 beyond them): every request, per second, and
+# sign-in / MFA / password / token POSTs, per second. RATE_LIMIT_ENABLED=0 removes the limits.
+RATE_LIMIT_ENABLED=1
+RATE_LIMIT_REQUESTS=100
+RATE_LIMIT_SIGNIN=5
+
 # Time zone of the services. Left commented out, the installer uses the server's own time zone.
 #
 # TZ=Asia/Baghdad

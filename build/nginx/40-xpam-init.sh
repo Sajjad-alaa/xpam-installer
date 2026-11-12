@@ -23,6 +23,9 @@ check_setting CLIENT_MAX_BODY_SIZE '^[0-9]+[kKmMgG]?$'
 check_setting SSL_CERTIFICATE '^[A-Za-z0-9][A-Za-z0-9._-]*$'
 check_setting SSL_CERTIFICATE_KEY '^[A-Za-z0-9][A-Za-z0-9._-]*$'
 check_setting GZIP '^(on|off)$'
+check_setting RATE_LIMIT_ENABLED '^[01]$'
+check_setting RATE_LIMIT_REQUESTS '^[1-9][0-9]{0,4}$'
+check_setting RATE_LIMIT_SIGNIN '^[1-9][0-9]{0,3}$'
 
 config_nginx() {
   if [ "${USE_IPV6}" == "1" ]; then
@@ -43,8 +46,19 @@ config_nginx() {
   # trust boundary and discards the X-Forwarded-For values a client sends.
   if [ "${USE_LB:-1}" == "0" ]; then
     sed -i 's@proxy_set_header X-Forwarded-For .*;@proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;@g' "${CONFIG}"
+    # the limits count the client the load balancer recorded, not the load balancer
+    sed -i '/XPAM_CLIENT_KEY/s@\$binary_remote_addr@$xpam_forwarded_client@' "${CONFIG}"
   else
     sed -i 's@proxy_set_header X-Forwarded-For .*;@proxy_set_header X-Forwarded-For $remote_addr;@g' "${CONFIG}"
+  fi
+
+  # Rate limits per client (429 beyond them): every request (RATE_LIMIT_REQUESTS per second, bursts of 400) and
+  # sign-in/MFA/password/token POSTs (RATE_LIMIT_SIGNIN per second, bursts of 30). RATE_LIMIT_ENABLED=0 removes them.
+  if [ "${RATE_LIMIT_ENABLED:-1}" == "0" ]; then
+    sed -i '/# XPAM_LIMIT$/d' "${CONFIG}"
+  else
+    sed -i "/XPAM_RATE_REQUESTS/s@rate=[0-9]*r/s@rate=${RATE_LIMIT_REQUESTS:-100}r/s@" "${CONFIG}"
+    sed -i "/XPAM_RATE_SIGNIN/s@rate=[0-9]*r/s@rate=${RATE_LIMIT_SIGNIN:-5}r/s@" "${CONFIG}"
   fi
 }
 

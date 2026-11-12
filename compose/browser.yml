@@ -21,6 +21,11 @@ services:
       - /tmp:size=2g
     security_opt:
       - no-new-privileges:true
+      # Chromium's sandbox puts every renderer (where web pages run) in its own namespaces under its own, stricter
+      # seccomp filter; it needs user namespaces, which Docker's default seccomp profile does not allow without
+      # CAP_SYS_ADMIN. The container keeps no capabilities, no new privileges and a non-root user; without this
+      # the service still runs, with the sandbox off (logged at start).
+      - seccomp=unconfined
     cap_drop:
       - ALL
     healthcheck:

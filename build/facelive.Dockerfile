@@ -60,10 +60,13 @@ WORKDIR /opt/facelive
 # flaws): removed from the application's environment and from the base Python
 RUN /opt/venv/bin/python -m pip uninstall -y -q setuptools wheel >/dev/null 2>&1; \
     /opt/venv/bin/python -m pip uninstall -y -q pip >/dev/null 2>&1; \
-    python -m pip uninstall -y -q setuptools wheel >/dev/null 2>&1; \
-    python -m pip uninstall -y -q pip >/dev/null 2>&1; \
-    rm -rf /opt/venv/lib/python3.11/site-packages/setuptools* /usr/local/lib/python3.11/site-packages/setuptools*; \
-    ! ls -d /opt/venv/lib/python3.11/site-packages/setuptools /usr/local/lib/python3.11/site-packages/setuptools 2>/dev/null
+    /usr/local/bin/python3 -m pip uninstall -y -q setuptools wheel >/dev/null 2>&1; \
+    /usr/local/bin/python3 -m pip uninstall -y -q pip >/dev/null 2>&1; \
+    rm -rf /opt/venv/lib/python3.11/site-packages/setuptools* /usr/local/lib/python3.11/site-packages/setuptools* \
+           /usr/local/lib/python3.11/site-packages/pkg_resources /usr/local/lib/python3.11/site-packages/_distutils_hack \
+           /usr/local/lib/python3.11/site-packages/distutils-precedence.pth /usr/local/bin/pip /usr/local/bin/pip3*; \
+    ! ls -d /opt/venv/lib/python3.11/site-packages/setuptools /usr/local/lib/python3.11/site-packages/setuptools \
+            /usr/local/lib/python3.11/site-packages/pip 2>/dev/null
 # fail the build if OpenCV or the models do not load, then drop the bytecode cache the check writes
 # (only __init__.pyc, the version string) so the image ships no .pyc at all
 RUN python -B -m facelive --check \

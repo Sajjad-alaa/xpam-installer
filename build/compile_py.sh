@@ -68,8 +68,8 @@ fi
 cd "$ROOT"
 
 # Remove the unit tests and files nothing reads, so they never ship in an image (DELETE_TESTS=0 keeps them):
-# the .po translation sources (the English .mo comes from the base image and matches them; jms does not
-# compile messages), common/README.md, and the applets' ChangeLog and test data.
+# the .po translation sources (the English .mo is compiled from them just before, in the image's build stage),
+# common/README.md, and the applets' ChangeLog and test data.
 # Kept on purpose: accounts/demos (the integration-application page serves those files as SDK examples) and
 # the applets' README*.md (the Applets page shows them: terminal/models/applet/applet.py, terminal/mixin.py).
 if [ "${DELETE_TESTS:-1}" = "1" ]; then

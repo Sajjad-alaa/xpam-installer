@@ -63,16 +63,26 @@ RUN /usr/local/bin/uv pip install --python /opt/py3/bin/python \
         "psycopg[binary]==3.3.8" "psycopg-pool==3.3.3" "httptools==0.9.0" "uvloop==0.23.0" \
     && /usr/local/bin/uv pip check --python /opt/py3/bin/python
 
+# Security upgrades of 2026-11-12 (Trivy): Pillow (heap overflows in its image decoders: uploaded logos, captcha),
+# pypdf, Django REST framework, pyasn1, certifi (distrusted emSign roots), dnspython, msgpack, pymongo and oauthlib.
+# python-ldap's test helper (slapdtest, with its sample private keys) is not used at run time.
+RUN /usr/local/bin/uv pip install --python /opt/py3/bin/python \
+        "pillow==13.0.0" "pypdf==6.21.4" "djangorestframework==3.18.2" "pyasn1==0.6.5" "certifi==2026.10.18" \
+        "dnspython==2.9.0" "msgpack==1.2.3" "pymongo==4.18.3" "oauthlib==4.0.1" \
+    && /usr/local/bin/uv pip check --python /opt/py3/bin/python \
+    && rm -rf "$(/opt/py3/bin/python -c 'import sysconfig; print(sysconfig.get_paths()["purelib"])')/slapdtest"
+
 # The installation folder is /opt/core (the upstream image uses /opt/jumpserver), and the application code comes
 # only from this repository: of the upstream tree only the data files the repository does not carry are kept — the
-# IP location databases, the leaked-password list and the compiled English messages (XPAM is English only). The
+# IP location databases and the leaked-password list (the English messages are compiled from this repository's .po in
+# the build stage; XPAM is English only). The
 # upstream start scripts, utils, docs and build files go; LICENSE stays (JumpServer is GPLv3: the licence text
 # ships with the software built on it). Everything that names the old folder follows the move: the virtual
 # environment (script shebangs, activate scripts, prompt; its bytecode is rebuilt so no old path is embedded) and
 # Ansible's module library path. The step fails if the old folder is still named anywhere outside package data.
 RUN set -e; \
     cd /opt/jumpserver/apps; \
-    find . -type f ! -path './i18n/core/en/LC_MESSAGES/*.mo' ! -name 'leak_passwords.db' \
+    find . -type f ! -name 'leak_passwords.db' \
          ! -name 'GeoLite2-City.mmdb' ! -name 'ipipfree.ipdb' -delete; \
     find . -mindepth 1 -depth -type d -empty -delete; \
     cd /; \
@@ -128,8 +138,11 @@ COPY apps /opt/core/apps
 COPY --from=xpamscripts compile_py.sh /tmp/compile_py.sh
 COPY --from=xpamscripts strip_docstrings.py /tmp/strip_docstrings.py
 RUN set -e; \
+    apt-get update >/dev/null && apt-get -y --no-install-recommends install gettext >/dev/null; \
+    for po in /opt/core/apps/i18n/core/en/LC_MESSAGES/*.po; do msgfmt --check -o "${po%.po}.mo" "$po" 2>/dev/null; done; \
+    ls /opt/core/apps/i18n/core/en/LC_MESSAGES/django.mo /opt/core/apps/i18n/core/en/LC_MESSAGES/djangojs.mo >/dev/null; \
     if [ "$XPAM_COMPILE" = "1" ]; then \
-      apt-get update >/dev/null && apt-get -y --no-install-recommends install gcc binutils >/dev/null; \
+      apt-get -y --no-install-recommends install gcc binutils >/dev/null; \
       /usr/local/bin/uv pip install --python /opt/py3/bin/python -q Cython setuptools; \
       mv /opt/core/apps /b; \
       JOBS="$(nproc)" PYBIN=/opt/py3/bin/python sh /tmp/compile_py.sh /b; \

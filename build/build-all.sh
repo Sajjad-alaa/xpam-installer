@@ -70,7 +70,7 @@ build_secureconnection() {
   docker run --rm -v "$CACHE/usql-src:/ro:ro" -v "$CACHE/sc-out:/out" -v "$CACHE/gocache:/root/.cache/go-build" \
     -v "$CACHE/gomod:/go/pkg/mod" -e CGO_ENABLED=0 -e GOFLAGS=-buildvcs=false -e USQL_VERSION="$USQL_VERSION" "$GO_IMAGE" sh -ec '
       cp -r /ro /src && cd /src
-      go get golang.org/x/crypto@v0.58.0 golang.org/x/net@v0.62.0 golang.org/x/text@v0.43.0 golang.org/x/sys@v0.49.0 2>/dev/null
+      go get golang.org/x/crypto@v0.58.0 golang.org/x/net@v0.62.0 golang.org/x/text@v0.43.0 golang.org/x/sys@v0.49.0 github.com/klauspost/compress@v1.20.2 2>/dev/null
       go mod tidy 2>/dev/null
       go build -trimpath -ldflags "-X github.com/xo/usql/text.CommandVersion=$USQL_VERSION -w -s" -o /out/usql main.go run.go'
   say "secureconnection: image"

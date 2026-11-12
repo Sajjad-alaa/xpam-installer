@@ -56,6 +56,14 @@ ENV PATH=/opt/venv/bin:$PATH PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 \
     FACELIVE_MODEL_DIR=/opt/facelive/models FACELIVE_PORT=8085 OMP_NUM_THREADS=2 \
     OPENCV_IO_MAX_IMAGE_WIDTH=1920 OPENCV_IO_MAX_IMAGE_HEIGHT=1920 OPENCV_IO_MAX_IMAGE_PIXELS=3686400
 WORKDIR /opt/facelive
+# the packaging tools are not used at run time (setuptools carries copies of wheel and jaraco.context with known
+# flaws): removed from the application's environment and from the base Python
+RUN /opt/venv/bin/python -m pip uninstall -y -q setuptools wheel >/dev/null 2>&1; \
+    /opt/venv/bin/python -m pip uninstall -y -q pip >/dev/null 2>&1; \
+    python -m pip uninstall -y -q setuptools wheel >/dev/null 2>&1; \
+    python -m pip uninstall -y -q pip >/dev/null 2>&1; \
+    rm -rf /opt/venv/lib/python3.11/site-packages/setuptools* /usr/local/lib/python3.11/site-packages/setuptools*; \
+    ! ls -d /opt/venv/lib/python3.11/site-packages/setuptools /usr/local/lib/python3.11/site-packages/setuptools 2>/dev/null
 # fail the build if OpenCV or the models do not load, then drop the bytecode cache the check writes
 # (only __init__.pyc, the version string) so the image ships no .pyc at all
 RUN python -B -m facelive --check \

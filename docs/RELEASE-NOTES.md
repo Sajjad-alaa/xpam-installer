@@ -1,5 +1,34 @@
 # XPAM release notes
 
+## 5.1.40 — no upstream names in the containers, live ticket pages, security review fixes
+
+- **Names:** the containers no longer carry upstream names or paths: the services are `secureconnection`,
+  `webconnector` and `ai` (containers `xpam_secureconnection`, `xpam_webconnector`, `xpam_ai`), installed under
+  `/opt/core`, `/opt/secureconnection`, `/opt/webconnector` and `/opt/ai`; the binaries, Go modules and Java
+  packages carry XPAM names. The upgrade renames the old containers and moves the settings to their new names
+  (`KOKO_*` → `SECURECONNECTION_*`, `CHEN_ENABLED` → `WEBCONNECTOR_ENABLED`, `KAEL_ENABLED` → `AI_ENABLED`,
+  `JUMPSERVER_*` → `XPAM_*`); the old names are still accepted. Secrets keep their setting names.
+- **Live ticket pages:** ticket lists, ticket details, comments and the workbench card update by themselves when a
+  ticket changes (opened, approved, rejected, commented) — only for the users who may see that ticket.
+- **Security (high):** the web proxy no longer follows a second DNS answer to an internal address (plain HTTP);
+  the remote browser answers HTTP sign-in only for the asset's own sites, sends every request through a
+  per-session filter (loopback and internal addresses not on the asset's list are refused) and runs Chromium's
+  sandbox; a database result view no longer re-runs an approved data-changing statement on paging or refresh;
+  the desktop client asks before opening a connection file for a server it does not know and before trusting an
+  unverifiable certificate the first time.
+- **Security:** gateway rate limits per client (`RATE_LIMIT_*`; sign-in, MFA and password requests 5/s); a strict
+  Content-Security-Policy for the admin console; the AI service and the database console run as their own
+  users, the other containers drop the capabilities they do not use; at most 20 live sockets per user and
+  process; the face is also compared during the liveness head movement; the AI service's stored files are
+  limited (`ARTIFACT_QUOTA_BYTES`) and its memory too (`AI_MEM_LIMIT`); the gateway checks the settings it
+  writes into its configuration; signed API requests must carry a recent date.
+- **Updates:** Pillow 13, pypdf, Django REST framework, oauthlib, certifi and other Python packages; Go 1.26.11
+  and current Go modules; the face service image ships without pip/setuptools. Image scans: no fixable high
+  or critical finding except two unreachable Spring flaws in the database console (fixed only in Spring 7).
+- **Performance:** PostgreSQL connection pool (psycopg 3), AES-GCM through OpenSSL, httptools/uvloop.
+- **Fixes:** `USE_LOKI=1` in an old configuration no longer stops the start; behind a trusted load balancer the
+  face service counts the browser's address; the console's thread pool no longer stalls every database console.
+
 ## 5.1.39 — security review fixes; core image no longer carries its source
 
 - **Security (images):** the core image copied the application source into its own layer before compiling

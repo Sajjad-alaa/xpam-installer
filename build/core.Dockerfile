@@ -97,6 +97,8 @@ RUN set -e; \
     grep -rIl '/opt/jumpserver' /opt/core/.venv/bin /opt/core/.venv/pyvenv.cfg /etc /root /usr/local/bin 2>/dev/null \
       | xargs -r sed -i 's#/opt/jumpserver#/opt/core#g'; \
     sed -i 's#^prompt = .*#prompt = xpam#' /opt/core/.venv/pyvenv.cfg; \
+    sed -i 's#\bjumpserver\b#xpam#g' /opt/core/.venv/bin/activate*; \
+    rm -f /opt/core/data/logs/*.log; \
     grep -rIl --include='*.pth' --include='direct_url.json' --include='RECORD' '/opt/jumpserver' /opt/core/.venv/lib 2>/dev/null \
       | xargs -r sed -i 's#/opt/jumpserver#/opt/core#g'; \
     find /opt/core/.venv -name '*.pyc' -delete; \
@@ -107,6 +109,10 @@ RUN set -e; \
     if grep -rIl '/opt/jumpserver' /etc /root /usr/local/bin /opt/core --exclude-dir=site-packages 2>/dev/null | grep .; then \
       echo 'the old folder is still named in the files above'; exit 1; \
     fi; \
+    if grep -rIli 'jumpserver' /opt/core/.venv/bin /opt/core/.venv/pyvenv.cfg 2>/dev/null | grep .; then \
+      echo 'the old name is still in the environment files above'; exit 1; \
+    fi; \
+    if find /opt/core/data -iname '*jumpserver*' | grep .; then echo 'a file still has the old name'; exit 1; fi; \
     if grep -rl '/opt/jumpserver' /opt/core/.venv --include='*.pyc' 2>/dev/null | head -3 | grep .; then \
       echo 'bytecode still embeds the old folder'; exit 1; \
     fi

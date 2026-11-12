@@ -28,6 +28,8 @@ services:
       # (XPAM: config-safe.txt has no secrets; the one this service uses, by name)
       BOOTSTRAP_TOKEN: ${BOOTSTRAP_TOKEN}
       TZ: ${TZ:-UTC}
+      # (with a trusted load balancer in front, USE_LB=0: which forwarded address is the browser's)
+      USE_LB: ${USE_LB:-1}
     volumes:
       - ${VOLUME_DIR}/facelive/data:/opt/facelive/data
     healthcheck:

@@ -174,6 +174,8 @@ function stop() {
       stop_jdmc || return 1
     fi
     cmd=$(get_docker_compose_cmd_line "ignore_db")
+    # (the containers of services renamed since: the compose files no longer name them)
+    remove_renamed_service_containers || return 1
     ${cmd} down -v
   elif [[ -n "${target}" ]]; then
     ${EXE} stop "${target}" && ${EXE} rm -f "${target}"
@@ -182,6 +184,7 @@ function stop() {
       stop_jdmc || return 1
     fi
     retire_legacy_project || return 1
+    remove_renamed_service_containers || return 1
     ${EXE} down -v
   fi
 }

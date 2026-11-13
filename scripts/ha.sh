@@ -173,6 +173,8 @@ function app_stop() {
   local cmd
   cmd=$(app_cmd)
   cd "${PROJECT_DIR}" || return 1
+  # (the containers of services renamed since: the compose files no longer name them)
+  remove_renamed_service_containers || return 1
   ${cmd} stop
 }
 

@@ -544,7 +544,8 @@ function perform_db_migrations() {
     wait_container_healthy xpam_redis || return 1
   fi
 
-  docker exec -i xpam_core bash -c './jms upgrade_db' || {
+  # (the launcher is xpam since 5.1.40; an older core image still has jms)
+  docker exec -i xpam_core bash -c 'if [ -f ./xpam ]; then python ./xpam upgrade_db; else ./jms upgrade_db; fi' || {
     log_error "$(gettext 'Failed to change the table structure')!"
     return 1
   }

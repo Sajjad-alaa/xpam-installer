@@ -131,6 +131,15 @@ if remove_renamed_service_containers >/dev/null 2>&1; then
 fi
 printf 'PASS: containers under the old service names are recreated under the new ones\n'
 
+grep -q 'remove_renamed_service_containers || return 1' "${TEST_ROOT}/xpamctl.sh" \
+  && [[ $(grep -c 'remove_renamed_service_containers || return 1' "${TEST_ROOT}/xpamctl.sh") -ge 3 ]] \
+  || fail 'start and both full stops must remove the containers of renamed services'
+grep -q 'remove_renamed_service_containers || return 1' "${TEST_ROOT}/scripts/ha.sh" \
+  || fail 'the HA app stop (upgrade) must remove the containers of renamed services'
+grep -q "python ./xpam upgrade_db" "${TEST_ROOT}/scripts/gists/service.sh" \
+  || fail 'the database migration must call the xpam launcher'
+printf 'PASS: stops and the database migration handle the renamed services and launcher\n'
+
 docker_calls=()
 docker() {
   if [[ "$1" == 'ps' ]]; then

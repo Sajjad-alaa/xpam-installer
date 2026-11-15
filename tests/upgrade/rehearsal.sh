@@ -8,7 +8,7 @@
 # the settings carry the new names (old ones gone, values kept), the data is still there, the services are healthy,
 # registered with core, reachable through the gateway, and the AI and database console services run as their users.
 set -uo pipefail
-OLD_REF=${1:-cd30800}; OLD=${2:-v5.1.39}; NEW=${3:-v5.1.40}
+OLD_REF=${1:-1a61cad}; OLD=${2:-v5.1.40}; NEW=${3:-v5.1.41}
 N=xupg; NET=xupgnet
 PASS=0; FAIL=0
 check() { if eval "$2"; then echo "PASS $1"; PASS=$((PASS+1)); else echo "FAIL $1"; FAIL=$((FAIL+1)); fi; }
@@ -49,11 +49,16 @@ docker save postgres:16.15-bookworm redis:7.4.10-bookworm | docker exec -i "$N" 
 say "install $OLD (installer at $OLD_REF)"
 on "cd /root && export $OPTS XPAM_INSTALLER_REPO=/src XPAM_INSTALLER_BRANCH=xpam-rehearsal-old AUTO_INSTALL=1 XPAM_SKIP_SELF_UPDATE=1; git -C /src show xpam-rehearsal-old:quick_start.sh > /root/quick_start.sh; timeout 1200 bash /root/quick_start.sh > /root/install1.log 2>&1" || true
 # settings as an older installation has them: the reduced setup, a changed SSH port under its old name
-on "for kv in $OPTS KOKO_SSH_PORT=2223 KOKO_WEB_PROXY_PORT=5001; do k=\${kv%%=*}; sed -i \"/^\$k=/d\" /opt/xpam/config/config.txt; echo \$kv >> /opt/xpam/config/config.txt; done; cd /opt/xpam-installer && export $OPTS AUTO_INSTALL=1 XPAM_SKIP_SELF_UPDATE=1; timeout 1800 bash ./xpamctl.sh install > /root/install2.log 2>&1"
+PORT_KEYS="SECURECONNECTION_SSH_PORT=2223 SECURECONNECTION_WEB_PROXY_PORT=5001"
+[[ "$(printf '%s\n' "$OLD" v5.1.40 | sort -V | head -1)" == "$OLD" && "$OLD" != v5.1.40 ]] && PORT_KEYS="KOKO_SSH_PORT=2223 KOKO_WEB_PROXY_PORT=5001"
+on "for kv in $OPTS $PORT_KEYS; do k=\${kv%%=*}; sed -i \"/^\$k=/d\" /opt/xpam/config/config.txt; echo \$kv >> /opt/xpam/config/config.txt; done; cd /opt/xpam-installer && export $OPTS AUTO_INSTALL=1 XPAM_SKIP_SELF_UPDATE=1; timeout 1800 bash ./xpamctl.sh install > /root/install2.log 2>&1"
 wait_for "on 'docker ps --format {{.Names}}' | grep -qx xpam_core" 30
 check "$OLD is installed and core runs" "on 'docker ps --format {{.Names}}' | grep -qx xpam_core"
-check "$OLD runs its connection service under the old service name (koko)" \
-  "on 'docker ps --filter label=com.docker.compose.service=koko --format {{.Names}}' | grep -q ."
+# (releases before 5.1.40 run the connection service under its old service name; the upgrade renames it)
+OLD_SVC=secureconnection
+[[ "$(printf '%s\n' "$OLD" v5.1.40 | sort -V | head -1)" == "$OLD" && "$OLD" != v5.1.40 ]] && OLD_SVC=koko
+check "$OLD runs its connection service as the service $OLD_SVC" \
+  "on 'docker ps --filter label=com.docker.compose.service=$OLD_SVC --format {{.Names}}' | grep -q ."
 wait_for "[[ \$(on 'curl -sk -o /dev/null -w %{http_code} https://127.0.0.1/api/health/') == 200 ]]" 60
 echo 'from users.models import User; User.objects.get_or_create(username="upgrade.keep", defaults=dict(name="Upgrade Keep", email="upgrade.keep@example.invalid"))' | core_py >/dev/null
 check 'data created on the old release' "echo 'from users.models import User; print(\"COUNT\", User.objects.filter(username=\"upgrade.keep\").count())' | core_py | grep -qx 'COUNT 1'"

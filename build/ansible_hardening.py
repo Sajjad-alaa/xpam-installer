@@ -16,10 +16,16 @@ ops/ansible/runner.py). In a user run:
     no chroot/docker/... connection, and no implicit `localhost` host.
 
 The script fails (and so does the image build) if a place it patches is not found exactly once: a new ansible-core
-version must be checked by hand. Run:  ansible_hardening.py <site-packages>/ansible
+version must be checked by hand.
+  ansible_hardening.py <site-packages>/ansible          apply
+  ansible_hardening.py --check <path-to>/ansible        run the installed ansible both ways and fail unless a user
+                                                        run is refused and a run of the automations is not
 """
+import os
 import pathlib
+import subprocess
 import sys
+import tempfile
 
 GUARD = '''# XPAM: limits for Ansible runs started on behalf of a user (see build/ansible_hardening.py in the installer).
 import os
@@ -186,7 +192,58 @@ PATCHES = [
 NEEDS_OS = ('plugins/connection/local.py',)
 
 
+def check(ansible):
+    """The result, tried: what a user run must not do, and what the automations must still do."""
+    marker = 'marker-$((40+2))'          # the shell that runs it prints marker-42; the text itself never does
+    secret = 'build-check-secret'
+    with tempfile.TemporaryDirectory() as tmp:
+        inventory = os.path.join(tmp, 'inv.yml')
+        with open(inventory, 'w') as f:
+            f.write('all:\n  hosts:\n    h1:\n      ansible_host: 127.0.0.1\n      ansible_password: %s\n' % secret)
+
+        def run(args, super_mode=False):
+            env = dict(os.environ, LC_ALL='C.UTF-8', HOME=tmp, ANSIBLE_LOCAL_TEMP=os.path.join(tmp, 'a'))
+            env.pop('ANSIBLE_SUPER_MODE', None)
+            if super_mode:
+                env['ANSIBLE_SUPER_MODE'] = '1'
+            done = subprocess.run([ansible, '-i', inventory, 'all'] + args, env=env, cwd=tmp, text=True,
+                                  stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=300)
+            return done.stdout
+
+        def debug(expression):
+            return ['-m', 'debug', '-a', 'msg={{ %s }}' % expression]
+
+        refused = [
+            ('lookup pipe', debug('lookup("pipe", "echo %s")' % marker), 'marker-42'),
+            ('lookup ansible.builtin.pipe', debug('lookup("ansible.builtin.pipe", "echo %s")' % marker), 'marker-42'),
+            ('lookup lines', debug('lookup("lines", "echo %s")' % marker), 'marker-42'),
+            ('query pipe', debug('query("pipe", "echo %s")' % marker), 'marker-42'),
+            ('a secret variable', debug('ansible_password'), secret),
+            ('a secret through the vars lookup', debug('lookup("vars", "ansible_password")'), secret),
+            ('the local connection', ['-c', 'local', '-m', 'shell', '-a', 'echo %s' % marker], 'marker-42'),
+            ('the chroot connection', ['-c', 'community.general.chroot', '-m', 'shell', '-a', 'echo %s' % marker],
+             'marker-42'),
+        ]
+        for name, args, forbidden in refused:
+            out = run(args)
+            if forbidden in out:
+                sys.exit('ansible_hardening: %s is not refused in a user run:\n%s' % (name, out[-600:]))
+        allowed = [
+            ('lookups', debug('lookup("pipe", "echo %s")' % marker), 'marker-42'),
+            ('secret variables', debug('ansible_password'), secret),
+            ('the local connection', ['-c', 'local', '-m', 'shell', '-a', 'echo %s' % marker], 'marker-42'),
+        ]
+        for name, args, expected in allowed:
+            out = run(args, super_mode=True)
+            if expected not in out:
+                sys.exit('ansible_hardening: the automations (super mode) lost %s:\n%s' % (name, out[-600:]))
+    print('ansible_hardening: checked (%d refused in a user run, %d kept for the automations)'
+          % (len(refused), len(allowed)))
+
+
 def main():
+    if len(sys.argv) == 3 and sys.argv[1] == '--check':
+        return check(sys.argv[2])
     root = pathlib.Path(sys.argv[1])
     release = (root / 'release.py').read_text()
     if "__version__ = '2.16." not in release:

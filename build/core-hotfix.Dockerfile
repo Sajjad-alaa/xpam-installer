@@ -1,0 +1,51 @@
+# XPAM core, hotfix build: the previous release's image with only the changed Python modules compiled anew, for a
+# fix that must not wait for a full build (core.Dockerfile downloads ~700 MB of packages when nothing is cached).
+# The result has what a full build of the same sources has: the same base system, the changed modules as compiled
+# extension modules (same compile script and options), the Ansible limits (ansible_hardening.py) and its own build
+# identity. Use it only when the change is limited to Python modules under apps/; the next full build replaces it.
+#   docker build -f core-hotfix.Dockerfile --build-context xpamscripts=<installer>/build \
+#     --build-arg FROM_IMAGE=xpam/core:v5.1.40 --build-arg XPAM_BUILD_ID=... \
+#     --build-arg MODULES="ops/models/job.py ops/serializers/job.py" -t xpam/core:v5.1.41 /opt/xpam-core
+# (build-all.sh core-hotfix does this with the modules changed since the previous release's tag)
+ARG FROM_IMAGE
+# any image of the core's Debian release (13) with gcc: only its C compiler is used
+ARG TOOLCHAIN_IMAGE=golang:1.26-trixie
+FROM ${FROM_IMAGE} AS previous
+
+FROM ${TOOLCHAIN_IMAGE} AS build
+COPY --from=previous /usr/local /usr/local
+COPY --from=previous /opt/core/.venv /opt/core/.venv
+COPY apps /src
+COPY --from=xpamscripts compile_py.sh strip_docstrings.py /tmp/
+ARG MODULES
+RUN set -e; \
+    ln -sfn /opt/core/.venv /opt/py3; \
+    /usr/local/bin/uv pip install --python /opt/py3/bin/python -q Cython setuptools; \
+    test -n "$MODULES"; mkdir /b /out; cd /src; \
+    for m in $MODULES; do \
+      d="$(dirname "$m")"; mkdir -p "/b/$d"; cp "$m" "/b/$m"; \
+      while [ "$d" != "." ]; do cp "$d/__init__.py" "/b/$d/__init__.py"; d="$(dirname "$d")"; done; \
+    done; \
+    JOBS="$(nproc)" PYBIN=/opt/py3/bin/python sh /tmp/compile_py.sh /b; \
+    cd /b; \
+    for m in $MODULES; do \
+      so="$(ls "${m%.py}".*.so 2>/dev/null | head -1)"; \
+      if [ -z "$so" ]; then echo "core-hotfix: $m was not compiled"; exit 1; fi; \
+      mkdir -p "/out/$(dirname "$m")"; cp "$so" "/out/$so"; \
+    done; \
+    find /out -type f | sort
+
+FROM previous
+COPY --from=xpamscripts ansible_hardening.py /tmp/ansible_hardening.py
+RUN set -e; \
+    ansible_dir="$(/opt/py3/bin/python -c 'import ansible, os; print(os.path.dirname(ansible.__file__))')"; \
+    if [ ! -f "$ansible_dir/xpam_guard.py" ]; then \
+      /opt/py3/bin/python /tmp/ansible_hardening.py "$ansible_dir"; \
+      /opt/py3/bin/python -W ignore -m compileall -q "$ansible_dir" >/dev/null 2>&1 || true; \
+    fi; \
+    /opt/py3/bin/python /tmp/ansible_hardening.py --check /opt/py3/bin/ansible; \
+    rm -rf /tmp/ansible_hardening.py /root/.ansible
+COPY --from=build /out/ /opt/core/apps/
+ARG XPAM_BUILD_ID=dev
+RUN echo "${XPAM_BUILD_ID}" > /opt/core/BUILD_ID \
+    && cd /opt/core/apps && /opt/py3/bin/python -c "import os, django; os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'xpam.settings'); print('BUILD', open('/opt/core/BUILD_ID').read().strip())"

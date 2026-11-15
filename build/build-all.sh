@@ -2,12 +2,13 @@
 # Build all XPAM images from the source repos.
 #   ./build-all.sh                 build everything
 #   ./build-all.sh core web        build only the named images
+#   PREV=v5.1.40 ./build-all.sh core-hotfix   core from the previous release's image (core-hotfix.Dockerfile)
 # Images: core gateway web workspace secureconnection webconnector ai facelive browser postgresql-ha
-# Environment: SRC (repos folder, default /opt), NS (default xpam), TAG (default v5.1.40).
+# Environment: SRC (repos folder, default /opt), NS (default xpam), TAG (default v5.1.41).
 # Needs: docker with BuildKit, and for the web and workspace images node 24 with the repos' node_modules installed.
 set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-SRC=${SRC:-/opt}; NS=${NS:-xpam}; TAG=${TAG:-v5.1.40}
+SRC=${SRC:-/opt}; NS=${NS:-xpam}; TAG=${TAG:-v5.1.41}
 # system packages are refreshed once a day (security updates such as libexpat)
 APT_REFRESH=${APT_REFRESH:-$(date +%Y%m%d)}
 CACHE="$HERE/.cache"; mkdir -p "$CACHE"
@@ -28,6 +29,23 @@ build_core() {
     --build-arg XPAM_BUILD_ID="$TAG-$(git -C "$SRC/xpam-core" rev-parse --short HEAD 2>/dev/null || echo x)-$(date +%s)" \
     --build-context xpamscripts="$HERE" \
     -f "$HERE/core.Dockerfile" -t "$NS/core:$TAG" "$SRC/xpam-core"
+}
+
+# core, from the previous release's image: only the Python modules changed since that release's tag are compiled
+# again (core-hotfix.Dockerfile). For a fix that must not wait for a full build; PREV names the previous release.
+build_core_hotfix() {
+  say "core (hotfix on ${PREV:?set PREV to the previous release, e.g. PREV=v5.1.40})"
+  local modules
+  modules=$(git -C "$SRC/xpam-core" diff --name-only "xpam-$PREV" HEAD -- apps | sed 's#^apps/##')
+  if [[ -z "$modules" ]] || grep -qvE '\.py$' <<<"$modules" \
+      || grep -qE '(^|/)(__init__|manage|asgi|wsgi)\.py$|/migrations/|^libs/ansible/|/tests?/' <<<"$modules"; then
+    echo "core-hotfix: the change since xpam-$PREV is not limited to compiled Python modules; build core in full:"
+    echo "$modules"; return 1
+  fi
+  docker build -q --build-arg FROM_IMAGE="$NS/core:$PREV" --build-arg MODULES="$(echo $modules)" \
+    --build-arg XPAM_BUILD_ID="$TAG-$(git -C "$SRC/xpam-core" rev-parse --short HEAD)-$(date +%s)-on-$PREV" \
+    --build-context xpamscripts="$HERE" \
+    -f "$HERE/core-hotfix.Dockerfile" -t "$NS/core:$TAG" "$SRC/xpam-core"
 }
 
 build_gateway() {
@@ -126,6 +144,6 @@ build_facelive() {
 }
 
 targets=("$@"); [[ ${#targets[@]} -gt 0 ]] || targets=(core gateway web workspace secureconnection webconnector ai facelive browser postgresql-ha)
-for t in "${targets[@]}"; do "build_$t"; done
+for t in "${targets[@]}"; do "build_${t//-/_}"; done
 say "done"
 docker images --format '{{.Repository}}:{{.Tag}}  {{.ID}}  {{.CreatedSince}}' | grep -E "^$NS/(core|gateway|web|workspace|secureconnection|webconnector|ai|facelive|browser|postgresql-ha):$TAG " | sort

@@ -1,5 +1,30 @@
 # XPAM release notes
 
+## 5.1.41 — security: nothing a user writes in a job runs on the XPAM server
+
+Install this release if users other than administrators can sign in.
+
+- **Security (critical):** the destination folder of a bulk file upload (Workbench → File transfer) was passed to
+  Ansible unchecked. Template syntax in it ran commands inside the worker container; a space in it added options,
+  so any file of the XPAM server could be sent to the target. Any user with upload permission on one server could
+  use it, with the Job centre switched off. The folder is now a plain path, passed as one value.
+- **Security (critical when the Job centre is on):** since 5.1.10 the core image used stock Ansible without the
+  limits for jobs started by users: `{{ ansible_password }}` in a command printed the stored password and
+  `{{ lookup('pipe', ...) }}` ran on the XPAM server. The image now limits such runs (and closes the ways around
+  the upstream product's own limits: `ansible.builtin.pipe`, `lines`, `template`, `with_pipe`): templates are
+  sandboxed, only harmless lookups are allowed, secrets are masked (`********`), only network connections to the
+  targets are possible. XPAM's own automations are not affected.
+- **Security (high):** a database job's query is passed as plain text (a quote in it could send the account's
+  password to another host; template syntax ran on the XPAM server); a job's name can no longer move the job's
+  folder.
+- Job variables (`{{ jms_username }}` and your own) keep working in commands and queries.
+- Playbooks written by users still do not run on a Docker installation (their sandbox cannot start inside the
+  container); the planned runner service will run them.
+- **Images:** only the core image changes. It is the 5.1.40 image with the changed modules compiled anew and the
+  Ansible limits applied (`build/core-hotfix.Dockerfile`); the other nine images are those of 5.1.40 under the new
+  tag (their version text still says 5.1.40).
+- Test: `tests/jobs/engine_run.sh` (28 checks on a throwaway stack with SSH and PostgreSQL targets).
+
 ## 5.1.40 — no upstream names in the containers, live ticket pages, security review fixes
 
 - **Names:** the containers no longer carry upstream names or paths: the services are `secureconnection`,

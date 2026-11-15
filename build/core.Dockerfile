@@ -72,6 +72,29 @@ RUN /usr/local/bin/uv pip install --python /opt/py3/bin/python \
     && /usr/local/bin/uv pip check --python /opt/py3/bin/python \
     && rm -rf "$(/opt/py3/bin/python -c 'import sysconfig; print(sysconfig.get_paths()["purelib"])')/slapdtest"
 
+# Ansible runs started on behalf of a user (job centre: commands, playbooks, file upload) are limited: sandboxed
+# templates, no lookups that read from this server, masked secrets, network connections only (ansible_hardening.py;
+# the stock ansible-core installed above has none of the limits the upstream product's patched copy carried). The
+# step checks the result: a user run must be refused, a run of XPAM's own automations (ANSIBLE_SUPER_MODE) not.
+COPY --from=xpamscripts ansible_hardening.py /tmp/ansible_hardening.py
+RUN set -e; export LC_ALL=C.UTF-8; cd /tmp; \
+    /opt/py3/bin/python /tmp/ansible_hardening.py "$(/opt/py3/bin/python -c 'import ansible, os; print(os.path.dirname(ansible.__file__))')"; \
+    rm -f /tmp/ansible_hardening.py; \
+    printf 'all:\n  hosts:\n    h1:\n      ansible_host: 127.0.0.1\n      ansible_password: build-check-secret\n' > /tmp/inv.yml; \
+    run() { /opt/py3/bin/ansible -i /tmp/inv.yml all "$@" 2>&1 || true; }; \
+    refused() { if echo "$1" | grep -q "$2"; then echo "ansible hardening: $3 is not refused"; exit 1; fi; }; \
+    refused "$(run -m debug -a 'msg={{ lookup("pipe", "echo marker-$((40+2))") }}')" 'marker-42' 'lookup pipe'; \
+    refused "$(run -m debug -a 'msg={{ lookup("ansible.builtin.pipe", "echo marker-$((40+2))") }}')" 'marker-42' 'lookup ansible.builtin.pipe'; \
+    refused "$(run -m debug -a 'msg={{ lookup("lines", "echo marker-$((40+2))") }}')" 'marker-42' 'lookup lines'; \
+    refused "$(run -m debug -a 'msg={{ ansible_password }}')" 'build-check-secret' 'a secret variable'; \
+    refused "$(run -c local -m shell -a 'echo marker-$((40+2))')" 'marker-42' 'the local connection'; \
+    refused "$(run -c community.general.chroot -m shell -a 'echo marker-$((40+2))')" 'marker-42' 'the chroot connection'; \
+    ANSIBLE_SUPER_MODE=1 /opt/py3/bin/ansible -i /tmp/inv.yml all -m debug -a 'msg={{ lookup("pipe", "echo marker-$((40+2))") }}' \
+        | grep -q 'marker-42' || { echo 'ansible hardening: the automations (super mode) lost their lookups'; exit 1; }; \
+    ANSIBLE_SUPER_MODE=1 /opt/py3/bin/ansible -i /tmp/inv.yml all -c local -m shell -a 'echo marker-$((40+2))' 2>/dev/null \
+        | grep -q 'marker-42' || { echo 'ansible hardening: the automations (super mode) lost the local connection'; exit 1; }; \
+    rm -rf /tmp/inv.yml /root/.ansible; echo 'ansible hardening: checked'
+
 # The installation folder is /opt/core (the upstream image uses /opt/jumpserver), and the application code comes
 # only from this repository: of the upstream tree only the data files the repository does not carry are kept — the
 # IP location databases and the leaked-password list (the English messages are compiled from this repository's .po in

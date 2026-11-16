@@ -8,7 +8,7 @@
 # the settings carry the new names (old ones gone, values kept), the data is still there, the services are healthy,
 # registered with core, reachable through the gateway, and the AI and database console services run as their users.
 set -uo pipefail
-OLD_REF=${1:-1a61cad}; OLD=${2:-v5.1.40}; NEW=${3:-v5.1.41}
+OLD_REF=${1:-5356ae9}; OLD=${2:-v5.1.41}; NEW=${3:-v5.2.0}
 N=xupg; NET=xupgnet
 PASS=0; FAIL=0
 check() { if eval "$2"; then echo "PASS $1"; PASS=$((PASS+1)); else echo "FAIL $1"; FAIL=$((FAIL+1)); fi; }
@@ -28,6 +28,8 @@ NODE_IMAGE=rockylinux/rockylinux:9-ubi-init
 docker image inspect xpam-test/rocky-docker:9 >/dev/null 2>&1 && NODE_IMAGE=xpam-test/rocky-docker:9
 # the services the rehearsal runs (the renamed ones included); browser, workspace and face recognition stay off
 SERVICES=(core gateway web secureconnection webconnector ai)
+# (services a release adds: only loaded for the new one)
+NEW_SERVICES=(runner)
 OPTS="XPAM_VAULT_MODE=none BROWSER_ENABLED=0 WORKSPACE_ENABLED=0 FACE_RECOGNITION_ENABLED=0 SERVER_SIZE=small XPAM_IMAGE_REGISTRY=local"
 
 say "simulated server"
@@ -64,7 +66,7 @@ echo 'from users.models import User; User.objects.get_or_create(username="upgrad
 check 'data created on the old release' "echo 'from users.models import User; print(\"COUNT\", User.objects.filter(username=\"upgrade.keep\").count())' | core_py | grep -qx 'COUNT 1'"
 
 say "upgrade to $NEW (xpamctl upgrade: the installer updates itself from its repository first)"
-load "$NEW" "${SERVICES[@]}"
+load "$NEW" "${SERVICES[@]}" "${NEW_SERVICES[@]}"
 # as on a customer's server: the installer checkout follows the release branch, which has moved on
 on "cd /opt/xpam-installer && git fetch -q origin xpam:refs/remotes/origin/xpam && git branch -q -u origin/xpam"
 on "cd /opt/xpam-installer && export AUTO_INSTALL=1 XPAM_IMAGE_REGISTRY=local; timeout 2400 bash ./xpamctl.sh upgrade > /root/upgrade.log 2>&1; echo \$? > /root/upgrade.rc"
@@ -73,7 +75,7 @@ check 'the installer updated itself to the new release' "on 'grep -q \"^export V
 check "config.txt records $NEW" "on 'grep -qx CURRENT_VERSION=$NEW /opt/xpam/config/config.txt'"
 
 say "after the upgrade"
-for svc in core worker gateway web secureconnection webconnector ai; do
+for svc in core worker gateway web secureconnection webconnector ai runner; do
   wait_for "on 'docker inspect -f {{.State.Health.Status}} xpam_$svc' 2>/dev/null | grep -qx healthy" 36
   check "xpam_$svc runs $NEW and is healthy" \
     "on 'docker inspect -f \"{{.Config.Image}} {{.State.Health.Status}}\" xpam_$svc' 2>/dev/null | grep -qx \"xpam/$([ $svc = worker ] && echo core || echo $svc):$NEW healthy\""
@@ -94,6 +96,11 @@ check 'the gateway serves the API' "[[ \$(on 'curl -sk -o /dev/null -w %{http_co
 check 'the gateway serves the console with its CSP' "on 'curl -sk -D - -o /dev/null https://127.0.0.1/web/' | grep -qi \"content-security-policy: default-src 'self'; script-src 'self'\""
 check 'the AI service runs as its own user' "on 'docker exec xpam_ai cat /proc/1/status' | awk '/^Uid:/{print \$2}' | grep -qx 10003"
 check 'the database console runs as its own user' "on 'docker exec xpam_webconnector cat /proc/1/status' | awk '/^Uid:/{print \$2}' | grep -qx 10004"
+check 'the runner has its key and its own network (no database there)' \
+  "on 'grep -qE \"^RUNNER_KEY=.{24,}\" /opt/xpam/config/config.txt && docker inspect -f \"{{json .NetworkSettings.Networks}}\" xpam_runner' | grep -q runner \
+   && ! on 'docker inspect -f \"{{json .NetworkSettings.Networks}}\" xpam_runner' | grep -q '\"xpam_net\"'"
+check 'the worker reaches the runner' "on 'docker exec xpam_worker python3 -c \"import urllib.request; urllib.request.urlopen(\\\"http://runner:8086/health\\\", timeout=5)\"'"
+check 'the Job centre is no longer in the default user role' "echo 'from rbac.builtin import BuiltinRole; from rbac.models import Role; r=Role.objects.get(id=BuiltinRole.org_user.id); print(\"OPS\", r.permissions.filter(content_type__app_label=\"ops\", codename__in=[\"add_job\",\"add_adhoc\"]).count()); print(\"ROLE8\", Role.objects.filter(id=BuiltinRole.org_automation_operator.id).count())' | core_py | tr '\n' ' ' | grep -q 'OPS 0 ROLE8 1'"
 check 'the renamed components registered with core' "echo 'from terminal.models import Terminal; print(\"TYPES\", sorted(set(Terminal.objects.filter(is_deleted=False).values_list(\"type\", flat=True))))' | core_py | grep '^TYPES' | grep -q koko"
 echo
 echo "DONE $PASS passed, $FAIL failed"

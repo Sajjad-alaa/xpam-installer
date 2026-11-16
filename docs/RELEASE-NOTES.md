@@ -1,5 +1,37 @@
 # XPAM release notes
 
+## 5.2.0 — Automation: scripts sent to servers, a result for every server, a runner of its own
+
+- **Scripts** (Workbench → Job centre → Templates → Scripts): write a script in Bash, sh, Python 3 or PowerShell
+  with typed parameters (text, number, choice, yes/no, secret). Each parameter reaches the script as an environment
+  variable of the same name; values are never pasted into the script and are never treated as templates. Secret
+  values are masked in every output and log and are not kept after the run.
+- **Did it work?** Every run shows a result per server — worked, failed, unreachable, timed out, skipped, stopped —
+  with exit code, duration and output, live while it runs. Run it again on the servers where it did not work,
+  export the results as CSV, stop a run. A script can also count as worked only when its output contains a text.
+  The author is notified when a run ends. Every run (commands, playbooks, file transfer) now has this view
+  (Execution history → Servers).
+- **Approval:** a script that is not approved runs only for its author and not on production servers (servers
+  with the tag `env:production`). Sharing it with the organization or running it on production needs an approval by
+  another person (an administrator); every change of an approved script needs a new approval.
+- **Runner** (new service `xpam_runner`, image `xpam/runner`): the jobs users write (commands, scripts, playbooks)
+  run there, not in core: its own network (it reaches the servers, not XPAM's database, Redis or other containers),
+  no XPAM secret besides its key (`RUNNER_KEY`, created by the upgrade), each job under a user of its own, removed
+  afterwards. Playbooks written by users now run (on the runner); they may not bring code for the XPAM side
+  (plugins, `ansible.cfg`, collections). `RUNNER_ENABLED=0` switches the runner off: commands and scripts then run in
+  the worker, user playbooks not at all.
+- **Who may use it:** the Job centre is no longer part of the default user roles. An administrator grants it with
+  the new role **Automation Operator** (or a custom role). Approving scripts: system and organization
+  administrators (permission `ops.approve_script`).
+- **Licence:** Automation (commands, scripts, playbooks run on servers) is a licensed feature, like tickets
+  (`generate_license.py --automation`). Without it the Job centre is hidden; file transfer is not affected.
+- **Security:** a playbook can no longer take the stored passwords of its own job: the connection settings
+  (`ansible_host`, user, password, SSH options and programs) always come from XPAM's inventory, the job's inventory
+  and key files cannot be read or copied, `add_host` is refused; lookups that read from the XPAM side stay refused.
+- The upstream time limit of 60 s per job is replaced by one that follows the job's timeout.
+- English: the command templates tab is called Commands.
+- Tests: `tests/jobs/engine_run.sh` (`RUNNER=1`; `TEST=scripts_test.py`), upgrade rehearsal 5.1.41 → 5.2.0.
+
 ## 5.1.41 — security: nothing a user writes in a job runs on the XPAM server
 
 Install this release if users other than administrators can sign in.

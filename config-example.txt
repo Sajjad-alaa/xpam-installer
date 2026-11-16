@@ -83,6 +83,7 @@ LOG_LEVEL=ERROR
 DOCKER_SUBNET=192.168.250.0/24
 # Network of the Remote browser (isolated from the other XPAM containers)
 # BROWSER_SUBNET=192.168.251.0/24
+# RUNNER_SUBNET=192.168.252.0/24
 
 # ipv6 nat, no need to enable under normal circumstances
 # If the host does not support ipv6, enabling this option will prevent the real client ip address from being obtained

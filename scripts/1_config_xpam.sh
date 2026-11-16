@@ -20,6 +20,7 @@ function set_secret_key() {
   fi
   ensure_config_secret CHAT_AI_DELEGATION_SECRET 32 || return 1
   ensure_config_secret BROWSER_KEY 32 || return 1
+  ensure_config_secret RUNNER_KEY 32 || return 1  # (the worker's key for the runner service)
   ensure_config_secret REDIS_KOKO_PASSWORD 32 || return 1  # (the SSH/RDP service's own Redis account)
   if command -v hostname&>/dev/null; then
     SERVER_HOSTNAME=$(hostname)

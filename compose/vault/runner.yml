@@ -1,0 +1,8 @@
+# XPAM: secrets from HashiCorp Vault (xpamctl vault connect). The container waits for its own secret (RUNNER_KEY),
+# read from Vault into memory at boot (/run/xpam/secrets/runner), and starts with it; it is never part of its
+# settings (docker inspect) nor of config.txt.
+services:
+  runner:
+    entrypoint: ["/bin/sh", "-c", "while [ ! -s /run/xpam-secrets/env ]; do sleep 2; done; set -a; . /run/xpam-secrets/env; set +a; exec \"$$@\"", "xpam-secrets", "/opt/py3/bin/python", "/opt/runner/server.py"]
+    volumes:
+      - /run/xpam/secrets/runner:/run/xpam-secrets:ro

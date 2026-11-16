@@ -3,7 +3,7 @@
 #   ./build-all.sh                 build everything
 #   ./build-all.sh core web        build only the named images
 #   PREV=v5.1.40 ./build-all.sh core-hotfix   core from the previous release's image (core-hotfix.Dockerfile)
-# Images: core gateway web workspace secureconnection webconnector ai facelive browser postgresql-ha
+# Images: core gateway web workspace secureconnection webconnector ai facelive browser postgresql-ha runner (after core)
 # Environment: SRC (repos folder, default /opt), NS (default xpam), TAG (default v5.1.41).
 # Needs: docker with BuildKit, and for the web and workspace images node 24 with the repos' node_modules installed.
 set -euo pipefail
@@ -38,11 +38,12 @@ build_core_hotfix() {
   local modules
   modules=$(git -C "$SRC/xpam-core" diff --name-only "xpam-$PREV" HEAD -- apps | sed 's#^apps/##')
   if [[ -z "$modules" ]] || grep -qvE '\.py$' <<<"$modules" \
-      || grep -qE '(^|/)(__init__|manage|asgi|wsgi)\.py$|/migrations/|^libs/ansible/|/tests?/' <<<"$modules"; then
+      || grep -qE '(^|/)(manage|asgi|wsgi)\.py$|/migrations/|^libs/ansible/|/tests?/' <<<"$modules"; then
     echo "core-hotfix: the change since xpam-$PREV is not limited to compiled Python modules; build core in full:"
     echo "$modules"; return 1
   fi
   docker build -q --build-arg FROM_IMAGE="$NS/core:$PREV" --build-arg MODULES="$(echo $modules)" \
+    --build-arg STOCK_ANSIBLE_IMAGE="${STOCK_ANSIBLE_IMAGE:?set STOCK_ANSIBLE_IMAGE to a core image with unchanged ansible-core}" \
     --build-arg XPAM_BUILD_ID="$TAG-$(git -C "$SRC/xpam-core" rev-parse --short HEAD)-$(date +%s)-on-$PREV" \
     --build-context xpamscripts="$HERE" \
     -f "$HERE/core-hotfix.Dockerfile" -t "$NS/core:$TAG" "$SRC/xpam-core"
@@ -118,6 +119,12 @@ build_browser() {
     --build-context xpamscripts="$HERE" -f "$HERE/browser.Dockerfile" -t "$NS/browser:$TAG" "$SRC/xpam-secureconnection/browser"
 }
 
+# the runner (build/runner): runs the jobs users write; built on this release's core image
+build_runner() {
+  say "runner"
+  docker build -q --build-arg CORE_IMAGE="$NS/core:$TAG" -f "$HERE/runner.Dockerfile" -t "$NS/runner:$TAG" "$HERE/runner"
+}
+
 build_postgresql-ha() {
   say "postgresql-ha"
   docker build -q --build-arg APT_REFRESH="$APT_REFRESH" -f "$HERE/postgresql-ha.Dockerfile" -t "$NS/postgresql-ha:$TAG" "$HERE"
@@ -143,7 +150,7 @@ build_facelive() {
     --build-context xpamscripts="$HERE" -f "$HERE/facelive.Dockerfile" -t "$NS/facelive:$TAG" "$SRC/xpam-facelive"
 }
 
-targets=("$@"); [[ ${#targets[@]} -gt 0 ]] || targets=(core gateway web workspace secureconnection webconnector ai facelive browser postgresql-ha)
+targets=("$@"); [[ ${#targets[@]} -gt 0 ]] || targets=(core gateway web workspace secureconnection webconnector ai facelive browser postgresql-ha runner)
 for t in "${targets[@]}"; do "build_${t//-/_}"; done
 say "done"
-docker images --format '{{.Repository}}:{{.Tag}}  {{.ID}}  {{.CreatedSince}}' | grep -E "^$NS/(core|gateway|web|workspace|secureconnection|webconnector|ai|facelive|browser|postgresql-ha):$TAG " | sort
+docker images --format '{{.Repository}}:{{.Tag}}  {{.ID}}  {{.CreatedSince}}' | grep -E "^$NS/(core|gateway|web|workspace|secureconnection|webconnector|ai|facelive|browser|postgresql-ha|runner):$TAG " | sort

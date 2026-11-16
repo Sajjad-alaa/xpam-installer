@@ -1,6 +1,6 @@
 # shellcheck shell=bash
 
-common_services=(core ai worker secureconnection webconnector gateway web workspace browser)
+common_services=(core ai worker secureconnection webconnector gateway web workspace browser runner)
 xpack_services=(magnus razor xrdp video-worker nec)
 
 
@@ -295,7 +295,7 @@ function stop_disabled_video_worker() {
 function stop_disabled_optional_services() {
   local pair service container enabled container_id
   enabled=" $(get_enabled_services) "
-  for pair in secureconnection:xpam_secureconnection webconnector:xpam_webconnector ai:xpam_ai browser:xpam_browser facelive:xpam_facelive; do
+  for pair in secureconnection:xpam_secureconnection webconnector:xpam_webconnector ai:xpam_ai browser:xpam_browser runner:xpam_runner facelive:xpam_facelive; do
     service=${pair%%:*}
     container=${pair#*:}
     [[ "${enabled}" == *" ${service} "* ]] && continue
@@ -568,7 +568,7 @@ function show_xpam_version() {
   local name image id
 
   echo "XPAM $(get_xpam_version)"
-  for name in core gateway web workspace secureconnection webconnector ai facelive browser postgresql-ha; do
+  for name in core gateway web workspace secureconnection webconnector ai facelive browser runner postgresql-ha; do
     image="$(get_xpam_namespace)/${name}:$(get_xpam_version)"
     id=$(docker image inspect -f '{{.Id}}' "${image}" 2>/dev/null | cut -c8-19)
     printf '  %-18s %s\n' "${name}" "${id:-not downloaded}"

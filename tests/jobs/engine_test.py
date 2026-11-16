@@ -24,6 +24,7 @@ from users.models import User
 
 ROOT_PW = os.environ['ROOT_PASSWORD']
 TPW = os.environ['TARGET_PG_PASSWORD']
+RUNNER = os.environ.get('RUNNER') == '1'
 MARK = 'server-only-' + uuid.uuid4().hex          # content of a file only the XPAM server has
 SERVER_FILE = '/opt/core/data/server-only.txt'
 results = []
@@ -210,26 +211,99 @@ try:
                 f.write(content)
         return run([host], type='playbook', playbook=pb)
 
-    ex, text = playbook({'main.yml': '- hosts: all\n  gather_facts: no\n  tasks:\n'
-                                     '    - shell: echo pb-$((40+2))\n      register: r\n    - debug: var=r.stdout\n'})
-    plain_ok = ex.status == 'success' and 'pb-42' in text
-    # (a Docker installation cannot start the process sandbox user playbooks must run in: they do not run at all
-    #  until the runner service exists -- XPAM-AUTOMATION-PLAN.md, phase 1)
-    info(f'a plain playbook of a user: status {ex.status}; ran on the target: {plain_ok}'
-         + ('' if plain_ok else '; ' + text[-120:].strip()))
-    ex, text = playbook({
-        'main.yml': '- hosts: all\n  gather_facts: no\n  tasks:\n'
-                    '    - copy: src=%s dest=/tmp/pbleak\n      ignore_errors: yes\n'
-                    '    - debug: msg={{ 1 | touchfile }}\n      ignore_errors: yes\n'
-                    '    - debug: msg={{ item }}\n      with_pipe: touch /tmp/ctl-pbpipe\n      ignore_errors: yes\n'
-                    % SERVER_FILE,
-        'filter_plugins/touch.py': 'import os\n\ndef touchfile(v):\n    open("/tmp/ctl-pbplugin", "w").close()\n    return v\n\n'
-                                   'class FilterModule(object):\n    def filters(self):\n        return {"touchfile": touchfile}\n',
-    })
-    check('a user playbook cannot copy a file of the XPAM server to the target', MARK not in target('cat /tmp/pbleak 2>/dev/null'))
-    check('a user playbook cannot bring its own plugin code to run on the XPAM server', not os.path.exists('/tmp/ctl-pbplugin'), text[-400:])
-    check('a user playbook cannot run a command on the XPAM server with with_pipe', not os.path.exists('/tmp/ctl-pbpipe'))
-    info(f'the hostile playbook: status {ex.status}')
+    PLAY = '- hosts: all\n  gather_facts: no\n'
+
+    if not RUNNER:
+        ex, text = playbook({'main.yml': PLAY + '  tasks:\n    - shell: echo pb-$((40+2))\n'})
+        check('without the runner service a user playbook is refused (it would run inside XPAM)',
+              ex.status == 'failed' and 'runner service' in text and 'pb-42' not in text, (ex.status, text[-300:]))
+    else:
+        # ---------------------------------------------------------------- what playbooks may do
+        ex, text = playbook({
+            'main.yml': PLAY + '  tasks:\n'
+                        '    - shell: echo pb-$((40+2)); hostname\n      register: r\n'
+                        '    - template: src=motd.j2 dest=/tmp/pb-motd\n'
+                        '    - copy: src=data.txt dest=/tmp/pb-data\n',
+            'templates/motd.j2': 'hello {{ inventory_hostname }} {{ 6 * 7 }}\n',
+            'files/data.txt': 'file of the playbook\n',
+            'library/xpam_echo.py': '#!/usr/bin/python\nimport json\nprint(json.dumps({"changed": False}))\n',
+        })
+        check('a user playbook runs on the runner and reports per server', ex.status == 'success' and 'pb-42' in text
+              and 'job-linux' in json.dumps(ex.summary.get('ok', [])), (ex.status, text[-400:]))
+        check("a playbook's own templates and files reach the target",
+              'hello job-linux 42' in target('cat /tmp/pb-motd') and 'file of the playbook' in target('cat /tmp/pb-data'))
+        ex, text = playbook({'main.yml': PLAY + '  tasks:\n    - shell: echo vars={{ jms_username }}= \n'})
+        check('job variables work in a playbook', 'vars=job.user=' in text, text[-300:])
+
+        # ---------------------------------------------------------------- what they may not do
+        ex, text = playbook({
+            'main.yml': PLAY + '  vars:\n    ansible_host: jobtpg\n    ansible_port: 22\n  tasks:\n'
+                        '    - shell: hostname\n',
+        })
+        check("a playbook cannot send the account's password to another host (ansible_host is XPAM's)",
+              ex.status == 'success' and 'jobhost' in text, (ex.status, text[-300:]))
+        ex, text = playbook({
+            'main.yml': PLAY + '  vars:\n'
+                        '    ansible_ssh_common_args: "-o ProxyCommand=\'sh -c \\"touch /tmp/ctl-proxy; exec nc %h %p\\"\'"\n'
+                        '    ansible_ssh_executable: /bin/false\n'
+                        '  tasks:\n    - shell: echo proxy-$((40+2))\n',
+        })
+        check('a playbook cannot set SSH options or the SSH program (ProxyCommand runs on the runner)',
+              ex.status == 'success' and 'proxy-42' in text, (ex.status, text[-300:]))
+        jd_marker = '{{ lookup("vars", "inventory_dir") }}'
+        ex, text = playbook({
+            'main.yml': PLAY + '  tasks:\n'
+                        '    - copy: src=../inventory/hosts dest=/tmp/pb-inv\n      ignore_errors: yes\n'
+                        '    - copy: src={{ inventory_dir }}/hosts dest=/tmp/pb-inv2\n      ignore_errors: yes\n'
+                        '    - include_vars: file={{ inventory_dir }}/hosts\n      ignore_errors: yes\n'
+                        '    - copy: src=/etc/passwd dest=/tmp/pb-passwd\n      ignore_errors: yes\n'
+                        '    - add_host: name=evil ansible_host=jobhost\n      ignore_errors: yes\n'
+                        '    - debug: msg={{ lookup("pipe", "touch /tmp/ctl-pbpipe") }}\n      ignore_errors: yes\n'
+                        '    - debug: msg={{ item }}\n      with_pipe: touch /tmp/ctl-pbpipe2\n      ignore_errors: yes\n'
+                        '    - debug: msg=p={{ ansible_password }}=\n'
+                        '    - shell: echo done-$((40+2))\n',
+        })
+        leaked = target('cat /tmp/pb-inv /tmp/pb-inv2 /tmp/pb-passwd 2>/dev/null')
+        check("a playbook cannot copy the job's inventory (the accounts' passwords) or other runner files to a target",
+              ROOT_PW not in leaked and 'root:' not in leaked and 'jobhost' not in leaked, leaked[:200])
+        check('a playbook cannot read the inventory as variables, add hosts or run lookups on the runner',
+              ROOT_PW not in text and 'done-42' in text and 'evil' not in json.dumps(ex.summary.get('ok', [])),
+              (ex.status, text[-400:]))
+        for files, what in (
+                ({'filter_plugins/touch.py': 'def touchfile(v):\n    open("/tmp/ctl-pbplugin", "w").close()\n    return v\n'
+                                             'class FilterModule(object):\n    def filters(self):\n        return {"touchfile": touchfile}\n'},
+                 'its own plugin code'),
+                ({'ansible.cfg': '[defaults]\nfilter_plugins = ./x\n'}, 'its own Ansible configuration'),
+                ({'collections/ansible_collections/x/y/plugins/filter/f.py': 'X = 1\n'}, 'its own collections'),
+                ({'tasks/helper.py': 'import os\n'}, 'Python outside library/'),
+        ):
+            files = dict(files)
+            files['main.yml'] = PLAY + '  tasks:\n    - shell: echo plugin-$((40+2))\n'
+            ex, text = playbook(files)
+            check(f'a playbook with {what} is refused before it runs',
+                  ex.status == 'failed' and 'not allowed' in text and 'plugin-42' not in text, (ex.status, text[-300:]))
+
+        # ---------------------------------------------------------------- stop
+        import threading
+        holder = {}
+
+        def long_job():
+            set_current_org(org)
+            holder['ex'], holder['text'] = shell('sleep 40; echo too-late')
+        worker = threading.Thread(target=long_job)
+        t0 = time.time()
+        worker.start()
+        for _ in range(60):
+            ex = JobExecution.objects.filter(job__args='sleep 40; echo too-late').order_by('-date_created').first()
+            if ex and os.path.isdir(ex.private_dir):
+                break
+            time.sleep(0.5)
+        time.sleep(4)
+        if ex:
+            ex.stop()
+        worker.join(60)
+        check('Stop ends a job on the runner within seconds', time.time() - t0 < 25 and 'too-late' not in holder.get('text', ''),
+              round(time.time() - t0))
 except Exception:
     traceback.print_exc()
     results.append(False)

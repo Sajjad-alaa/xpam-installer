@@ -35,4 +35,8 @@ services:
       retries: 3
       start_period: 30s
     networks:
-      - net
+      net:
+      # (sends the jobs users write to the runner; the runner reaches a job's gateway tunnels here)
+      runner:
+        aliases:
+          - jobs-worker

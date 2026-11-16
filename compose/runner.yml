@@ -1,0 +1,36 @@
+services:
+  runner:
+    # XPAM runner: runs the jobs users write (commands, scripts, playbooks) away from core, each under a user of its
+    # own, on its own network: it reaches the servers the jobs run on, not XPAM's database, Redis or other
+    # containers. Only the worker talks to it (no published port). RUNNER_ENABLED=0 switches it off: commands
+    # then run in the worker, user playbooks not at all.
+    image: ${XPAM_NAMESPACE:-xpam}/runner:${XPAM_VERSION:-${XPAM_DEFAULT_VERSION:-v5.1.41}}
+    pull_policy: never  # XPAM images come from xpamctl (never Docker Hub)
+    container_name: xpam_runner
+    hostname: runner
+    restart: always
+    environment:
+      RUNNER_KEY: ${RUNNER_KEY:-}
+      RUNNER_MAX_JOBS: ${RUNNER_MAX_JOBS:-4}
+      RUNNER_MAX_HOURS: ${RUNNER_MAX_HOURS:-6}
+      TZ: ${TZ:-UTC}
+    read_only: true
+    tmpfs:
+      - /tmp:size=512m
+      - /opt/core/data/share/ansible:size=${RUNNER_DISK:-1g},mode=0711
+    mem_limit: ${RUNNER_MEM_LIMIT:-2g}
+    pids_limit: 2048
+    security_opt:
+      - no-new-privileges:true
+    # (root only to run each job as its own user and remove what it leaves; no other capability)
+    cap_drop:
+      - ALL
+    cap_add:
+      - SETUID
+      - SETGID
+      - CHOWN
+      - KILL
+    networks:
+      runner:
+        aliases:
+          - runner

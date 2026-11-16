@@ -6,6 +6,7 @@
 # report a result per server, and nothing a user writes in a job is run or read on the XPAM server itself.
 set -uo pipefail
 TAG=${1:-v5.1.41}
+TEST=${TEST:-engine_test.py}   # (or scripts_test.py: the same stack)
 HERE=$(cd "$(dirname "$0")" && pwd)
 NET=jobnet; RNET=jobrun; RUNNER=${RUNNER:-0}
 cleanup() { docker rm -f -v jobpg jobredis jobcore jobhost jobtpg jobrunner >/dev/null 2>&1; docker network rm $NET $RNET >/dev/null 2>&1; }
@@ -61,9 +62,9 @@ for _ in $(seq 1 150); do
   docker exec jobcore python3 -c "import urllib.request as u; u.urlopen('http://127.0.0.1:8080/api/health/', timeout=2)" >/dev/null 2>&1 && break
   sleep 3
 done
-docker cp "$HERE/engine_test.py" jobcore:/tmp/engine_test.py
+docker cp "$HERE/$TEST" jobcore:/tmp/$TEST
 docker exec -e ROOT_PASSWORD="$ROOT_PASSWORD" -e TARGET_PG_PASSWORD="$TARGET_PG_PASSWORD" -e RUNNER="$RUNNER" -w /opt/core/apps jobcore \
-  python /tmp/engine_test.py 2>&1 | grep --line-buffered -E "^(PASS|FAIL|INFO|DONE|Traceback|  File|[A-Za-z.]*Error)" | cut -c1-400
+  python /tmp/$TEST 2>&1 | grep --line-buffered -E "^(PASS|FAIL|INFO|DONE|Traceback|  File|[A-Za-z.]*Error)" | cut -c1-400
 if [[ "$RUNNER" == 1 ]]; then
   # what a job could have done on the runner itself
   for _ in $(seq 1 15); do   # (a stopped job is cleaned up within seconds)

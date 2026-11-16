@@ -10,6 +10,7 @@ settings.ALLOWED_HOSTS = list(settings.ALLOWED_HOSTS) + ['testserver']
 settings.SECURITY_COMMAND_EXECUTION = True   # (the job centre is off until an administrator turns it on)
 import xpack.utils
 xpack.utils.get_license_asset_count = lambda: 10   # (the test needs two targets; the trial allows one)
+xpack.utils.has_automation_license = lambda: True  # (Automation is a licensed feature; checked below)
 import paramiko
 from rest_framework.test import APIClient
 from orgs.models import Organization
@@ -109,6 +110,35 @@ try:
     perm = AssetPermission.objects.create(name='job-perm', org_id=org.id, accounts=['@ALL'], protocols=['all'],
                                           actions=ActionChoices.all())
     perm.users.add(user); perm.assets.add(host)
+
+    # ================================================================ who may use Automation (owner, 2026-11-16)
+    from rbac.builtin import BuiltinRole
+    from rbac.models import Role, RoleBinding
+    U = APIClient(); U.force_authenticate(user)
+
+    def jobs_api():
+        r = U.get('/api/v1/ops/jobs/', **H)
+        set_current_org(org)
+        return r
+
+    RoleBinding.objects.filter(user=user, role_id=BuiltinRole.org_automation_operator.id).delete()
+    r = jobs_api()
+    check('an ordinary user has no Job centre until an administrator grants it', r.status_code == 403, r.status_code)
+    RoleBinding.objects.create(user=user, role=Role.objects.get(id=BuiltinRole.org_automation_operator.id),
+                               org_id=org.id, scope='org')
+    user.expire_rbac_perms_cache()   # (the role API does this; a binding made here does not)
+    U.force_authenticate(User.objects.get(id=user.id))
+    info('Automation operator role: %d permissions' % Role.objects.get(id=BuiltinRole.org_automation_operator.id).permissions.count())
+    xpack.utils.has_automation_license = lambda: False
+    r = jobs_api()
+    check('with the Automation operator role but no Automation in the licence: refused',
+          r.status_code == 403 and 'licence' in str(r.data), (r.status_code, r.data))
+    xpack.utils.has_automation_license = lambda: True
+    r = jobs_api()
+    check('with the role and the licence the Job centre opens', r.status_code == 200, (r.status_code, r.data))
+    r = U.get('/api/v1/settings/public/open/', **H)
+    set_current_org(org)
+    check('the console learns whether Automation is licensed', r.data.get('HAS_AUTOMATION_LICENSE') is True, r.data)
 
     # ================================================================ commands: they work, with a result per server
     ex, text = shell('echo job-$((40+2)); id -un')

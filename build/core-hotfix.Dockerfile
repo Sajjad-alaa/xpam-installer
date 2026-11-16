@@ -16,28 +16,37 @@ ARG STOCK_ANSIBLE_IMAGE
 FROM ${FROM_IMAGE} AS previous
 FROM ${STOCK_ANSIBLE_IMAGE} AS stockansible
 
-FROM ${TOOLCHAIN_IMAGE} AS build
+# the compiler, Cython and gettext, kept as their own layer (built once per previous release)
+FROM ${TOOLCHAIN_IMAGE} AS tools
 COPY --from=previous /usr/local /usr/local
 COPY --from=previous /opt/core/.venv /opt/core/.venv
+RUN set -e; ln -sfn /opt/core/.venv /opt/py3; \
+    apt-get update >/dev/null && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends gettext >/dev/null; \
+    /usr/local/bin/uv pip install --python /opt/py3/bin/python -q Cython setuptools
+
+FROM tools AS build
 COPY apps /src
 COPY --from=xpamscripts compile_py.sh strip_docstrings.py /tmp/
+# MODULES: the changed files under apps/: Python modules are compiled; __init__.py files and migrations are kept as
+# source (as compile_py.sh keeps them); translation sources (.po) are compiled to .mo
 ARG MODULES
 RUN set -e; \
-    ln -sfn /opt/core/.venv /opt/py3; \
-    /usr/local/bin/uv pip install --python /opt/py3/bin/python -q Cython setuptools; \
     test -n "$MODULES"; mkdir /b /out; cd /src; \
     for m in $MODULES; do \
+      case "$m" in *.po) continue ;; esac; \
       d="$(dirname "$m")"; mkdir -p "/b/$d"; cp "$m" "/b/$m"; \
       while [ "$d" != "." ]; do cp "$d/__init__.py" "/b/$d/__init__.py"; d="$(dirname "$d")"; done; \
     done; \
     JOBS="$(nproc)" PYBIN=/opt/py3/bin/python sh /tmp/compile_py.sh /b; \
-    cd /b; \
     for m in $MODULES; do \
       mkdir -p "/out/$(dirname "$m")"; \
-      case "$m" in */__init__.py) cp "$m" "/out/$m"; continue ;; esac; \
-      so="$(ls "${m%.py}".*.so 2>/dev/null | head -1)"; \
+      case "$m" in \
+        *.po) msgfmt --check -o "/out/${m%.po}.mo" "/src/$m" 2>/dev/null; continue ;; \
+        */__init__.py|*/migrations/*) cp "/b/$m" "/out/$m"; continue ;; \
+      esac; \
+      so="$(cd /b && ls "${m%.py}".*.so 2>/dev/null | head -1)"; \
       if [ -z "$so" ]; then echo "core-hotfix: $m was not compiled"; exit 1; fi; \
-      cp "$so" "/out/$so"; \
+      cp "/b/$so" "/out/$so"; \
     done; \
     find /out -type f | sort
 

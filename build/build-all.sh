@@ -36,9 +36,11 @@ build_core() {
 build_core_hotfix() {
   say "core (hotfix on ${PREV:?set PREV to the previous release, e.g. PREV=v5.1.40})"
   local modules
-  modules=$(git -C "$SRC/xpam-core" diff --name-only "xpam-$PREV" HEAD -- apps | sed 's#^apps/##')
-  if [[ -z "$modules" ]] || grep -qvE '\.py$' <<<"$modules" \
-      || grep -qE '(^|/)(manage|asgi|wsgi)\.py$|/migrations/|^libs/ansible/|/tests?/' <<<"$modules"; then
+  # (apps/xpack is its own repository: its changes since the release's tag there are added)
+  modules=$( { git -C "$SRC/xpam-core" diff --name-only --diff-filter=AM "xpam-$PREV" HEAD -- apps | sed 's#^apps/##';
+               git -C "$SRC/xpam-core/apps/xpack" diff --name-only --diff-filter=AM "xpam-$PREV" HEAD 2>/dev/null | sed 's#^#xpack/#'; } )
+  if [[ -z "$modules" ]] || grep -qvE '\.(py|po)$' <<<"$modules" \
+      || grep -qE '(^|/)(manage|asgi|wsgi)\.py$|^libs/ansible/|/tests?/' <<<"$modules"; then
     echo "core-hotfix: the change since xpam-$PREV is not limited to compiled Python modules; build core in full:"
     echo "$modules"; return 1
   fi
